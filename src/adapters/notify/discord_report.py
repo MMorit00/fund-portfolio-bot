@@ -1,0 +1,25 @@
+from __future__ import annotations
+
+import os
+from typing import Optional
+
+from src.usecases.ports import ReportSender
+
+
+class DiscordReportSender(ReportSender):
+    """
+    Discord Webhook 发送器（占位）。
+    MVP 阶段可使用 requests/httpx 发送文本消息。
+    """
+
+    def __init__(self, webhook_url: Optional[str] = None) -> None:
+        self.webhook_url = webhook_url or os.getenv("DISCORD_WEBHOOK_URL")
+
+    def send(self, text: str) -> bool:  # type: ignore[override]
+        if not self.webhook_url:
+            print("[Notify] 未配置 DISCORD_WEBHOOK_URL，跳过发送")
+            return False
+        # TODO: 发送 HTTP 请求
+        print("[Notify] 发送到 Discord：\n" + text)
+        return True
+
