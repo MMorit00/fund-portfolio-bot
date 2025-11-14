@@ -88,6 +88,10 @@ poetry.lock
 # pdm
 .pdm.toml
 
+# uv
+.uv/
+uv.lock
+
 # PEP 582
 __pypackages__/
 
@@ -127,6 +131,9 @@ dmypy.json
 
 # pytype static type analyzer
 .pytype/
+
+# Ruff
+.ruff_cache/
 
 # Cython debug symbols
 cython_debug/
