@@ -48,3 +48,8 @@ scripts/        # 辅助脚本（如备份）
 - `jobs/confirm_trades.py` 按 T+N 规则确认份额
 - `jobs/daily_report.py` 生成并发送日报（Discord Webhook）
 
+## 架构图（PlantUML）
+
+- 源文件：`docs/architecture/fund-portfolio-architecture.puml`
+- 预览：使用 IDE PlantUML 插件或命令行 `plantuml docs/architecture/fund-portfolio-architecture.puml`
+- 说明：本图以实际目录分组（`src/jobs`, `src/app`, `src/usecases`, `src/core`, `src/adapters`），仅展示当前仓库已有文件与关键依赖，突出核心流程与设计依赖关系。
