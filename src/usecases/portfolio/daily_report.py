@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Dict
 
-from src.core.assets.classes import AssetClass
+from src.core.asset_class import AssetClass
 from src.core.portfolio.rebalance import calc_deviation, suggest_rebalance_amount
 from src.usecases.ports import AllocConfigRepo, ReportSender, TradeRepo
 

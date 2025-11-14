@@ -4,9 +4,9 @@ from datetime import date
 from decimal import Decimal
 from typing import Dict, List, Optional, Protocol
 
-from src.core.assets.classes import AssetClass
-from src.core.dca.plan import DcaPlan
-from src.core.trading.trade import Trade
+from src.core.asset_class import AssetClass
+from src.core.dca_plan import DcaPlan
+from src.core.trade import Trade
 
 
 class FundRepo(Protocol):

@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Dict, List, Optional
 
-from src.core.trading.trade import Trade
+from src.core.trade import Trade
 from src.usecases.ports import TradeRepo
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Dict
 
-from src.core.assets.classes import AssetClass
+from src.core.asset_class import AssetClass
 from src.usecases.ports import TradeRepo
 
 

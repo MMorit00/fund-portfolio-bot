@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from src.core.dca.plan import DcaPlan
-from src.core.trading.trade import Trade
+from src.core.dca_plan import DcaPlan
+from src.core.trade import Trade
 from src.usecases.ports import DcaPlanRepo, FundRepo, TradeRepo
 
 
