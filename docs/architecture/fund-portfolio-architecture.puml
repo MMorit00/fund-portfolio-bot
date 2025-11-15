@@ -3,7 +3,7 @@ skinparam backgroundColor white
 skinparam defaultFontName "PingFang SC,Microsoft YaHei,SimHei,Arial Unicode MS"
 skinparam linetype ortho
 
-title Fund Portfolio Bot - 目录结构与依赖图（MVP）
+title Fund Portfolio Bot - 分层与依赖（MVP）
 
 skinparam package {
   FontSize 12
@@ -12,99 +12,69 @@ skinparam component {
   FontSize 11
 }
 
-' =============================================
-' 以实际目录为分组（不使用抽象层名）
-' =============================================
+' ============================
+' 按目录划分为 5 层
+' ============================
 
-package "src/jobs" {
-  component "run_dca.py\n生成定投 pending" as JobRunDca
-  component "confirm_trades.py\n按净值确认" as JobConfirm
-  component "fetch_navs.py\n抓取净值" as JobFetch
-  component "daily_report.py\n发送日报" as JobReport
+package "src/jobs\n（驱动适配器）" {
+  component "Jobs\n- run_dca.py\n- confirm_trades.py\n- fetch_navs.py\n- daily_report.py" as Jobs
 }
 
-package "src/app" {
-  component "main.py\n启动入口" as AppMain
-  component "wiring.py\n依赖装配(占位)" as AppWiring
-  component "config.py\n配置" as AppConfig
-  component "log.py\n日志" as AppLog
+package "src/app\n（启动与装配）" {
+  component "App\n- main.py\n- wiring.py\n- config.py\n- log.py" as App
 }
 
-package "src/usecases" {
-  component "dca/run_daily.py\nRunDailyDca" as UcRunDca
-  component "trading/create_trade.py\nCreateTrade" as UcCreate
-  component "trading/confirm_pending.py\nConfirmPendingTrades" as UcConfirm
-  component "portfolio/daily_report.py\nGenerateDailyReport" as UcReport
-  component "ports.py\n协议定义" as UcPorts
+package "src/usecases\n（用例 + 端口）" {
+  component "Usecases\n- trading/create_trade.py\n- trading/confirm_pending.py\n- dca/run_daily.py\n- dca/skip_date.py\n- portfolio/daily_report.py\n- portfolio/status.py" as Usecases
+  component "Ports (Protocol)\n- TradeRepo\n- FundRepo\n- NavProvider\n- NavRepo\n- DcaPlanRepo\n- AllocConfigRepo\n- ReportSender\n(定义于 ports.py)" as Ports
 }
 
-package "src/core" {
-  component "trade.py\nTrade" as CoreTrade
-  component "dca_plan.py\nDcaPlan" as CoreDca
-  component "trading/settlement.py\nget_confirm_date" as CoreSettlement
-  component "portfolio/rebalance.py\n再平衡工具" as CoreRebalance
-  component "asset_class.py\nAssetClass" as CoreAssetClass
+package "src/core\n（领域模型与规则）" {
+  component "Core Domain\n- trade.py (Trade)\n- dca_plan.py (DcaPlan)\n- asset_class.py (AssetClass)\n- trading/settlement.py\n- portfolio/rebalance.py" as Core
 }
 
-package "src/adapters" {
-  component "db/sqlite/trade_repo.py\nSqliteTradeRepo" as AdpTradeRepo
-  component "db/sqlite/nav_repo.py\nSqliteNavRepo" as AdpNavRepo
-  component "datasources/eastmoney_nav.py\nEastmoneyNavProvider" as AdpEastmoney
-  component "notify/discord_report.py\nDiscordReportSender" as AdpDiscord
+package "src/adapters\n（被驱动适配器）" {
+  component "Adapters\n- db/sqlite/trade_repo.py\n- db/sqlite/nav_repo.py\n- datasources/eastmoney_nav.py\n- notify/discord_report.py" as Adapters
 }
 
-' =============================================
-' 依赖关系（仅核心逻辑，简化展示）
-' =============================================
+' ============================
+' 依赖方向：一律向内
+' ============================
 
-' 入口与装配（占位提示）
-AppMain ..> AppWiring : 启动/装配
-AppWiring ..> UcCreate : 注入依赖
-AppWiring ..> UcConfirm : 注入依赖
-AppWiring ..> UcRunDca : 注入依赖
-AppWiring ..> UcReport : 注入依赖
+' 驱动适配器发起流程
+Jobs --> App : 定时/命令入口
 
-' jobs 执行用例
-JobRunDca --> UcRunDca : 执行
-JobConfirm --> UcConfirm : 执行
-JobReport --> UcReport : 执行
+' app 装配并调用用例
+App --> Usecases : 注入依赖后调用 execute()
 
-' fetch_navs 目前直接依赖适配器（简化）
-JobFetch --> AdpEastmoney : 获取净值
-JobFetch --> AdpNavRepo : 写入净值
+' usecases 依赖端口与领域模型
+Usecases ..> Ports : 通过 Protocol 抽象访问外部能力
+Usecases ..> Core : 使用领域模型与业务规则
 
-' usecases 使用领域模型/规则
-UcRunDca ..> CoreDca
-UcRunDca ..> CoreTrade
-UcCreate ..> CoreTrade
-UcConfirm ..> CoreSettlement
-UcReport ..> CoreRebalance
-UcReport ..> CoreAssetClass
+' 适配器实现端口
+Adapters ..> Ports : 实现 Protocol（仓储/数据源/通知）
 
-' usecases 依赖适配器实现（通过 ports 定义）
-UcCreate --> AdpTradeRepo
-UcRunDca --> AdpTradeRepo
-UcConfirm --> AdpTradeRepo
-UcConfirm --> AdpEastmoney
-UcReport --> AdpDiscord
+' app 在装配时依赖适配器实现
+App ..> Adapters : wiring 中创建具体实现
 
-note as NoteMissing
-  说明：图中仅展示当前仓库已有文件。\n
-  其他仓储依赖（如 FundRepo / DcaPlanRepo / AllocConfigRepo）\n
-  后续补充具体实现后再加入图中。
+' ============================
+' 文字说明
+' ============================
+
+note bottom of Core
+  依赖方向：Jobs/App → Usecases → Ports → Core，\n
+  Adapters 也依赖 Ports 与 Core，\n
+  核心领域（core）不依赖任何外层。
 end note
 
-NoteMissing -[hidden]- UcPorts
-
-' 简要流程说明（不引入外部节点）
 note as Flow
-  每日流程（简化）：\n
-  1) fetch_navs → Adapters(抓/存净值)\n
-  2) run_dca → RunDailyDca → TradeRepo(新增 pending)\n
-  3) confirm_trades → ConfirmPendingTrades → TradeRepo 确认\n
-  4) daily_report → GenerateDailyReport → DiscordReportSender
+  每日典型流程（简化）：\n
+  1) jobs/fetch_navs → （未来）Usecase → Adapters(抓/存净值)\n
+  2) jobs/run_dca → RunDailyDca → TradeRepo(新增 pending)\n
+  3) jobs/confirm_trades → ConfirmPendingTrades → TradeRepo 确认份额\n
+  4) jobs/daily_report → GenerateDailyReport → ReportSender(Discord)
 end note
 
-Flow -[hidden]- JobRunDca
+Flow -[hidden]- Jobs
 
 @enduml
