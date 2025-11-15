@@ -10,27 +10,6 @@ from src.core.trading.settlement import get_confirm_date
 from src.usecases.ports import TradeRepo
 
 
-def _decimal_to_str(value: Optional[Decimal]) -> Optional[str]:
-    if value is None:
-        return None
-    return format(value, "f")
-
-
-def _row_to_trade(row: sqlite3.Row) -> Trade:
-    shares = row["shares"]
-    return Trade(
-        id=int(row["id"]),
-        fund_code=row["fund_code"],
-        type=row["type"],
-        amount=Decimal(row["amount"]),
-        trade_date=date.fromisoformat(row["trade_date"]),
-        status=row["status"],
-        market=row["market"],
-        shares=Decimal(shares) if shares is not None else None,
-        remark=row["remark"],
-    )
-
-
 class SqliteTradeRepo(TradeRepo):
     """SQLite 交易仓储实现。"""
 
@@ -101,3 +80,26 @@ class SqliteTradeRepo(TradeRepo):
                 shares = -shares
             position[row["fund_code"]] = position.get(row["fund_code"], Decimal("0")) + shares
         return position
+
+
+def _decimal_to_str(value: Optional[Decimal]) -> Optional[str]:
+    """将 Decimal 转换为字符串格式，用于 SQLite 存储。"""
+    if value is None:
+        return None
+    return format(value, "f")
+
+
+def _row_to_trade(row: sqlite3.Row) -> Trade:
+    """将 SQLite Row 转换为 Trade 对象。"""
+    shares = row["shares"]
+    return Trade(
+        id=int(row["id"]),
+        fund_code=row["fund_code"],
+        type=row["type"],
+        amount=Decimal(row["amount"]),
+        trade_date=date.fromisoformat(row["trade_date"]),
+        status=row["status"],
+        market=row["market"],
+        shares=Decimal(shares) if shares is not None else None,
+        remark=row["remark"],
+    )

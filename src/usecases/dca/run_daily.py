@@ -23,20 +23,8 @@ class RunDailyDca:
         self.fund_repo = fund_repo
         self.trade_repo = trade_repo
 
-    def _due(self, plan: DcaPlan, day: date) -> bool:
-        if plan.frequency == "daily":
-            return True
-        if plan.frequency == "weekly":
-            weekday_map = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
-            return plan.rule.upper() == weekday_map[day.weekday()]
-        if plan.frequency == "monthly":
-            try:
-                return int(plan.rule) == day.day
-            except ValueError:
-                return False
-        return False
-
     def execute(self, *, today: date) -> int:
+        """生成当天应执行的定投交易，返回生成的交易数量。"""
         plans = self.dca_repo.list_due_plans(today)
         count = 0
         for p in plans:
@@ -57,4 +45,18 @@ class RunDailyDca:
             self.trade_repo.add(t)
             count += 1
         return count
+
+    def _due(self, plan: DcaPlan, day: date) -> bool:
+        """判断定投计划在指定日期是否到期。"""
+        if plan.frequency == "daily":
+            return True
+        if plan.frequency == "weekly":
+            weekday_map = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+            return plan.rule.upper() == weekday_map[day.weekday()]
+        if plan.frequency == "monthly":
+            try:
+                return int(plan.rule) == day.day
+            except ValueError:
+                return False
+        return False
 

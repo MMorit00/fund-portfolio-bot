@@ -9,15 +9,6 @@ from src.core.dca_plan import DcaPlan
 from src.usecases.ports import DcaPlanRepo
 
 
-def _row_to_plan(row: sqlite3.Row) -> DcaPlan:
-    return DcaPlan(
-        fund_code=row["fund_code"],
-        amount=Decimal(row["amount"]),
-        frequency=row["frequency"],
-        rule=row["rule"],
-    )
-
-
 class SqliteDcaPlanRepo(DcaPlanRepo):
     """定投计划仓储。"""
 
@@ -38,4 +29,14 @@ class SqliteDcaPlanRepo(DcaPlanRepo):
         if not row:
             return None
         return _row_to_plan(row)
+
+
+def _row_to_plan(row: sqlite3.Row) -> DcaPlan:
+    """将 SQLite Row 转换为 DcaPlan 对象。"""
+    return DcaPlan(
+        fund_code=row["fund_code"],
+        amount=Decimal(row["amount"]),
+        frequency=row["frequency"],
+        rule=row["rule"],
+    )
 

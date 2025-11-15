@@ -7,15 +7,6 @@ from src.core.asset_class import AssetClass
 from src.usecases.ports import FundRepo
 
 
-def _row_to_dict(row: sqlite3.Row) -> Dict:
-    return {
-        "fund_code": row["fund_code"],
-        "name": row["name"],
-        "asset_class": AssetClass(row["asset_class"]),
-        "market": row["market"],
-    }
-
-
 class SqliteFundRepo(FundRepo):
     """基金信息仓储。"""
 
@@ -44,4 +35,14 @@ class SqliteFundRepo(FundRepo):
     def list_funds(self) -> List[Dict]:  # type: ignore[override]
         rows = self.conn.execute("SELECT * FROM funds ORDER BY fund_code").fetchall()
         return [_row_to_dict(r) for r in rows]
+
+
+def _row_to_dict(row: sqlite3.Row) -> Dict:
+    """将 SQLite Row 转换为基金信息字典。"""
+    return {
+        "fund_code": row["fund_code"],
+        "name": row["name"],
+        "asset_class": AssetClass(row["asset_class"]),
+        "market": row["market"],
+    }
 

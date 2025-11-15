@@ -76,6 +76,33 @@ scripts/
      - SQLite 连接的 `set_trace_callback` 打印 SQL（可由配置开关控制）
    - 不要引入新的日志依赖库
 
+6. **代码组织原则（重要）**
+   - **入口在上，工具在下**：模块级别的入口函数/类放在文件最上方
+   - **公开在上，私有在下**：
+     - 类中：`__init__` → 公开方法 → 私有方法（`_method`）
+     - 模块中：公开类/函数 → 模块私有函数（`_function`）
+   - **示例（正确）**：
+     ```python
+     # ✅ 正确的组织方式
+     class SqliteTradeRepo(TradeRepo):
+         def __init__(self, conn): ...      # 构造函数
+         def add(self, trade): ...           # 公开方法
+         def list_pending(self): ...         # 公开方法
+         def _internal_helper(self): ...     # 私有方法在后
+
+     # 模块私有工具函数在类之后
+     def _decimal_to_str(value): ...
+     def _row_to_trade(row): ...
+     ```
+   - **反例（错误）**：
+     ```python
+     # ❌ 错误：工具函数在类之前
+     def _decimal_to_str(value): ...  # 工具函数不应在前
+
+     class SqliteTradeRepo(TradeRepo):
+         def add(self, trade): ...
+     ```
+
 ---
 
 ## 3. 配置与环境变量
