@@ -2,7 +2,7 @@
 
 ## v0.1（当前 MVP）
 - [x] 基金 & 资产类别管理（FundRepo / AllocConfig）
-- [ ] 交易记录：`/buy` `/sell`（CreateTrade）—— UseCase 已完成，CLI 入口待实现
+- [x] 交易记录：`/buy` `/sell`（CreateTrade）—— CLI 已完成
 - [x] 定投计划：生成 pending 与跳过（RunDailyDca / SkipDcaForDate）—— RunDailyDca 已完成并装配
 - [x] 官方净值抓取（NavProvider + NavRepo）—— 本地 NavProvider 已完成（方案 A）
 - [x] T+1/T+2 确认（ConfirmPendingTrades）—— 已完成并装配

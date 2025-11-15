@@ -52,3 +52,23 @@
 - NAV 策略采用方案 A（本地读取）：LocalNavProvider 仅从 NavRepo 读取，不做实时抓取，适合 MVP 阶段快速验证。
 - 所有 Job 统一使用 `with DependencyContainer() as container:` 模式，确保 DB 连接正确关闭。
 - Job 日志格式：开始/结束标记 + emoji 状态（✅/⚠️/❌），便于 cron/Actions 输出查看。
+
+### 代码规范优化
+- 修正 `LocalNavProvider.get_nav()` 类型注解：参数 `day: date`，返回值 `Optional[Decimal]`，移除所有 `# type: ignore`。
+- 移除不必要的向后兼容代码，保持 wiring 层简洁单一。
+
+## 2025-11-15 交易 CLI（buy/sell）
+
+### 完成内容
+- 实现 `app/main.py` CLI 入口，支持 buy/sell 子命令：
+  - 参数：`--fund-code`（必需）、`--amount`（必需）、`--date`（可选，ISO 格式 YYYY-MM-DD，默认今天）
+  - 参数验证：金额必须为正 Decimal，日期必须为 ISO 格式
+  - 错误处理：友好的中文提示 + 退出码（4=参数/业务错误，5=未知错误）
+  - 成功输出：完整摘要（ID、fund、type、amount、date、confirm_date）
+- 接入 `DependencyContainer` 和 `CreateTrade` UseCase，完成端到端的交易录入流程。
+
+### 决策
+- CLI 风格采用简洁设计：`python -m src.app.main buy --fund-code 110022 --amount 1000`。
+- 日期参数固定 ISO 格式（YYYY-MM-DD），不支持相对日期（yesterday/-1d），保持简单。
+- 错误输出包含详细提示：如基金代码不存在时提示运行 dev_seed_db。
+- 成功输出包含 confirm_date，方便用户预期交易确认时间。

@@ -1,13 +1,132 @@
 from __future__ import annotations
 
+import argparse
+import sys
+from datetime import date
+from decimal import Decimal, InvalidOperation
+
 from src.app.log import log
+from src.app.wiring import DependencyContainer
+from src.core.trading.settlement import get_confirm_date
 
 
-def main() -> None:
-    """CLI/服务入口（占位）。"""
-    log("portfolio-engine ready (MVP skeleton)")
+def parse_args() -> argparse.Namespace:
+    """
+    解析命令行参数。
+
+    子命令：buy / sell
+    公共参数：--fund-code（必需）、--amount（必需）、--date（可选，ISO 格式）
+    """
+    parser = argparse.ArgumentParser(
+        prog="python -m src.app.main",
+        description="基金投资组合管理 CLI",
+    )
+    subparsers = parser.add_subparsers(dest="command", help="可用命令")
+
+    # buy 子命令
+    buy_parser = subparsers.add_parser("buy", help="买入基金")
+    buy_parser.add_argument("--fund-code", required=True, help="基金代码")
+    buy_parser.add_argument("--amount", required=True, help="买入金额（例如 1000 或 1000.50）")
+    buy_parser.add_argument("--date", help="交易日期（格式：YYYY-MM-DD，默认今天）")
+
+    # sell 子命令
+    sell_parser = subparsers.add_parser("sell", help="卖出基金")
+    sell_parser.add_argument("--fund-code", required=True, help="基金代码")
+    sell_parser.add_argument("--amount", required=True, help="卖出金额（例如 500 或 500.50）")
+    sell_parser.add_argument("--date", help="交易日期（格式：YYYY-MM-DD，默认今天）")
+
+    return parser.parse_args()
+
+
+def parse_date(date_str: str | None) -> date:
+    """
+    解析日期参数。
+
+    - None：返回今天
+    - YYYY-MM-DD：解析为 date 对象
+    - 其他格式：抛出 ValueError
+    """
+    if not date_str:
+        return date.today()
+
+    try:
+        return date.fromisoformat(date_str)
+    except ValueError as e:
+        raise ValueError(f"日期格式无效：{date_str}（期望格式：YYYY-MM-DD，例如 2025-11-15）") from e
+
+
+def parse_amount(amount_str: str) -> Decimal:
+    """
+    解析金额参数。
+
+    - 合法 Decimal：返回 Decimal 对象
+    - 非法格式：抛出 ValueError
+    """
+    try:
+        amount = Decimal(amount_str)
+        if amount <= Decimal("0"):
+            raise ValueError("金额必须大于 0")
+        return amount
+    except InvalidOperation as e:
+        raise ValueError(f"金额格式无效：{amount_str}（期望 Decimal，例如 1000 或 1000.50）") from e
+
+
+def main() -> int:
+    """
+    CLI 入口：处理 buy/sell 命令。
+
+    返回值：
+    - 0：成功
+    - 4：参数错误或业务逻辑错误（如基金代码不存在）
+    - 5：未知错误
+    """
+    args = parse_args()
+
+    if not args.command:
+        log("请指定命令：buy 或 sell")
+        log("使用 --help 查看帮助")
+        return 4
+
+    try:
+        # 解析参数
+        fund_code = args.fund_code
+        amount = parse_amount(args.amount)
+        trade_day = parse_date(args.date)
+        trade_type = args.command  # 'buy' or 'sell'
+
+        # 执行交易创建
+        with DependencyContainer() as container:
+            usecase = container.get_create_trade_usecase()
+            trade = usecase.execute(
+                fund_code=fund_code,
+                trade_type=trade_type,
+                amount=amount,
+                trade_day=trade_day,
+            )
+
+        # 计算确认日期用于显示
+        confirm_date = get_confirm_date(trade.market, trade.trade_date)
+
+        # 成功���出（完整摘要）
+        log(
+            f"✅ 交易已创建：ID={trade.id} fund={trade.fund_code} type={trade.type} "
+            f"amount={trade.amount} date={trade.trade_date} confirm_date={confirm_date}"
+        )
+        return 0
+
+    except ValueError as err:
+        # 参数错误或业务逻辑错误
+        log(f"❌ 错误：{err}")
+        if "未知基金代码" in str(err):
+            log("提示：请检查是否已在 funds 表中配置，或先运行 dev_seed_db")
+        return 4
+
+    except Exception as err:  # noqa: BLE001
+        # 未知错误
+        log(f"❌ 未知错误：{err}")
+        return 5
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
 
