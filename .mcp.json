@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "sequential-thinking": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "env": {}
+    },
+    "exa": {
+      "type": "http",
+      "url": "https://mcp.exa.ai/mcp",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "exa",
+        "--key",
+        "be11f295-6bb3-43cf-bcee-79476e1a67ed"
+      ],
+      "env": {}
+    },
+    "code-index": {
+      "command": "uvx",
+      "args": ["code-index-mcp"],
+      "env": {}
+    }
+  }
+}
