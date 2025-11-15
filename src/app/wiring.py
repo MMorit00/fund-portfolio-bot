@@ -99,7 +99,7 @@ class DependencyContainer:
 
     def get_daily_report_usecase(self) -> GenerateDailyReport:
         """获取 GenerateDailyReport UseCase。"""
-        if not self.alloc_repo or not self.trade_repo or not self.discord_sender:
+        if not self.alloc_repo or not self.trade_repo or not self.fund_repo or not self.discord_sender:
             raise RuntimeError("容器未初始化，请在 with 块中使用")
-        return GenerateDailyReport(self.alloc_repo, self.trade_repo, self.discord_sender)
+        return GenerateDailyReport(self.alloc_repo, self.trade_repo, self.fund_repo, self.discord_sender)
 
