@@ -81,6 +81,17 @@
 - 将此原则写入 `CLAUDE.md`，作为项目编码规范的一部分。
 - 验证修改后所有 Job 和 CLI 均正常运行。
 
+## 2025-11-16 SkipDcaForDate CLI
+
+### 完成内容
+- 在 `TradeRepo` 补充 `skip_dca_for_date(fund_code, day)`，SQLite 实现按 fund_code + trade_date + type='buy' + status='pending' 更新为 `skipped`，返回影响行数。
+- 在 UseCase `SkipDcaForDate` 中调用仓储，不再是占位。
+- `DependencyContainer` 暴露 `get_skip_dca_usecase()`，供入口调用。
+- CLI 增加 `skip-dca` 子命令：`python -m src.app.main skip-dca --fund-code 110022 --date 2025-11-15`（date 默认今天），输出影响的 pending 数量。
+
+### 决策
+- v0.1 仅更新状态为 `skipped`，不记录原因/操作人；未来需要原因时可复用 trades.remark。
+- 跳过范围明确：仅当日 pending 买入；不影响卖出、其他日期或已确认记录。
 
 
 

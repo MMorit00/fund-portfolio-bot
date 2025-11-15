@@ -81,6 +81,22 @@ class SqliteTradeRepo(TradeRepo):
             position[row["fund_code"]] = position.get(row["fund_code"], Decimal("0")) + shares
         return position
 
+    def skip_dca_for_date(self, fund_code: str, day: date) -> int:  # type: ignore[override]
+        """将当日的 pending 买入交易标记为 skipped，返回影响行数。"""
+        cur = self.conn.execute(
+            """
+            UPDATE trades
+            SET status = 'skipped'
+            WHERE fund_code = ?
+              AND type = 'buy'
+              AND status = 'pending'
+              AND trade_date = ?
+            """,
+            (fund_code, day.isoformat()),
+        )
+        self.conn.commit()
+        return cur.rowcount
+
 
 def _decimal_to_str(value: Optional[Decimal]) -> Optional[str]:
     """将 Decimal 转换为字符串格式，用于 SQLite 存储。"""

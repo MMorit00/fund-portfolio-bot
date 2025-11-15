@@ -14,6 +14,7 @@ from src.adapters.db.sqlite.trade_repo import SqliteTradeRepo
 from src.adapters.notify.discord_report import DiscordReportSender
 from src.app import config
 from src.usecases.dca.run_daily import RunDailyDca
+from src.usecases.dca.skip_date import SkipDcaForDate
 from src.usecases.portfolio.daily_report import GenerateDailyReport
 from src.usecases.trading.confirm_pending import ConfirmPendingTrades
 from src.usecases.trading.create_trade import CreateTrade
@@ -91,6 +92,12 @@ class DependencyContainer:
             raise RuntimeError("容器未初始化，请在 with 块中使用")
         return RunDailyDca(self.dca_repo, self.fund_repo, self.trade_repo)
 
+    def get_skip_dca_usecase(self) -> SkipDcaForDate:
+        """获取 SkipDcaForDate UseCase。"""
+        if not self.dca_repo or not self.trade_repo:
+            raise RuntimeError("容器未初始化，请在 with 块中使用")
+        return SkipDcaForDate(self.dca_repo, self.trade_repo)
+
     def get_confirm_pending_trades_usecase(self) -> ConfirmPendingTrades:
         """获取 ConfirmPendingTrades UseCase。"""
         if not self.trade_repo or not self.nav_provider:
@@ -99,7 +106,18 @@ class DependencyContainer:
 
     def get_daily_report_usecase(self) -> GenerateDailyReport:
         """获取 GenerateDailyReport UseCase。"""
-        if not self.alloc_repo or not self.trade_repo or not self.fund_repo or not self.discord_sender:
+        if (
+            not self.alloc_repo
+            or not self.trade_repo
+            or not self.fund_repo
+            or not self.discord_sender
+            or not self.nav_provider
+        ):
             raise RuntimeError("容器未初始化，请在 with 块中使用")
-        return GenerateDailyReport(self.alloc_repo, self.trade_repo, self.fund_repo, self.discord_sender)
-
+        return GenerateDailyReport(
+            self.alloc_repo,
+            self.trade_repo,
+            self.fund_repo,
+            self.nav_provider,
+            self.discord_sender,
+        )

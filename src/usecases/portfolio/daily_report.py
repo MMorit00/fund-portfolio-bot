@@ -3,43 +3,35 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Dict
+from typing import Dict, List
 
 from src.core.asset_class import AssetClass
 from src.core.portfolio.rebalance import calc_weight_difference
-from src.usecases.ports import AllocConfigRepo, FundRepo, ReportSender, TradeRepo
+from src.usecases.ports import AllocConfigRepo, FundRepo, NavProvider, ReportSender, TradeRepo
 
 
 @dataclass
 class ReportData:
     """
-    日报数据结构。
-
-    IMPORTANT: 当前版本基于份额计算，存在精度问题
-    - total_value: 实际是总份额，不是总市值
-    - class_value: 实际是各类别份额，不是市值
-    - class_weight: 基于份额计算的权重，不是市值权重
-    - ISSUE: 不同基金净值不同，份额不能准确反映真实价值配置
-
-    TODO: 升级为市值计算 (见 roadmap.md 技术债部分)
-    - 需要集成 NavProvider 获取最新净值
-    - 市值 = 份额 × 最新净值
-    - 权重 = 类别市值 / 总市值
+    日报数据结构（支持市值视图与份额视图）。
     """
-    total_value: Decimal  # 当前版本存储总份额，将来可改为总市值
-    class_value: Dict[AssetClass, Decimal]  # 各资产类别的份额（将来可改为市值）
-    class_weight: Dict[AssetClass, Decimal]  # 各资产类别的权重
-    deviation: Dict[AssetClass, Decimal]  # 与目标权重的偏离
+
+    mode: str  # "market" 或 "shares"
+    as_of: date
+    total_value: Decimal
+    class_value: Dict[AssetClass, Decimal]
+    class_weight: Dict[AssetClass, Decimal]
+    deviation: Dict[AssetClass, Decimal]
+    missing_nav: List[str]
 
 
 class GenerateDailyReport:
     """
     生成并发送日报（文本版）。
 
-    当前版本（轻量版）：
-    - 基于份额计算权重，不依赖 NAV
-    - 显示总份额而非总市值
-    - 计算与目标权重的偏离
+    模式：
+    - market：按市值计算（shares × NAV），缺失 NAV 的基金会被跳过并标注缺失列表。
+    - shares：保留旧版份额视图（无 NAV 依赖）。
     """
 
     def __init__(
@@ -47,19 +39,77 @@ class GenerateDailyReport:
         alloc_repo: AllocConfigRepo,
         trade_repo: TradeRepo,
         fund_repo: FundRepo,
+        nav_provider: NavProvider,
         sender: ReportSender,
     ) -> None:
         self.alloc_repo = alloc_repo
         self.trade_repo = trade_repo
         self.fund_repo = fund_repo
+        self.nav_provider = nav_provider
         self.sender = sender
 
-    def build(self) -> str:
-        """构造日报文本内容。"""
-        # 1. 获取持仓份额（fund_code -> shares）
+    def build(self, mode: str = "market") -> str:
+        """构造日报文本内容。默认使用市值模式。"""
+        if mode not in {"market", "shares"}:
+            raise ValueError("mode 仅支持 market 或 shares")
+
+        target_weights = self.alloc_repo.get_target_weights()
         position_shares = self.trade_repo.position_shares()
 
-        # 2. 按资产类别聚合份额
+        report_data = (
+            self._build_market_view(position_shares, target_weights)
+            if mode == "market"
+            else self._build_share_view(position_shares, target_weights)
+        )
+
+        return self._render(report_data, target_weights)
+
+    def _build_market_view(
+        self,
+        position_shares: Dict[str, Decimal],
+        target_weights: Dict[AssetClass, Decimal],
+    ) -> ReportData:
+        today = date.today()
+        class_values: Dict[AssetClass, Decimal] = {}
+        missing_nav: List[str] = []
+
+        for fund_code, shares in position_shares.items():
+            fund = self.fund_repo.get_fund(fund_code)
+            if not fund:
+                continue
+
+            nav = self.nav_provider.get_nav(fund_code, today)
+            if nav is None:
+                missing_nav.append(fund_code)
+                continue
+
+            value = shares * nav
+            asset_class = fund["asset_class"]
+            class_values[asset_class] = class_values.get(asset_class, Decimal("0")) + value
+
+        total_value = sum(class_values.values(), Decimal("0"))
+        class_weight: Dict[AssetClass, Decimal] = {}
+        if total_value > Decimal("0"):
+            for asset_class, value in class_values.items():
+                class_weight[asset_class] = value / total_value
+
+        deviation = calc_weight_difference(class_weight, target_weights)
+
+        return ReportData(
+            mode="market",
+            as_of=today,
+            total_value=total_value,
+            class_value=class_values,
+            class_weight=class_weight,
+            deviation=deviation,
+            missing_nav=missing_nav,
+        )
+
+    def _build_share_view(
+        self,
+        position_shares: Dict[str, Decimal],
+        target_weights: Dict[AssetClass, Decimal],
+    ) -> ReportData:
         class_shares: Dict[AssetClass, Decimal] = {}
         for fund_code, shares in position_shares.items():
             fund = self.fund_repo.get_fund(fund_code)
@@ -68,56 +118,50 @@ class GenerateDailyReport:
             asset_class = fund["asset_class"]
             class_shares[asset_class] = class_shares.get(asset_class, Decimal("0")) + shares
 
-        # 3. 计算总份额
         total_shares = sum(class_shares.values(), Decimal("0"))
-
-        # 4. 计算各资产类别权重（归一化）
         class_weight: Dict[AssetClass, Decimal] = {}
         if total_shares > Decimal("0"):
             for asset_class, shares in class_shares.items():
                 class_weight[asset_class] = shares / total_shares
 
-        # 5. 获取目标权重
-        target_weights = self.alloc_repo.get_target_weights()
-
-        # 6. 计算偏离
         deviation = calc_weight_difference(class_weight, target_weights)
 
-        # 7. 构造 ReportData
-        report_data = ReportData(
-            total_value=total_shares,  # 当前版本用总份额占位
+        return ReportData(
+            mode="shares",
+            as_of=date.today(),
+            total_value=total_shares,
             class_value=class_shares,
             class_weight=class_weight,
             deviation=deviation,
+            missing_nav=[],
         )
-
-        # 8. 渲染成文本
-        return self._render(report_data, target_weights)
 
     def _render(self, data: ReportData, target: Dict[AssetClass, Decimal]) -> str:
         """将 ReportData 渲染成文本格式。"""
-        today = date.today()
-        lines = []
+        lines: List[str] = []
 
-        lines.append(f"【持仓日报 {today}】\n")
-        lines.append(f"总份额：{data.total_value:.2f}\n")
+        mode_text = "市值" if data.mode == "market" else "份额"
+        lines.append(f"【持仓日报 {data.as_of} | 模式：{mode_text}】\n")
+
+        if data.mode == "market":
+            lines.append(f"总市值：{data.total_value:.2f}\n")
+        else:
+            lines.append(f"总份额：{data.total_value:.2f}\n")
+
         lines.append("\n资产配置：\n")
 
-        # 按资产类别输出（确保所有目标类别都显示）
         for asset_class in sorted(target.keys(), key=lambda x: x.value):
             actual_weight = data.class_weight.get(asset_class, Decimal("0"))
             target_weight = target[asset_class]
             dev = data.deviation.get(asset_class, Decimal("0"))
 
-            # 格式化权重为百分比
             actual_pct = actual_weight * 100
             target_pct = target_weight * 100
             dev_pct = dev * 100
 
-            # 判断状态
-            if dev > Decimal("0.05"):  # 超配超过 5%
+            if dev > Decimal("0.05"):
                 status = f"超配 +{dev_pct:.1f}%"
-            elif dev < Decimal("-0.05"):  # 低配超过 5%
+            elif dev < Decimal("-0.05"):
                 status = f"低配 {dev_pct:.1f}%"
             else:
                 status = "正常"
@@ -126,7 +170,6 @@ class GenerateDailyReport:
                 f"- {asset_class.value}：{actual_pct:.1f}% (目标 {target_pct:.1f}%，{status})\n"
             )
 
-        # 再平衡提示
         lines.append("\n⚠️ 再平衡提示：\n")
         has_rebalance_hint = False
         for asset_class, dev in data.deviation.items():
@@ -140,9 +183,13 @@ class GenerateDailyReport:
         if not has_rebalance_hint:
             lines.append("- 当前配置均衡，无需调整\n")
 
+        if data.mode == "market" and data.missing_nav:
+            lines.append("\nNAV 缺失（未计入市值）：\n")
+            for code in data.missing_nav:
+                lines.append(f"- {code}\n")
+
         return "".join(lines)
 
-    def send(self) -> bool:
-        """发送日报。"""
-        return self.sender.send(self.build())
-
+    def send(self, mode: str = "market") -> bool:
+        """发送日报。默认使用市值模式。"""
+        return self.sender.send(self.build(mode=mode))

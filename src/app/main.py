@@ -14,8 +14,9 @@ def parse_args() -> argparse.Namespace:
     """
     解析命令行参数。
 
-    子命令：buy / sell
-    公共参数：--fund-code（必需）、--amount（必需）、--date（可选，ISO 格式）
+    子命令：buy / sell / skip-dca
+    - buy/sell 公共参数：--fund-code（必需）、--amount（必需）、--date（可选，ISO 格式）
+    - skip-dca 参数：--fund-code（必需）、--date（可选，默认今天）
     """
     parser = argparse.ArgumentParser(
         prog="python -m src.app.main",
@@ -34,6 +35,11 @@ def parse_args() -> argparse.Namespace:
     sell_parser.add_argument("--fund-code", required=True, help="基金代码")
     sell_parser.add_argument("--amount", required=True, help="卖出金额（例如 500 或 500.50）")
     sell_parser.add_argument("--date", help="交易日期（格式：YYYY-MM-DD，默认今天）")
+
+    # skip-dca 子命令
+    skip_parser = subparsers.add_parser("skip-dca", help="跳过指定日期的定投")
+    skip_parser.add_argument("--fund-code", required=True, help="基金代码")
+    skip_parser.add_argument("--date", help="目标日期（格式：YYYY-MM-DD，默认今天）")
 
     return parser.parse_args()
 
@@ -73,7 +79,7 @@ def parse_amount(amount_str: str) -> Decimal:
 
 def main() -> int:
     """
-    CLI 入口：处理 buy/sell 命令。
+    CLI 入口：处理 buy / sell / skip-dca 命令。
 
     返回值：
     - 0：成功
@@ -83,50 +89,58 @@ def main() -> int:
     args = parse_args()
 
     if not args.command:
-        log("请指定命令：buy 或 sell")
+        log("请指定命令：buy / sell / skip-dca")
         log("使用 --help 查看帮助")
         return 4
 
     try:
-        # 解析参数
-        fund_code = args.fund_code
-        amount = parse_amount(args.amount)
-        trade_day = parse_date(args.date)
-        trade_type = args.command  # 'buy' or 'sell'
+        if args.command in {"buy", "sell"}:
+            fund_code = args.fund_code
+            amount = parse_amount(args.amount)
+            trade_day = parse_date(args.date)
+            trade_type = args.command
 
-        # 执行交易创建
-        with DependencyContainer() as container:
-            usecase = container.get_create_trade_usecase()
-            trade = usecase.execute(
-                fund_code=fund_code,
-                trade_type=trade_type,
-                amount=amount,
-                trade_day=trade_day,
+            with DependencyContainer() as container:
+                usecase = container.get_create_trade_usecase()
+                trade = usecase.execute(
+                    fund_code=fund_code,
+                    trade_type=trade_type,
+                    amount=amount,
+                    trade_day=trade_day,
+                )
+
+            confirm_date = get_confirm_date(trade.market, trade.trade_date)
+
+            log(
+                f"✅ 交易已创建：ID={trade.id} fund={trade.fund_code} type={trade.type} "
+                f"amount={trade.amount} date={trade.trade_date} confirm_date={confirm_date}"
             )
+            return 0
 
-        # 计算确认日期用于显示
-        confirm_date = get_confirm_date(trade.market, trade.trade_date)
+        if args.command == "skip-dca":
+            fund_code = args.fund_code
+            target_day = parse_date(args.date)
 
-        # 成功���出（完整摘要）
-        log(
-            f"✅ 交易已创建：ID={trade.id} fund={trade.fund_code} type={trade.type} "
-            f"amount={trade.amount} date={trade.trade_date} confirm_date={confirm_date}"
-        )
-        return 0
+            with DependencyContainer() as container:
+                usecase = container.get_skip_dca_usecase()
+                affected = usecase.execute(fund_code=fund_code, day=target_day)
+
+            log(f"✅ 已跳过 {target_day} 的定投：fund={fund_code}，影响 {affected} 条 pending 记录")
+            return 0
+
+        log(f"未知命令：{args.command}")
+        return 4
 
     except ValueError as err:
-        # 参数错误或业务逻辑错误
         log(f"❌ 错误：{err}")
         if "未知基金代码" in str(err):
             log("提示：请检查是否已在 funds 表中配置，或先运行 dev_seed_db")
         return 4
 
     except Exception as err:  # noqa: BLE001
-        # 未知错误
         log(f"❌ 未知错误：{err}")
         return 5
 
 
 if __name__ == "__main__":
     sys.exit(main())
-

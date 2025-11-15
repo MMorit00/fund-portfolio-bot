@@ -17,7 +17,4 @@ class SkipDcaForDate:
 
     def execute(self, *, fund_code: str, day: date) -> int:
         """返回被标记为 skipped 的条目数量。实现细节由仓储承担。"""
-        # 具体实现留在仓储层（例如：按 fund_code+date+type=pending 查询并更新）
-        # 这里仅做用例入口占位；由 Adapter 实现。
-        raise NotImplementedError
-
+        return self.trade_repo.skip_dca_for_date(fund_code, day)
