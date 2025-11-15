@@ -18,3 +18,12 @@
 - [ ] 盘中估值作为附加信息（不作为核心口径）
 - [ ] 自然语言 AI 接口（基于现有 UseCases）
 
+
+
+
+## 技术债 / 重构
+
+- [ ] 评估在 `adapters/db/sqlite` 层替换手写 SQL
+  - 保持 `core` / `usecases` 只依赖领域模型，不直接依赖 ORM
+  - 方案备选：在适配层引入 SQLAlchemy Core 或轻量 Query Builder
+  - 目标：减少硬编码 SQL 和重复 `_row_to_xxx`，提升可维护性与类型安全

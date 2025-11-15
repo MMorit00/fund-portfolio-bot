@@ -35,3 +35,4 @@
 - 交易表确认日持久化，`list_pending_to_confirm` 纯 SQL 过滤，避免 Python 额外遍历。
 - `position_shares` 逻辑在 Python 侧聚合，保证 Decimal 精度，不依赖 SQLite 浮点聚合。
 
+- 决策：短期（v0.1）继续使用 sqlite3 + 手写 SQL；后续在 adapters 层集中评估引入 SQLAlchemy Core/Query Builder 的可行性。
