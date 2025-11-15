@@ -36,3 +36,19 @@
 - `position_shares` 逻辑在 Python 侧聚合，保证 Decimal 精度，不依赖 SQLite 浮点聚合。
 
 - 决策：短期（v0.1）继续使用 sqlite3 + 手写 SQL；后续在 adapters 层集中评估引入 SQLAlchemy Core/Query Builder 的可行性。
+
+## 2025-11-15 依赖装配 & Job 入口完成
+
+### 完成内容
+- 实现 `app/wiring.py` 的 `DependencyContainer` 上下文管理器，统一管理 DB 连接、仓储、适配器、UseCase 的生命周期。
+- 实现 `LocalNavProvider`（方案 A）：从 NavRepo 读取本地 NAV，不做 HTTP 抓取，满足 v0.1 基于 seed/手工数据的需求。
+- 完成 3 个 Job 装配：
+  - `jobs/run_dca.py`：调用 `RunDailyDca`，生成当日定投交易
+  - `jobs/confirm_trades.py`：调用 `ConfirmPendingTrades`，确认到期交易份额
+  - `jobs/daily_report.py`：调用 `GenerateDailyReport`，生成并推送日报
+- 使用 `dev_seed_db.py` 验证完整流程：创建交易 → 模拟确认 → 查看结果（1000 ÷ 1.5 = 666.67 份）✅
+
+### 决策
+- NAV 策略采用方案 A（本地读取）：LocalNavProvider 仅从 NavRepo 读取，不做实时抓取，适合 MVP 阶段快速验证。
+- 所有 Job 统一使用 `with DependencyContainer() as container:` 模式，确保 DB 连接正确关闭。
+- Job 日志格式：开始/结束标记 + emoji 状态（✅/⚠️/❌），便于 cron/Actions 输出查看。

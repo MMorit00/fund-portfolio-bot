@@ -1,12 +1,12 @@
 # Roadmap（版本规划 & 大 TODO）
 
 ## v0.1（当前 MVP）
-- [ ] 基金 & 资产类别管理（FundRepo / AllocConfig）
-- [ ] 交易记录：`/buy` `/sell`（CreateTrade）
-- [ ] 定投计划：生成 pending 与跳过（RunDailyDca / SkipDcaForDate）
-- [ ] 官方净值抓取（NavProvider + NavRepo）
-- [ ] T+1/T+2 确认（ConfirmPendingTrades）
-- [ ] 日报（GenerateDailyReport + Discord Webhook）
+- [x] 基金 & 资产类别管理（FundRepo / AllocConfig）
+- [ ] 交易记录：`/buy` `/sell`（CreateTrade）—— UseCase 已完成，CLI 入口待实现
+- [x] 定投计划：生成 pending 与跳过（RunDailyDca / SkipDcaForDate）—— RunDailyDca 已完成并装配
+- [x] 官方净值抓取（NavProvider + NavRepo）—— 本地 NavProvider 已完成（方案 A）
+- [x] T+1/T+2 确认（ConfirmPendingTrades）—— 已完成并装配
+- [ ] 日报（GenerateDailyReport + Discord Webhook）—— 骨架已完成，内容待实现
 
 ## v0.2（计划）
 - [ ] 周报 / 月报（基础版）
