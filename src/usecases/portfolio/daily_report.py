@@ -17,8 +17,13 @@ class ReportData:
 
     口径：
     - 仅统计“已确认份额”，不包含当日 pending 交易；
-    - 市值模式使用“当日官方 NAV”，`nav <= 0` 视为缺失；
-    - 缺失 NAV 的基金不计入市值与权重分母，并在 missing_nav 中列出。
+    - 市值模式仅使用“当日官方 NAV”，`nav <= 0` 视为缺失；
+    - 缺失 NAV 的基金不计入市值与权重分母，并在 missing_nav 中列出；
+    - 不做“最近交易日 NAV”回退（v0.2 严格版），因此当日总市值可能被低估。
+
+    统计字段（仅在市值模式下有意义）：
+    - total_funds_in_position：本次参与市值统计且在 fund_repo 中有配置的持仓基金数；
+    - funds_with_nav：当日拿到有效 NAV（>0）的基金数量。
     """
 
     mode: str  # "market" 或 "shares"
@@ -28,6 +33,9 @@ class ReportData:
     class_weight: Dict[AssetClass, Decimal]
     deviation: Dict[AssetClass, Decimal]
     missing_nav: List[str]
+    # 统计字段：市值模式有效；份额模式下为 0
+    total_funds_in_position: int
+    funds_with_nav: int
 
 
 class GenerateDailyReport:
@@ -38,6 +46,7 @@ class GenerateDailyReport:
     - 仅统计“已确认份额”，不包含当日 pending；
     - 市值模式按“确认为准的份额 × 当日官方 NAV”计算；`nav <= 0` 视为缺失并在文末列出；
     - 缺失 NAV 的基金不参与市值累计与权重分母；
+    - v0.2 严格版不做 NAV 回退；
     - 再平衡提示阈值当前固定为 ±5%（后续可配置）。
 
     模式：
@@ -91,16 +100,25 @@ class GenerateDailyReport:
         """
         构造市值视图数据：按“确认为准的份额 × 当日 NAV”聚合市值与权重。
 
-        规则：`nav is None or nav <= 0` 视为缺失，该基金不计入市值/权重，并记录在 missing_nav。
+        规则（v0.2 严格版）：
+        - 仅使用当日 NAV；`nav is None or nav <= 0` 视为缺失；
+        - 缺失基金不计入市值与权重，代码记录在 missing_nav；
+        - 额外统计参与基金数与当日有效 NAV 基金数，用于文案提示。
         """
         today = date.today()
         class_values: Dict[AssetClass, Decimal] = {}
         missing_nav: List[str] = []
+        total_funds_in_position = 0
+        funds_with_nav = 0
 
         for fund_code, shares in position_shares.items():
             fund = self.fund_repo.get_fund(fund_code)
             if not fund:
+                # 未配置基金：不计入分母，也不参与市值与缺失列表
                 continue
+
+            # 至此可确认该基金在 fund_repo 中有配置，计入分母
+            total_funds_in_position += 1
 
             nav = self.nav_provider.get_nav(fund_code, today)
             if nav is None or nav <= Decimal("0"):
@@ -110,6 +128,7 @@ class GenerateDailyReport:
             value = shares * nav
             asset_class = fund["asset_class"]
             class_values[asset_class] = class_values.get(asset_class, Decimal("0")) + value
+            funds_with_nav += 1
 
         total_value = sum(class_values.values(), Decimal("0"))
         class_weight: Dict[AssetClass, Decimal] = {}
@@ -127,6 +146,8 @@ class GenerateDailyReport:
             class_weight=class_weight,
             deviation=deviation,
             missing_nav=missing_nav,
+            total_funds_in_position=total_funds_in_position,
+            funds_with_nav=funds_with_nav,
         )
 
     def _build_share_view(
@@ -161,6 +182,8 @@ class GenerateDailyReport:
             class_weight=class_weight,
             deviation=deviation,
             missing_nav=[],
+            total_funds_in_position=0,
+            funds_with_nav=0,
         )
 
     def _render(self, data: ReportData, target: Dict[AssetClass, Decimal]) -> str:
@@ -215,6 +238,10 @@ class GenerateDailyReport:
             lines.append("- 当前配置均衡，无需调整\n")
 
         if data.mode == "market" and data.missing_nav:
+            # v0.2 严格版提示：当日 NAV 缺失会导致市值低估
+            lines.append(
+                f"\n提示：今日 {data.funds_with_nav}/{data.total_funds_in_position} 只基金有有效 NAV，总市值可能低估。\n"
+            )
             lines.append("\nNAV 缺失（未计入市值）：\n")
             for code in data.missing_nav:
                 lines.append(f"- {code}\n")

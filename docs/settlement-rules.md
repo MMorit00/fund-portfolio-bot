@@ -29,6 +29,20 @@
 - `SqliteTradeRepo.add(...)` 写入 `confirm_date` 时使用日历
 - `ConfirmPendingTrades` 确认时仅取 `pricing_date` 的 NAV；缺失/<=0 则跳过待重试
 
+## NAV 策略 v0.2（严格版）
+
+- 确认用 NAV：
+  - 仅使用“定价日 NAV”（`pricing_date = next_trading_day_or_self(trade_date)`）。
+  - `ConfirmPendingTrades` 在定价日 NAV 缺失或 `<= 0` 时直接跳过，保留为 pending，后续可重试；不做任何回退。
+- 报表/状态视图用 NAV：
+  - 仅使用“当日 NAV”（`day = date.today()`）。
+  - 当日 NAV 缺失或 `<= 0` 的基金不计入当日市值与权重；在“NAV 缺失”区块列出基金代码。
+  - 不做“最近交易日 NAV”回退；报告文案会提示“总市值可能低估”。
+
+说明：
+- 该口径最大程度贴合官方净值的时间口径，避免引入灰色估值与难以解释的回退规则；
+- 未来若引入“柔性回退视图”，将以新版本（v0.3+）提供独立开关与清晰标注，不影响 v0.2 的严格口径。
+
 ## 期望的目标行为（后续版本）
 - 引入“交易日历表”，覆盖法定节假日与特殊交易日。
 - 支持按市场/基金类型的差异化确认规则：
