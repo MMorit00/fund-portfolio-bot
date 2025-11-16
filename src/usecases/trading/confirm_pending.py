@@ -11,10 +11,10 @@ class ConfirmPendingTrades:
     """
     将到达确认日的 pending 交易按官方净值确认份额。
 
-    MVP 简化：
-    - 若确认日无净值，跳过（入口层可重试）；
-    - 份额 = 金额 / 当日净值；
-    - 份额/净值均使用 Decimal。
+    口径（v0.1 修订）：
+    - 首选“交易日 NAV”确认（份额 = 金额 / 交易日 NAV），符合公募申购定价规则；
+    - 若交易日 NAV 缺失或 <= 0，则回退到“确认日 NAV”；
+    - 两者均缺失/无效，则跳过（后续可重试）。
     """
 
     def __init__(self, trade_repo: TradeRepo, nav_provider: NavProvider) -> None:
@@ -34,13 +34,15 @@ class ConfirmPendingTrades:
             if confirm_day != today:
                 continue
 
-            nav = self.nav_provider.get_nav(t.fund_code, today)
+            # 首选交易日 NAV，兼容缺失时回退到确认日 NAV
+            nav = self.nav_provider.get_nav(t.fund_code, t.trade_date)
             if nav is None or nav <= Decimal("0"):
-                # 无净值数据，留待后续重试
-                continue
+                nav = self.nav_provider.get_nav(t.fund_code, today)
+                if nav is None or nav <= Decimal("0"):
+                    # 无净值数据，留待后续重试
+                    continue
 
             shares = (t.amount / nav)
             self.trade_repo.confirm(t.id or 0, shares, nav)
             confirmed_count += 1
         return confirmed_count
-

@@ -6,7 +6,7 @@
 - [x] 定投计划：生成 pending 与跳过（RunDailyDca / SkipDcaForDate）—— RunDailyDca 已完成并装配
 - [x] 官方净值抓取（NavProvider + NavRepo）—— 本地 NavProvider 已完成（方案 A）
 - [x] T+1/T+2 确认（ConfirmPendingTrades）—— 已完成并装配
-- [x] 日报（GenerateDailyReport + Discord Webhook）—— 轻量版（基于份额）已完成，后续升级市值精度
+- [x] 日报（GenerateDailyReport + Discord Webhook）—— 市值版（本地 NAV，缺失跳过并标注）已完成，保留份额模式用于兼容
 
 ### 当前功能一览表（v0.1）
 
@@ -16,7 +16,8 @@
 - 定投跳过：人工指定基金在某日的定投 pending 交易标记为 skipped；状态：已完成；入口：CLI `skip-dca`（`src/app/main.py`），实现：`src/usecases/dca/skip_date.py`、`src/adapters/db/sqlite/trade_repo.py`。
 - 本地净值提供（方案 A）：从本地 NAV 表读取净值，不做 HTTP 抓取；状态：已完成；主要实现：`src/app/wiring.py` 中 `LocalNavProvider`，`src/adapters/db/sqlite/nav_repo.py`。
 - 交易确认（T+N）：按确认日规则将 pending 交易转为已确认；状态：已完成；主要实现：`src/usecases/trading/confirm_pending.py`、`src/jobs/confirm_trades.py`。
-- 日报生成（份额版）：基于份额计算资产配置并生成文本日报；状态：已完成（轻量版，市值精度待改进）；主要实现：`src/usecases/portfolio/daily_report.py`、`src/jobs/daily_report.py`。
+- 日报生成（市值/份额双模式）：基于市值优先（使用 NAV），缺失 NAV 会跳过并提示，保留份额模式；状态：已完成；主要实现：`src/usecases/portfolio/daily_report.py`、`src/jobs/daily_report.py`。
+- 状态查看（终端）：CLI `status` 输出当前市值视图；状态：已完成；入口：`src/app/main.py`。
 - Discord 推送占位实现：通过 Discord Webhook 发送文本（当前为占位/打印）；状态：已完成占位实现；主要实现：`src/adapters/notify/discord_report.py`。
 - SQLite 初始化与种子脚本：管理 schema 初始化，提供备份与种子数据脚本；状态：已完成；主要实现：`src/adapters/db/sqlite/db_helper.py`、`scripts/dev_seed_db.py`、`scripts/backup_db.sh`。
 
@@ -49,10 +50,10 @@
     - 添加确认重试机制，处理净值数据缺失
     - 完善基金模型，支持不同基金类型的确认规则
 
-- [ ] **[重要] 日报计算精度问题**
-  - **问题**：当前 `GenerateDailyReport` 基于份额计算权重，不是基于市值
-  - **影响**：配置偏离分析不准确，再平衡建议可能错误
+- [ ] **[重要] 日报计算精度问题（市值版局限）**
+  - **问题**：市值依赖 NAV，当前仅使用本地当日 NAV；若缺失或 NAV<=0 会被跳过，导致总市值低估；未覆盖历史/实时 NAV。
+  - **影响**：配置偏离和再平衡建议在 NAV 缺失时不准确；跨日滚动或补录 NAV 后需要重算。
   - **改进方向**：
-    - 集成实时净值数据进行市值计算
-    - 缓存市值计算结果提升性能
-    - 提供份额视图和市值视图两种模式
+    - 支持多日 NAV 回填与重算，提供最近可用 NAV 或前一交易日回退策略。
+    - 引入外部 NAV 数据源/缓存，提升覆盖率与性能。
+    - 保留份额视图作为兜底对照，允许在 NAV 缺失时自动切换或同时输出。

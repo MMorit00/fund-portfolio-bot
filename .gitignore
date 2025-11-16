@@ -166,11 +166,17 @@ $RECYCLE.BIN/
 *~
 
 # Project-specific data files
+# Default DB and WAL/SHM artifacts
 data/portfolio.db
 data/portfolio.db-journal
 data/portfolio.db-wal
 data/portfolio.db-shm
 data/backups/
+# Any other SQLite DBs placed under data/ (e.g., tmp.db during local tests)
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
 
 # Temporary files
 *.tmp

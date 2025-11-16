@@ -14,9 +14,10 @@ def parse_args() -> argparse.Namespace:
     """
     解析命令行参数。
 
-    子命令：buy / sell / skip-dca
+    子命令：buy / sell / skip-dca / status
     - buy/sell 公共参数：--fund-code（必需）、--amount（必需）、--date（可选，ISO 格式）
     - skip-dca 参数：--fund-code（必需）、--date（可选，默认今天）
+    - status 参数：无（输出当前市值视图）
     """
     parser = argparse.ArgumentParser(
         prog="python -m src.app.main",
@@ -40,6 +41,8 @@ def parse_args() -> argparse.Namespace:
     skip_parser = subparsers.add_parser("skip-dca", help="跳过指定日期的定投")
     skip_parser.add_argument("--fund-code", required=True, help="基金代码")
     skip_parser.add_argument("--date", help="目标日期（格式：YYYY-MM-DD，默认今天）")
+
+    subparsers.add_parser("status", help="打印当前持仓市值与偏离")
 
     return parser.parse_args()
 
@@ -79,7 +82,7 @@ def parse_amount(amount_str: str) -> Decimal:
 
 def main() -> int:
     """
-    CLI 入口：处理 buy / sell / skip-dca 命令。
+    CLI 入口：处理 buy / sell / skip-dca / status 命令。
 
     返回值：
     - 0：成功
@@ -89,7 +92,7 @@ def main() -> int:
     args = parse_args()
 
     if not args.command:
-        log("请指定命令：buy / sell / skip-dca")
+        log("请指定命令：buy / sell / skip-dca / status")
         log("使用 --help 查看帮助")
         return 4
 
@@ -126,6 +129,13 @@ def main() -> int:
                 affected = usecase.execute(fund_code=fund_code, day=target_day)
 
             log(f"✅ 已跳过 {target_day} 的定投：fund={fund_code}，影响 {affected} 条 pending 记录")
+            return 0
+
+        if args.command == "status":
+            with DependencyContainer() as container:
+                usecase = container.get_daily_report_usecase()
+                text = usecase.build(mode="market")
+            log(text)
             return 0
 
         log(f"未知命令：{args.command}")

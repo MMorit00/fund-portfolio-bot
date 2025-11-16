@@ -79,7 +79,7 @@ class GenerateDailyReport:
                 continue
 
             nav = self.nav_provider.get_nav(fund_code, today)
-            if nav is None:
+            if nav is None or nav <= Decimal("0"):
                 missing_nav.append(fund_code)
                 continue
 

@@ -23,7 +23,7 @@ v0.1 关注基金、交易、净值、定投与资产配置，全部持久化在
 | status | TEXT NOT NULL | `pending` / `confirmed` / `skipped` |
 | market | TEXT NOT NULL | `A` or `QDII` |
 | shares | TEXT | 确认后份额 |
-| nav | TEXT | 确认时净值 |
+| nav | TEXT | 用于确认的净值（首选交易日 NAV；缺失时可回退到确认日 NAV） |
 | remark | TEXT | 备注 |
 | confirm_date | TEXT NOT NULL | 根据市场 `get_confirm_date` 预先写入，便于 SQL 过滤 |
 
@@ -57,4 +57,3 @@ v0.1 关注基金、交易、净值、定投与资产配置，全部持久化在
 | value | TEXT NOT NULL | 版本、迁移标识等 |
 
 当前仅记录 `schema_version`。如需迁移，可在 helper 初始化时读取/对比该值。
-

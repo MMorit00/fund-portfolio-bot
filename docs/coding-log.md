@@ -93,6 +93,25 @@
 - v0.1 仅更新状态为 `skipped`，不记录原因/操作人；未来需要原因时可复用 trades.remark。
 - 跳过范围明确：仅当日 pending 买入；不影响卖出、其他日期或已确认记录。
 
+## 2025-11-17 日报市值版 & 状态 CLI
 
+### 完成内容
+- 日报升级为市值视图优先：在 `GenerateDailyReport` 中集成 `NavProvider`，市值=份额×NAV，缺失 NAV 的基金会被跳过并提示；保留份额模式兼容。
+- `daily_report` Job 默认发送市值版（mode="market"）。
+- 新增终端 `status` 子命令：`python -m src.app.main status`，直接输出当前市值视图。
+- 添加确认规则设计草稿文档：`docs/settlement-rules.md`，记录现状与未来交易日历/确认策略规划。
+
+### 决策
+- NAV 来源继续使用本地 NavRepo（方案 A），缺失 NAV 时不估算，提示缺失列表。
+- 确认规则后续演进：引入交易日历表与 per-market 配置，当前保持周末顺延的 T+1/T+2 简化逻辑。
+
+## 2025-11-17 确认份额口径修订
+
+### 完成内容
+- `ConfirmPendingTrades` 调整为：首选“交易日 NAV”计算份额；若缺失或<=0，回退到“确认日 NAV”；均无效则跳过。
+- 同步文档：`docs/sql-schema-v0.1.md` 将 `trades.nav` 描述改为“用于确认的净值（首选交易日 NAV；可回退确认日）”。
+
+### 原因
+- 公募申购定价以交易日净值为准；之前实现按确认日 NAV 会与数据写口径/业务口径不一致。
 
 

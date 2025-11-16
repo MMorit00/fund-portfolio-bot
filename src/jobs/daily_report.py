@@ -12,7 +12,7 @@ def main() -> int:
 
         with DependencyContainer() as container:
             usecase = container.get_daily_report_usecase()
-            success = usecase.send()
+            success = usecase.send(mode="market")
             if success:
                 log("✅ 日报发送成功")
             else:
@@ -27,4 +27,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
