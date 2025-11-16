@@ -21,11 +21,11 @@ package "src/jobs\n（驱动适配器）" {
 }
 
 package "src/app\n（启动与装配）" {
-  component "App\n- main.py\n- wiring.py\n- config.py\n- log.py" as App
+  component "App\n- main.py (CLI: buy/sell/skip-dca/status)\n- wiring.py\n- config.py\n- log.py\n- LocalNavProvider (本地 NAV 实现)" as App
 }
 
 package "src/usecases\n（用例 + 端口）" {
-  component "Usecases\n- trading/create_trade.py\n- trading/confirm_pending.py\n- dca/run_daily.py\n- dca/skip_date.py\n- portfolio/daily_report.py\n- portfolio/status.py" as Usecases
+  component "Usecases\n- trading/create_trade.py\n- trading/confirm_pending.py\n- dca/run_daily.py\n- dca/skip_date.py\n- portfolio/daily_report.py" as Usecases
   component "Ports (Protocol)\n- TradeRepo\n- FundRepo\n- NavProvider\n- NavRepo\n- DcaPlanRepo\n- AllocConfigRepo\n- ReportSender\n(定义于 ports.py)" as Ports
 }
 
@@ -34,7 +34,7 @@ package "src/core\n（领域模型与规则）" {
 }
 
 package "src/adapters\n（被驱动适配器）" {
-  component "Adapters\n- db/sqlite/trade_repo.py\n- db/sqlite/nav_repo.py\n- datasources/eastmoney_nav.py\n- notify/discord_report.py" as Adapters
+  component "Adapters\n- db/sqlite/trade_repo.py\n- db/sqlite/fund_repo.py\n- db/sqlite/nav_repo.py\n- db/sqlite/dca_plan_repo.py\n- db/sqlite/alloc_config_repo.py\n- datasources/eastmoney_nav.py (占位)\n- notify/discord_report.py" as Adapters
 }
 
 ' ============================
@@ -57,6 +57,12 @@ Adapters ..> Ports : 实现 Protocol（仓储/数据源/通知）
 ' app 在装配时依赖适配器实现
 App ..> Adapters : wiring 中创建具体实现
 
+note right of App
+  NavProvider 实现：LocalNavProvider\n
+  - 从 NavRepo 读取本地 NAV（方案 A）\n
+  - 不做网络抓取
+end note
+
 ' ============================
 ' 文字说明
 ' ============================
@@ -72,9 +78,18 @@ note as Flow
   1) jobs/fetch_navs → （未来）Usecase → Adapters(抓/存净值)\n
   2) jobs/run_dca → RunDailyDca → TradeRepo(新增 pending)\n
   3) jobs/confirm_trades → ConfirmPendingTrades → TradeRepo 确认份额\n
-  4) jobs/daily_report → GenerateDailyReport → ReportSender(Discord)
+  4) jobs/daily_report → GenerateDailyReport(mode=market) → ReportSender(Discord)\n
+  5) app/main.py status → GenerateDailyReport(mode=market)（终端查看）
 end note
 
 Flow -[hidden]- Jobs
+
+note bottom of Usecases
+  GenerateDailyReport：\n
+  - 市值视图：份额×当日 NAV；缺失/NAV<=0 列入缺失并跳过\n
+  - 份额视图：保留兼容模式\n
+  ConfirmPendingTrades：\n
+  - 首选交易日 NAV；缺失回退确认日 NAV；均无效则跳过
+end note
 
 @enduml
