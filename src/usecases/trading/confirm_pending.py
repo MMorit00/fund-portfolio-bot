@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-
-from src.core.trading.settlement import get_confirm_date
+from src.core.trading.calendar import TradingCalendar
 from src.usecases.ports import NavProvider, TradeRepo
 
 
@@ -11,15 +10,17 @@ class ConfirmPendingTrades:
     """
     将到达确认日的 pending 交易按官方净值确认份额。
 
-    口径（v0.1 修订）：
-    - 首选“交易日 NAV”确认（份额 = 金额 / 交易日 NAV），符合公募申购定价规则；
-    - 若交易日 NAV 缺失或 <= 0，则回退到“确认日 NAV”；
-    - 两者均缺失/无效，则跳过（后续可重试）。
+    口径（v0.2）：
+    - 仅使用“定价日 NAV”（pricing_date = next_trading_day_or_self(trade_date)），
+      份额 = 金额 / 定价日 NAV；
+    - 若定价日 NAV 缺失或 <= 0，则跳过，留待后续重试；
+    - 确认日来源于 DB 预写的 confirm_date（写入时按当时规则计算），此处不再重算。
     """
 
-    def __init__(self, trade_repo: TradeRepo, nav_provider: NavProvider) -> None:
+    def __init__(self, trade_repo: TradeRepo, nav_provider: NavProvider, calendar: TradingCalendar) -> None:
         self.trade_repo = trade_repo
         self.nav_provider = nav_provider
+        self.calendar = calendar
 
     def execute(self, *, today: date) -> int:
         """返回本次确认成功的交易数量。"""
@@ -30,17 +31,12 @@ class ConfirmPendingTrades:
 
         confirmed_count = 0
         for t in to_confirm:
-            confirm_day = get_confirm_date(t.market, t.trade_date)
-            if confirm_day != today:
-                continue
-
-            # 首选交易日 NAV，兼容缺失时回退到确认日 NAV
-            nav = self.nav_provider.get_nav(t.fund_code, t.trade_date)
+            # 仅使用定价日 NAV（定价日=交易日或其后首个交易日）；缺失/无效则跳过
+            pricing_day = self.calendar.next_trading_day_or_self(t.trade_date, market=t.market)
+            nav = self.nav_provider.get_nav(t.fund_code, pricing_day)
             if nav is None or nav <= Decimal("0"):
-                nav = self.nav_provider.get_nav(t.fund_code, today)
-                if nav is None or nav <= Decimal("0"):
-                    # 无净值数据，留待后续重试
-                    continue
+                # 无净值数据，留待后续重试
+                continue
 
             shares = (t.amount / nav)
             self.trade_repo.confirm(t.id or 0, shares, nav)

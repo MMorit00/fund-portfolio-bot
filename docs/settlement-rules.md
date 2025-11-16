@@ -1,4 +1,4 @@
-# 交易日历与确认规则（设计草稿）
+# 交易日历与确认规则（v0.2）
 
 ## 现状（v0.1 实现）
 - 函数：`src/core/trading/settlement.get_confirm_date`
@@ -8,6 +8,26 @@
 - 假设：
   - 仅处理周末，不处理法定节假日。
   - 不考虑基金类型差异、交易时间截点等复杂因素。
+
+## v0.2 规则（已实现）
+- 接口：`get_confirm_date(market, trade_date, calendar)`（纯函数），`TradingCalendar`（协议）
+- 市场范围：仅 `A` 与 `QDII`
+- 确认 lag：`A=1`、`QDII=2`（不做基金级覆盖）
+- 定价日：`pricing_date = calendar.next_trading_day_or_self(trade_date)`
+- 确认日：`confirm_date = calendar.next_trading_day(pricing_date, offset=lag)`
+- 交易日历实现：`SimpleTradingCalendar`（仅周末为非交易日，不含节假日表）
+- NAV 使用（确认用例）：仅取 `pricing_date` 的官方净值；若缺失或 `<=0`，则跳过待重试
+
+差异说明：
+- 相比 v0.1（基于 `trade_date + lag` 再周末顺延），当“下单日在周末”时：
+  - `A` 基金确认日落在下周二（更符合“定价日=T+1”的实务口径）；
+  - `QDII` 基金确认日随之后移（定价日+2）。
+
+接口落点：
+- `src/core/trading/calendar.py` 定义 `TradingCalendar` 与 `SimpleTradingCalendar`
+- `src/core/trading/settlement.py` 定义新版 `get_confirm_date`
+- `SqliteTradeRepo.add(...)` 写入 `confirm_date` 时使用日历
+- `ConfirmPendingTrades` 确认时仅取 `pricing_date` 的 NAV；缺失/<=0 则跳过待重试
 
 ## 期望的目标行为（后续版本）
 - 引入“交易日历表”，覆盖法定节假日与特殊交易日。
@@ -29,18 +49,16 @@
    - 配置表（可放 `meta` 或独立表）：`market` -> `confirm_lag` (int)，`strategy` (如 `next_trading_day`)、`timezone`。
    - 每个基金可从其 `market` 继承，也可单独覆盖。
 
-3) 计算逻辑（伪代码）
-   - 输入：`market`, `trade_date`, 可选 `fund_code`。
+3) 计算逻辑（设计基线）
+   - 输入：`market`, `trade_date`
    - 步骤：
-     1. 读取 `confirm_lag`，初始确认日期 = `trade_date + lag`。
-     2. 用交易日历求 `pricing_date = next_trading_day_or_self(trade_date)`。
-     3. 用交易日历判断确认日期是否为交易日；若不是，按 `next_trading_day` 策略顺延。
-     4. 返回 `confirm_date`；在确认时优先读取 `pricing_date` 的 NAV。
+     1. `pricing_date = next_trading_day_or_self(trade_date)`
+     2. `confirm_date = next_trading_day(pricing_date, offset=lag(market))`
+     3. 确认时读取 `pricing_date` NAV；若缺失/无效则跳过（不做多级回退）
 
 4) NAV 缺失与确认交互
    - 若确认日缺 NAV：标记该笔交易为“待确认NAV”状态，后续补齐 NAV 时再确认；或在日报/监控里提示缺失。
 
 ## 迁移路径
-- v0.1 维持当前简化规则，不影响现有流程。
-- v0.2 起草交易日历表结构与数据导入脚本；保留旧逻辑作为 fallback。
-- 在 `TradeRepo` 增加“待确认NAV”状态处理时机（未来任务）。
+- v0.2 已切换为“定价日 + lag”的确认口径，并引入可替换日历实现；仍仅处理周末。
+- 未来：引入节假日表与更丰富的策略（多市场并集、基金级覆盖、回退最多 N 个交易日等）。

@@ -1,26 +1,25 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
-from typing import Literal
+from datetime import date
+
+from src.core.trade import MarketType
+from src.core.trading.calendar import TradingCalendar
 
 
-MarketType = Literal["A", "QDII"]
-
-
-def get_confirm_date(market: MarketType, trade_date: date) -> date:
+def get_confirm_date(market: MarketType, trade_date: date, calendar: TradingCalendar) -> date:
     """
-    返回该笔交易的确认日期（MVP 仅处理工作日简单规则）。
+    计算确认日期（v0.2）：基于“定价日 + lag”的规则。
 
-    - A 股：T+1（若遇周末顺延到下一个周一）
-    - QDII：T+2（若遇周末顺延到下一个周一/周二）
+    - 定价日：pricing_date = calendar.next_trading_day_or_self(trade_date)
+    - lag：A=1，QDII=2（v0.2 不做基金级覆盖）
+    - 确认日：confirm_date = calendar.next_trading_day(pricing_date, offset=lag)
 
-    TODO-holiday: 后续补充法定节假日顺延规则与交易日历。
+    说明：
+    - 仅处理周末为非交易日；法定节假日留待后续通过可替换的 TradingCalendar 支持。
+    - 相比 v0.1（基于 trade_date + lag 再周末顺延），周末下单的 A 基金会落到周二确认（更贴近实务）。
     """
 
-    offset = 1 if market == "A" else 2
-    d = trade_date + timedelta(days=offset)
-    # 简化：周六/周日顺延到下周一
-    while d.weekday() >= 5:  # 5: Saturday, 6: Sunday
-        d = d + timedelta(days=1)
-    return d
-
+    lag = 1 if market == "A" else 2
+    pricing_date = calendar.next_trading_day_or_self(trade_date, market=market)
+    confirm_date = calendar.next_trading_day(pricing_date, market=market, offset=lag)
+    return confirm_date

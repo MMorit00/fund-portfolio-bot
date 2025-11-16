@@ -25,6 +25,7 @@ from src.core.trade import Trade
 from src.core.trading.settlement import get_confirm_date
 from src.usecases.trading.confirm_pending import ConfirmPendingTrades
 from src.app.wiring import LocalNavProvider
+from src.core.trading.calendar import SimpleTradingCalendar
 
 
 def prev_business_day(d: date, n: int = 1) -> date:
@@ -44,7 +45,8 @@ def main() -> None:
     conn = helper.get_connection()
 
     fund_repo = SqliteFundRepo(conn)
-    trade_repo = SqliteTradeRepo(conn)
+    calendar = SimpleTradingCalendar()
+    trade_repo = SqliteTradeRepo(conn, calendar)
     nav_repo = SqliteNavRepo(conn)
     dca_repo = SqliteDcaPlanRepo(conn)
     alloc_repo = SqliteAllocConfigRepo(conn)
@@ -108,14 +110,14 @@ def main() -> None:
     print(f"Inserted trade id={saved.id}, trade_date={trade_day_a}, confirm_date preset")
 
     # Print pending list for confirm_date
-    confirm_day = get_confirm_date(trade.market, trade_day_a)
+    confirm_day = get_confirm_date(trade.market, trade_day_a, calendar)
     pending = trade_repo.list_pending_to_confirm(confirm_day)
     print(f"Pending with confirm_date={confirm_day.isoformat()}: {len(pending)}")
 
     # 自动执行一次确认，便于演示：默认模拟"在确认日"运行（对任意实际日期可复现）
     # 开关：SEED_SIMULATE_CONFIRM（优先）或兼容 SEED_CONFIRM（均默认开启）
     if os.getenv("SEED_SIMULATE_CONFIRM", os.getenv("SEED_CONFIRM", "1")) == "1":
-        confirmed = ConfirmPendingTrades(trade_repo, LocalNavProvider(nav_repo)).execute(today=confirm_day)
+        confirmed = ConfirmPendingTrades(trade_repo, LocalNavProvider(nav_repo), calendar).execute(today=confirm_day)
         print(f"Confirmed on confirm_day({confirm_day}): {confirmed}")
 
     positions = trade_repo.position_shares()

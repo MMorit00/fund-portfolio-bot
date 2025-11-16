@@ -13,6 +13,7 @@ from src.adapters.db.sqlite.nav_repo import SqliteNavRepo
 from src.adapters.db.sqlite.trade_repo import SqliteTradeRepo
 from src.adapters.notify.discord_report import DiscordReportSender
 from src.app import config
+from src.core.trading.calendar import SimpleTradingCalendar
 from src.usecases.dca.run_daily import RunDailyDca
 from src.usecases.dca.skip_date import SkipDcaForDate
 from src.usecases.portfolio.daily_report import GenerateDailyReport
@@ -55,6 +56,7 @@ class DependencyContainer:
         # 适配器实例
         self.nav_provider: Optional[LocalNavProvider] = None
         self.discord_sender: Optional[DiscordReportSender] = None
+        self.calendar: SimpleTradingCalendar = SimpleTradingCalendar()
 
     def __enter__(self) -> "DependencyContainer":
         """初始化数据库连接与仓储。"""
@@ -64,12 +66,12 @@ class DependencyContainer:
 
         # 初始化仓储
         self.fund_repo = SqliteFundRepo(self.conn)
-        self.trade_repo = SqliteTradeRepo(self.conn)
+        # 初始化适配器与仓储
+        self.trade_repo = SqliteTradeRepo(self.conn, self.calendar)
         self.nav_repo = SqliteNavRepo(self.conn)
         self.dca_repo = SqliteDcaPlanRepo(self.conn)
         self.alloc_repo = SqliteAllocConfigRepo(self.conn)
 
-        # 初始化适配器
         self.nav_provider = LocalNavProvider(self.nav_repo)
         self.discord_sender = DiscordReportSender()
 
@@ -102,7 +104,7 @@ class DependencyContainer:
         """获取 ConfirmPendingTrades UseCase。"""
         if not self.trade_repo or not self.nav_provider:
             raise RuntimeError("容器未初始化，请在 with 块中使用")
-        return ConfirmPendingTrades(self.trade_repo, self.nav_provider)
+        return ConfirmPendingTrades(self.trade_repo, self.nav_provider, self.calendar)
 
     def get_daily_report_usecase(self) -> GenerateDailyReport:
         """获取 GenerateDailyReport UseCase。"""

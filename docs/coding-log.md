@@ -114,4 +114,16 @@
 ### 原因
 - 公募申购定价以交易日净值为准；之前实现按确认日 NAV 会与数据写口径/业务口径不一致。
 
+## 2025-11-18 交易确认规则 v0.2（TradingCalendar + 定价日）
 
+### 完成内容
+- 引入 `TradingCalendar` 协议与 `SimpleTradingCalendar`（仅周末非交易日）。
+- 重写 `get_confirm_date(market, trade_date, calendar)`：确认日=定价日+lag（A=1，QDII=2）。
+- `SqliteTradeRepo.add(...)` 写 confirm_date 时使用日历；
+- `ConfirmPendingTrades` 取 NAV：仅使用定价日（`<=0` 视为缺失，不回退确认日）。
+- CLI 计算展示的 confirm_date 改为基于 v0.2 规则。
+- 文档同步：`docs/settlement-rules.md`、新增 `docs/sql-migrations-v0.2.md` 草案。
+
+### 决策
+- v0.2 范围仅支持 `A` 与 `QDII`，不做基金级 lag；不引入节假日表，仅处理周末。
+- 继续在创建交易时预写 `confirm_date`，历史记录不回溯更改。

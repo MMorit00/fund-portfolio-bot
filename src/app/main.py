@@ -111,8 +111,8 @@ def main() -> int:
                     amount=amount,
                     trade_day=trade_day,
                 )
-
-            confirm_date = get_confirm_date(trade.market, trade.trade_date)
+                # 计算确认日（基于 v0.2 日历与规则）
+                confirm_date = get_confirm_date(trade.market, trade.trade_date, container.calendar)
 
             log(
                 f"✅ 交易已创建：ID={trade.id} fund={trade.fund_code} type={trade.type} "
