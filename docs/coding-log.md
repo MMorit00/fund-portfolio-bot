@@ -142,3 +142,18 @@
 ### 决策
 - v0.2 不做“最近交易日 NAV”回退，避免灰色估值；当日缺失 NAV 的基金完全排除并提示可能低估。
 - 外部数据源适配器与抓取 Job 保持占位状态，等待后续接入时再落地重试/缓存策略。
+
+## 2025-11-19 再平衡建议 v0.2（基础版）设计完成
+
+### 完成内容
+- 设计 `RebalanceAdvice` 数据结构与 `build_rebalance_advice` 纯函数；
+- 新建 UseCase `GenerateRebalanceSuggestion` 的接口与执行口径（与市值版日报一致，严格 NAV）；
+- 规划 CLI `status --show-rebalance` 的输出形式（仅文字建议，不自动下单）。
+
+### 决策
+- 阈值来源优先 `alloc_config.max_deviation`，默认阈值 5%；
+- 建议金额算法：总市值 × |偏离| × 50%（渐进式，仅提示用）；
+- 输出顺序按偏离绝对值降序显示，阈值内标注“观察”。
+
+### 补充
+- 当日 total_value == 0（例如当日 NAV 全部缺失）时，UseCase 返回 `no_market_data=True` 与提示文案，CLI 展示“当日 NAV 缺失，无法给出金额建议”。

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Dict
+from typing import Dict, List, Optional, Literal
 
 from src.core.asset_class import AssetClass
 
@@ -29,3 +30,79 @@ def suggest_rebalance_amount(total_value: Decimal, weight_diff: Decimal) -> Deci
     """
 
     return (total_value * weight_diff.copy_abs()) / Decimal("2")
+
+
+@dataclass(slots=True)
+class RebalanceAdvice:
+    """
+    再平衡建议（按资产类别）。
+
+    - action: "buy"=建议增持，"sell"=建议减持，"hold"=在阈值内观察；
+    - amount: 建议调整金额（货币单位，非负），仅提示用；
+    - weight_diff: 实际权重 - 目标权重（正=超配，负=低配）；
+    - current_weight / target_weight / threshold: 当前/目标权重与生效阈值。
+    """
+
+    asset_class: AssetClass
+    action: Literal["buy", "sell", "hold"]
+    amount: Decimal
+    weight_diff: Decimal
+    current_weight: Decimal
+    target_weight: Decimal
+    threshold: Decimal
+
+
+def build_rebalance_advice(
+    total_value: Decimal,
+    actual_weight: Dict[AssetClass, Decimal],
+    target_weight: Dict[AssetClass, Decimal],
+    thresholds: Optional[Dict[AssetClass, Decimal]] = None,
+    default_threshold: Decimal = Decimal("0.05"),
+) -> List[RebalanceAdvice]:
+    """
+    基于当前权重、目标权重与阈值，构造按资产类别的再平衡建议列表。
+
+    - 仅依赖传入参数，不做 IO；
+    - abs(diff) <= threshold 时 action="hold", amount=0；
+    - abs(diff) > threshold 时：
+        - amount = suggest_rebalance_amount(total_value, diff)（>=0）；
+        - diff > 0 → "sell"（超配），diff < 0 → "buy"（低配）。
+    - 返回列表按 abs(diff) 从大到小排序。
+    """
+
+    advices: List[RebalanceAdvice] = []
+    for cls, tgt in target_weight.items():
+        cur = actual_weight.get(cls, Decimal("0"))
+        diff = cur - tgt
+        th = (thresholds or {}).get(cls, default_threshold)
+
+        if diff.copy_abs() <= th:
+            advices.append(
+                RebalanceAdvice(
+                    asset_class=cls,
+                    action="hold",
+                    amount=Decimal("0"),
+                    weight_diff=diff,
+                    current_weight=cur,
+                    target_weight=tgt,
+                    threshold=th,
+                )
+            )
+            continue
+
+        amount = suggest_rebalance_amount(total_value, diff)
+        action: Literal["buy", "sell"] = "sell" if diff > 0 else "buy"
+        advices.append(
+            RebalanceAdvice(
+                asset_class=cls,
+                action=action,
+                amount=amount,
+                weight_diff=diff,
+                current_weight=cur,
+                target_weight=tgt,
+                threshold=th,
+            )
+        )
+
+    advices.sort(key=lambda a: a.weight_diff.copy_abs(), reverse=True)
+    return advices

@@ -17,6 +17,70 @@
 - 日志：使用 `app/log.py` 的 `log()`；不引 logging 框架。
 - SQL 打印：通过 SQLite trace 回调；可用 `ENABLE_SQL_DEBUG` 控制。
 
+## 类型与注解规范
+
+- 新代码统一使用内置泛型与现代语法：`list[...]` / `dict[...]` / `X | None` 等；
+  老代码遇到实质改动时再顺手从 `List`/`Dict` 等迁移，无需一次性全局替换。
+- 核心层（`src/core`、`src/usecases`）禁止使用 `Any`；适配层仅允许在外部边界
+ （HTTP/DB/未建模 JSON）短暂出现 `Any`，进入领域前尽快收敛为明确类型。
+- 公共函数/方法必须显式标注返回类型，避免隐式推断为 `Any`。
+- 容器类型尽量具体化，避免长期保留 `dict[str, Any]` 这类“黑箱容器”；固定结构优先
+  使用 `@dataclass(slots=True)` 或 `TypedDict` 作为 DTO。
+- 必要时使用 `cast` 或 `# type: ignore`，需要在同一行给出简短中文说明“为何安全/为何必要”，
+  禁止作为掩盖类型问题的万能胶水。
+
+- 只读容器约束：
+  - 入参优先使用 `Mapping[...]`/`Sequence[...]` 表达只读语义；返回值再用 `dict/list`。
+
+- 封闭取值域：
+  - 关闭集合使用 `Literal[...]` 或枚举（如 `AssetClass`/`TradeStatus`）；需要复用时用 `TypeAlias` 命名类型别名，避免“自由字符串”。
+
+- Optional 传播最小化：
+  - 语义需要“有/无”时返回 `X | None`，并在边界尽早判空；
+  - 能返回空容器时优先返回空容器而非 `None`。
+
+- Any 审计与 mypy 开关（建议）：
+  - 在类型检查配置中启用：`disallow-any-generics`、`disallow-incomplete-defs`、`warn-unused-ignores`、`no-implicit-optional`，降低 `Any` 渗透。
+
+- DTO/数据类约定：
+  - 领域/DTO 类优先 `@dataclass(slots=True)`；明确不可变时可用 `frozen=True`；避免“黑箱 dict”作为长期结构。
+
+- 常量与命名：
+  - 需要稳定不可变的配置用 `Final[...]`；避免一字母变量名，提升可读性与可检索性。
+
+- 端口与分层：
+  - 对外依赖统一走 `Protocol`（结构化类型），UseCase 仅依赖端口与领域模型，不引用具体适配器类型。
+
+### 示例（好 vs 不好）
+
+```python
+# ✅ 好：明确的数据结构与类型
+from dataclasses import dataclass
+from typing import Mapping
+
+@dataclass(slots=True)
+class Position:
+    fund_code: str
+    shares: Decimal
+
+def total_shares(positions: Mapping[str, Position]) -> Decimal:
+    return sum(p.shares for p in positions.values())
+
+# ❌ 不好：黑箱 dict 与 Any
+def total_shares_bad(positions: dict[str, object]) -> Decimal:  # type: ignore[示例：黑箱容器]
+    return sum(p["shares"] for p in positions.values())  # 结构不透明
+```
+
+```python
+# ✅ 好：封闭取值域与 Literal
+from typing import Literal
+Action = Literal["buy", "sell", "hold"]
+
+# ❌ 不好：自由字符串
+Action = str  # 难以检查与约束
+```
+
+
 ## Docstring 与注释风格
 
 - 统一使用三引号中文 docstring，优先说明“做什么”和关键业务规则。

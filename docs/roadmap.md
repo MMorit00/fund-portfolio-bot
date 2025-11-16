@@ -10,26 +10,40 @@
 
 ### 当前功能一览表（v0.1）
 
-- 基金与资产配置管理：管理基金基础信息与目标资产配置；状态：已完成；主要实现：`src/adapters/db/sqlite/fund_repo.py`、`src/adapters/db/sqlite/alloc_config_repo.py`。
-- 交易录入 CLI：通过命令行录入买入/卖出交易；状态：已完成；入口：`src/app/main.py` 中 `buy` / `sell` 子命令。
-- 定投计划执行：根据定投计划生成当日 pending 交易；状态：已完成；主要实现：`src/usecases/dca/run_daily.py`、`src/jobs/run_dca.py`。
-- 定投跳过：人工指定基金在某日的定投 pending 交易标记为 skipped；状态：已完成；入口：CLI `skip-dca`（`src/app/main.py`），实现：`src/usecases/dca/skip_date.py`、`src/adapters/db/sqlite/trade_repo.py`。
-- 本地净值提供（方案 A）：从本地 NAV 表读取净值，不做 HTTP 抓取；状态：已完成；主要实现：`src/app/wiring.py` 中 `LocalNavProvider`，`src/adapters/db/sqlite/nav_repo.py`。
-- 交易确认（T+N）：按确认日规则将 pending 交易转为已确认；状态：已完成；主要实现：`src/usecases/trading/confirm_pending.py`、`src/jobs/confirm_trades.py`。
-- 日报生成（市值/份额双模式）：基于市值优先（使用 NAV），缺失 NAV 会跳过并提示，保留份额模式；状态：已完成；主要实现：`src/usecases/portfolio/daily_report.py`、`src/jobs/daily_report.py`。
-- 状态查看（终端）：CLI `status` 输出当前市值视图；状态：已完成；入口：`src/app/main.py`。
-- Discord 推送占位实现：通过 Discord Webhook 发送文本（当前为占位/打印）；状态：已完成占位实现；主要实现：`src/adapters/notify/discord_report.py`。
-- SQLite 初始化与种子脚本：管理 schema 初始化，提供备份与种子数据脚本；状态：已完成；主要实现：`src/adapters/db/sqlite/db_helper.py`、`scripts/dev_seed_db.py`、`scripts/backup_db.sh`。
+- 录入交易（买/卖）  
+  - UseCase：`CreateTrade`  
+  - 入口：CLI `buy` / `sell`
+- 定投计划执行（按计划生成当日 pending）  
+  - UseCase：`RunDailyDca`  
+  - 入口：Job `run_dca`
+- 定投跳过（指定基金 + 日期）  
+  - UseCase：`SkipDcaForDate`  
+  - 入口：CLI `skip-dca`
+- 交易确认（T+N 转已确认）  
+  - UseCase：`ConfirmPendingTrades`  
+  - 入口：Job `confirm_trades`
+- 日报生成（市值/份额视图）  
+  - UseCase：`GenerateDailyReport`  
+  - 入口：Job `daily_report`
+- 状态查看（终端输出市值视图）  
+  - UseCase：`GenerateDailyReport`  
+  - 入口：CLI `status`
+- 再平衡建议（基础版，CLI 扩展）  
+  - UseCase：`GenerateRebalanceSuggestion`  
+  - 入口：CLI `status --show-rebalance`
 
-## v0.2（计划）
+## v0.2（进行中）
 - [ ] 周报 / 月报（基础版）
-- [ ] 再平衡建议（文字提示 + 建议区间）
+- [x] 交易确认规则 v0.2（TradingCalendar + 定价日）—— 引入 `TradingCalendar` 与“定价日+lag”口径，统一 ConfirmPendingTrades 规则
+- [x] NAV 策略 v0.2（严格版）—— 确认用定价日 NAV，日报/status 仅用当日 NAV，不做回退并提示低估风险
+- [x] 再平衡建议（文字提示 + 建议金额）—— UseCase `GenerateRebalanceSuggestion` 已落地，CLI `status --show-rebalance` 可查看建议
 - [ ] 冷却期机制配置化
 
 ## v0.3（未来方向）
 - [ ] 历史导入（严格 CSV 模板）
 - [ ] 盘中估值作为附加信息（不作为核心口径）
 - [ ] 自然语言 AI 接口（基于现有 UseCases）
+- [ ] 静态类型与代码检查（mypy/ruff）最小配置与渐进收紧（文档先行→最小配置→逐步收紧）
 
 
 
@@ -42,7 +56,8 @@
   - 目标：减少硬编码 SQL 和重复 `_row_to_xxx`，提升可维护性与类型安全
 
 - [ ] **[重要] 修复 T+1/T+2 确认规则的不确定性**
-  - **问题**：当前 `get_confirm_date()` 过于简化，无法处理真实业务复杂情况
+  - **当前进展（v0.2）**：已引入 `TradingCalendar` 协议与“定价日+lag”规则，支持按市场区分 T+1/T+2，并处理周末顺延。
+  - **问题**：仍未覆盖法定节假日与复杂交易日历，无法处理真实业务全部情况
   - **影响**：交易确认可能不准确，影响持仓计算和日报生成
   - **改进方向**：
     - 引入交易日历表，支持节假日规则
@@ -51,9 +66,16 @@
     - 完善基金模型，支持不同基金类型的确认规则
 
 - [ ] **[重要] 日报计算精度问题（市值版局限）**
-  - **问题**：市值依赖 NAV，当前仅使用本地当日 NAV；若缺失或 NAV<=0 会被跳过，导致总市值低估；未覆盖历史/实时 NAV。
+  - **当前进展（v0.2）**：已统一“严格 NAV 口径”：确认用定价日 NAV，日报/status 仅用当日 NAV，缺失时明确提示低估风险。
+  - **问题**：市值依赖当日 NAV，当前仍仅使用本地当日 NAV；若缺失或 NAV<=0 会被跳过，导致总市值低估；未覆盖历史/实时 NAV。
   - **影响**：配置偏离和再平衡建议在 NAV 缺失时不准确；跨日滚动或补录 NAV 后需要重算。
   - **改进方向**：
     - 支持多日 NAV 回填与重算，提供最近可用 NAV 或前一交易日回退策略。
     - 引入外部 NAV 数据源/缓存，提升覆盖率与性能。
     - 保留份额视图作为兜底对照，允许在 NAV 缺失时自动切换或同时输出。
+
+- [ ] 静态检查与类型检查引入计划（规划）
+  - 阶段 1：文档指导（已完成，见 docs/python-style.md 类型与注解规范）
+  - 阶段 2：生成最小 mypy/ruff 配置文件（不在当前阶段落库，仅准备草案）
+  - 阶段 3：启用基础规则并修复增量问题（不影响现有功能迭代）
+  - 阶段 4：逐步收紧（如 disallow-any-generics 等），最终可选接入 CI

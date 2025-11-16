@@ -17,6 +17,7 @@ from src.core.trading.calendar import SimpleTradingCalendar
 from src.usecases.dca.run_daily import RunDailyDca
 from src.usecases.dca.skip_date import SkipDcaForDate
 from src.usecases.portfolio.daily_report import GenerateDailyReport
+from src.usecases.portfolio.rebalance_suggestion import GenerateRebalanceSuggestion
 from src.usecases.trading.confirm_pending import ConfirmPendingTrades
 from src.usecases.trading.create_trade import CreateTrade
 
@@ -122,4 +123,20 @@ class DependencyContainer:
             self.fund_repo,
             self.nav_provider,
             self.discord_sender,
+        )
+
+    def get_rebalance_suggestion_usecase(self) -> GenerateRebalanceSuggestion:
+        """获取 GenerateRebalanceSuggestion UseCase。"""
+        if (
+            not self.alloc_repo
+            or not self.trade_repo
+            or not self.fund_repo
+            or not self.nav_provider
+        ):
+            raise RuntimeError("容器未初始化，请在 with 块中使用")
+        return GenerateRebalanceSuggestion(
+            self.alloc_repo,
+            self.trade_repo,
+            self.fund_repo,
+            self.nav_provider,
         )

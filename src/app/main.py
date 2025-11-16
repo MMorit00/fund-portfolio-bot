@@ -45,7 +45,12 @@ def parse_args() -> argparse.Namespace:
     skip_parser.add_argument("--fund-code", required=True, help="基金代码")
     skip_parser.add_argument("--date", help="目标日期（格式：YYYY-MM-DD，默认今天）")
 
-    subparsers.add_parser("status", help="打印当前持仓市值与偏离")
+    status_parser = subparsers.add_parser("status", help="打印当前持仓市值与偏离")
+    status_parser.add_argument(
+        "--show-rebalance",
+        action="store_true",
+        help="附加输出再平衡建议（基础版，仅文字提示）",
+    )
 
     return parser.parse_args()
 
@@ -145,8 +150,38 @@ def main() -> int:
 
         if args.command == "status":
             with DependencyContainer() as container:
-                usecase = container.get_daily_report_usecase()
-                text = usecase.build(mode="market")
+                report_uc = container.get_daily_report_usecase()
+                text = report_uc.build(mode="market")
+                if getattr(args, "show_rebalance", False):
+                    from datetime import date as _date
+                    from src.core.portfolio.rebalance import RebalanceAdvice
+
+                    rebalance_uc = container.get_rebalance_suggestion_usecase()
+                    result = rebalance_uc.execute(today=_date.today())
+
+                    lines: list[str] = [text.rstrip(), "\n再平衡建议（基础版）：\n"]
+                    if getattr(result, "no_market_data", False):
+                        # 当日 NAV 缺失，无法给出金额建议
+                        lines.append("- 当日 NAV 缺失，无法给出金额建议\n")
+                        text = "".join(lines)
+                        log(text)
+                        return 0
+
+                    any_action = False
+                    for adv in result.suggestions:
+                        if adv.action == "hold":
+                            continue
+                        any_action = True
+                        dev_pct = adv.weight_diff * 100
+                        th_pct = adv.threshold * 100
+                        amount = adv.amount.quantize(Decimal("0.01"))
+                        direction = "增持" if adv.action == "buy" else "减持"
+                        lines.append(
+                            f"- {adv.asset_class.value}：偏离 {dev_pct:.1f}%（阈值 {th_pct:.1f}%），建议{direction} {amount} 元\n"
+                        )
+                    if not any_action:
+                        lines.append("- 所有资产类别均在阈值内，观察\n")
+                    text = "".join(lines)
             log(text)
             return 0
 
