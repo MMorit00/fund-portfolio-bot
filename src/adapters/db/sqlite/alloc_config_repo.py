@@ -9,7 +9,7 @@ from src.usecases.ports import AllocConfigRepo
 
 
 class SqliteAllocConfigRepo(AllocConfigRepo):
-    """资产配置目标权重仓储。"""
+    """资产配置目标权重仓储（SQLite）。"""
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
@@ -27,8 +27,9 @@ class SqliteAllocConfigRepo(AllocConfigRepo):
         return data
 
     def get_target_weights(self) -> Dict[AssetClass, Decimal]:  # type: ignore[override]
+        """返回资产类别目标权重（0..1）。"""
         return self._load_decimal_map("target_weight")
 
     def get_max_deviation(self) -> Dict[AssetClass, Decimal]:  # type: ignore[override]
+        """返回各资产类别允许的最大偏离（0..1）。"""
         return self._load_decimal_map("max_deviation")
-

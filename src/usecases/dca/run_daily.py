@@ -24,7 +24,15 @@ class RunDailyDca:
         self.trade_repo = trade_repo
 
     def execute(self, *, today: date) -> int:
-        """生成当天应执行的定投交易，返回生成的交易数量。"""
+        """
+        生成当天应执行的定投 pending 交易。
+
+        Args:
+            today: 当日日期；按计划频率/规则判断是否到期。
+
+        Returns:
+            生成的交易数量。
+        """
         plans = self.dca_repo.list_due_plans(today)
         count = 0
         for p in plans:
@@ -59,4 +67,3 @@ class RunDailyDca:
             except ValueError:
                 return False
         return False
-

@@ -8,12 +8,17 @@ from src.usecases.ports import FundRepo
 
 
 class SqliteFundRepo(FundRepo):
-    """基金信息仓储。"""
+    """
+    基金信息仓储（SQLite）。
+
+    职责：新增/更新基金、按代码读取、列出全部基金。
+    """
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
     def add_fund(self, fund_code: str, name: str, asset_class: AssetClass, market: str) -> None:  # type: ignore[override]
+        """新增或更新基金信息（fund_code 幂等）。"""
         with self.conn:
             self.conn.execute(
                 (
@@ -24,6 +29,7 @@ class SqliteFundRepo(FundRepo):
             )
 
     def get_fund(self, fund_code: str) -> Optional[Dict]:  # type: ignore[override]
+        """按基金代码读取，未找到返回 None。"""
         row = self.conn.execute(
             "SELECT * FROM funds WHERE fund_code = ?",
             (fund_code,),
@@ -33,6 +39,7 @@ class SqliteFundRepo(FundRepo):
         return _row_to_dict(row)
 
     def list_funds(self) -> List[Dict]:  # type: ignore[override]
+        """按 fund_code 排序返回全部基金。"""
         rows = self.conn.execute("SELECT * FROM funds ORDER BY fund_code").fetchall()
         return [_row_to_dict(r) for r in rows]
 
@@ -45,4 +52,3 @@ def _row_to_dict(row: sqlite3.Row) -> Dict:
         "asset_class": AssetClass(row["asset_class"]),
         "market": row["market"],
     }
-

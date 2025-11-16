@@ -29,7 +29,16 @@ from src.core.trading.calendar import SimpleTradingCalendar
 
 
 def prev_business_day(d: date, n: int = 1) -> date:
-    """返回 d 之前的第 n 个工作日（仅考虑周末）。"""
+    """
+    返回 d 之前的第 n 个工作日（仅考虑周末）。
+
+    Args:
+        d: 参考日期。
+        n: 向前追溯的工作日数量，默认 1。
+
+    Returns:
+        目标工作日日期。
+    """
     days = 0
     cur = d
     while days < n:
@@ -40,6 +49,11 @@ def prev_business_day(d: date, n: int = 1) -> date:
 
 
 def main() -> None:
+    """
+    初始化开发用 SQLite 数据：基金/定投/配置/净值/样例交易。
+
+    行为：可通过 `SEED_RESET`/`SEED_SIMULATE_CONFIRM` 控制重置与自动确认。
+    """
     helper = SqliteDbHelper()
     helper.init_schema_if_needed()
     conn = helper.get_connection()

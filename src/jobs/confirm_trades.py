@@ -8,6 +8,12 @@ from src.app.wiring import DependencyContainer
 
 
 def main() -> int:
+    """
+    确认交易任务入口：按 v0.2 规则与 DB 预写确认日确认当日交易。
+
+    Returns:
+        退出码：0=成功；5=未知错误。
+    """
     try:
         log("[Job] confirm_trades 开始")
         today = date.today()
@@ -27,4 +33,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

@@ -58,13 +58,26 @@ CREATE TABLE IF NOT EXISTS meta (
 
 
 class SqliteDbHelper:
-    """SQLite 连接/Schema 初始化 Helper。"""
+    """
+    SQLite 连接/Schema 初始化 Helper。
+
+    职责：
+    - 初始化数据库文件与表结构（如不存在则创建）；
+    - 提供带 RowFactory 的连接；
+    - 维护一个进程内共享连接（简单场景）。
+    """
 
     def __init__(self, db_path: Optional[str] = None) -> None:
         self.db_path = Path(db_path or get_db_path())
         self._conn: Optional[sqlite3.Connection] = None
 
     def get_connection(self) -> sqlite3.Connection:
+        """
+        获取（或创建）SQLite 连接。
+
+        Returns:
+            已初始化的 sqlite3.Connection，`row_factory` 已设置为 sqlite3.Row。
+        """
         if self._conn is None:
             if self.db_path.parent:
                 self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -77,6 +90,11 @@ class SqliteDbHelper:
         return self._conn
 
     def init_schema_if_needed(self) -> None:
+        """
+        初始化表结构与 meta.schema_version（若未设置）。
+
+        副作用：可能创建目录/文件，执行 DDL。
+        """
         conn = self.get_connection()
         with conn:
             conn.executescript(SCHEMA_DDL)
@@ -91,6 +109,7 @@ class SqliteDbHelper:
                 )
 
     def close(self) -> None:
+        """关闭连接并释放引用。"""
         if self._conn is not None:
             self._conn.close()
             self._conn = None

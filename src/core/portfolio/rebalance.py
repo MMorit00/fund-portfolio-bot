@@ -23,21 +23,9 @@ def calc_weight_difference(actual: Dict[AssetClass, Decimal], target: Dict[Asset
 
 def suggest_rebalance_amount(total_value: Decimal, weight_diff: Decimal) -> Decimal:
     """
-    基于权重差值计算建议的再平衡金额。
+    基于权重差值给出渐进式再平衡金额建议。
 
-    Args:
-        total_value: 投资组合总市值（货币单位）
-        weight_diff: 单个资产类别的权重差值（[0,1] 范围小数，如 0.1 表示超配10%）
-
-    Returns:
-        建议的再平衡金额（货币单位）
-
-    计算逻辑：
-    1. 将权重差值转换为金额差值：total_value * |weight_diff|
-    2. 取一半作为渐进式调整建议：amount_diff / 2
-
-    仅作为提示用，非投资建议。
+    口径：建议金额 = 总市值 × |权重差值| × 50%；仅用于提示，非投资建议。
     """
 
     return (total_value * weight_diff.copy_abs()) / Decimal("2")
-

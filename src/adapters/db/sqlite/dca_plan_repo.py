@@ -10,18 +10,22 @@ from src.usecases.ports import DcaPlanRepo
 
 
 class SqliteDcaPlanRepo(DcaPlanRepo):
-    """定投计划仓储。"""
+    """
+    定投计划仓储（SQLite）。
+
+    说明：当前实现 `list_due_plans(day)` 返回全部计划，是否到期的判断在用例层完成。
+    """
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
     def list_due_plans(self, day: date) -> List[DcaPlan]:  # type: ignore[override]
-        # TODO-MVP: 当前实现返回所有定投计划，
-        # 实际的 “是否到期” 判断在 RunDailyDca._due 中完成。
+        """返回需检查的定投计划（MVP 返回全部）。"""
         rows = self.conn.execute("SELECT * FROM dca_plans ORDER BY fund_code").fetchall()
         return [_row_to_plan(r) for r in rows]
 
     def get_plan(self, fund_code: str) -> Optional[DcaPlan]:  # type: ignore[override]
+        """读取某基金定投计划，未配置返回 None。"""
         row = self.conn.execute(
             "SELECT * FROM dca_plans WHERE fund_code = ?",
             (fund_code,),
@@ -39,4 +43,3 @@ def _row_to_plan(row: sqlite3.Row) -> DcaPlan:
         frequency=row["frequency"],
         rule=row["rule"],
     )
-

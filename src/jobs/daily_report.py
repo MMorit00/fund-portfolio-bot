@@ -7,6 +7,12 @@ from src.app.wiring import DependencyContainer
 
 
 def main() -> int:
+    """
+    日报任务入口：构建并发送市值视图日报。
+
+    Returns:
+        退出码：0=成功；5=未知错误。
+    """
     try:
         log("[Job] daily_report 开始")
 

@@ -5,6 +5,12 @@ from src.app.log import log
 
 
 def main() -> int:
+    """
+    抓取净值任务入口（占位）：装配 provider+repo 拉取当日 NAV。
+
+    Returns:
+        退出码：0=成功；4=参数/实现错误。
+    """
     try:
         log("[Job] fetch_navs 开始")
         # TODO: 装配 provider+repo，抓取当日 NAV
@@ -17,4 +23,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

@@ -14,5 +14,14 @@ class EastmoneyNavProvider(NavProvider):
     """
 
     def get_nav(self, fund_code: str, day: date) -> Optional[Decimal]:  # type: ignore[override]
-        raise NotImplementedError
+        """
+        读取东方财富的官方单位净值（占位）。
 
+        Args:
+            fund_code: 基金代码。
+            day: 净值日期。
+
+        Returns:
+            若成功获取则返回 Decimal 净值；当前占位实现始终抛出未实现。
+        """
+        raise NotImplementedError

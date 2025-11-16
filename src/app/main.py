@@ -18,6 +18,9 @@ def parse_args() -> argparse.Namespace:
     - buy/sell 公共参数：--fund-code（必需）、--amount（必需）、--date（可选，ISO 格式）
     - skip-dca 参数：--fund-code（必需）、--date（可选，默认今天）
     - status 参数：无（输出当前市值视图）
+
+    Returns:
+        解析后的参数命名空间。
     """
     parser = argparse.ArgumentParser(
         prog="python -m src.app.main",
@@ -51,9 +54,14 @@ def parse_date(date_str: str | None) -> date:
     """
     解析日期参数。
 
-    - None：返回今天
-    - YYYY-MM-DD：解析为 date 对象
-    - 其他格式：抛出 ValueError
+    Args:
+        date_str: ISO 日期字符串或 None。
+
+    Returns:
+        解析后的日期；None 时返回今天。
+
+    Raises:
+        ValueError: 非法日期格式。
     """
     if not date_str:
         return date.today()
@@ -68,8 +76,14 @@ def parse_amount(amount_str: str) -> Decimal:
     """
     解析金额参数。
 
-    - 合法 Decimal：返回 Decimal 对象
-    - 非法格式：抛出 ValueError
+    Args:
+        amount_str: 金额字符串。
+
+    Returns:
+        Decimal 金额，要求 > 0。
+
+    Raises:
+        ValueError: 非法金额或非正数。
     """
     try:
         amount = Decimal(amount_str)
@@ -84,10 +98,8 @@ def main() -> int:
     """
     CLI 入口：处理 buy / sell / skip-dca / status 命令。
 
-    返回值：
-    - 0：成功
-    - 4：参数错误或业务逻辑错误（如基金代码不存在）
-    - 5：未知错误
+    Returns:
+        退出码：0=成功；4=参数/业务错误；5=未知错误。
     """
     args = parse_args()
 

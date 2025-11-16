@@ -14,6 +14,11 @@ from src.usecases.ports import AllocConfigRepo, FundRepo, NavProvider, ReportSen
 class ReportData:
     """
     日报数据结构（支持市值视图与份额视图）。
+
+    口径：
+    - 仅统计“已确认份额”，不包含当日 pending 交易；
+    - 市值模式使用“当日官方 NAV”，`nav <= 0` 视为缺失；
+    - 缺失 NAV 的基金不计入市值与权重分母，并在 missing_nav 中列出。
     """
 
     mode: str  # "market" 或 "shares"
@@ -27,11 +32,17 @@ class ReportData:
 
 class GenerateDailyReport:
     """
-    生成并发送日报（文本版）。
+    生成并发送文本日报（市值/份额两种模式）。
+
+    业务口径：
+    - 仅统计“已确认份额”，不包含当日 pending；
+    - 市值模式按“确认为准的份额 × 当日官方 NAV”计算；`nav <= 0` 视为缺失并在文末列出；
+    - 缺失 NAV 的基金不参与市值累计与权重分母；
+    - 再平衡提示阈值当前固定为 ±5%（后续可配置）。
 
     模式：
-    - market：按市值计算（shares × NAV），缺失 NAV 的基金会被跳过并标注缺失列表。
-    - shares：保留旧版份额视图（无 NAV 依赖）。
+    - market：市值视图（shares × NAV）
+    - shares：份额视图（无 NAV 依赖）
     """
 
     def __init__(
@@ -49,7 +60,15 @@ class GenerateDailyReport:
         self.sender = sender
 
     def build(self, mode: str = "market") -> str:
-        """构造日报文本内容。默认使用市值模式。"""
+        """
+        构造日报文本内容。
+
+        Args:
+            mode: 视图模式，`market`（市值）或 `shares`（份额），默认 `market`。
+
+        Returns:
+            文本格式的日报内容。
+        """
         if mode not in {"market", "shares"}:
             raise ValueError("mode 仅支持 market 或 shares")
 
@@ -69,6 +88,11 @@ class GenerateDailyReport:
         position_shares: Dict[str, Decimal],
         target_weights: Dict[AssetClass, Decimal],
     ) -> ReportData:
+        """
+        构造市值视图数据：按“确认为准的份额 × 当日 NAV”聚合市值与权重。
+
+        规则：`nav is None or nav <= 0` 视为缺失，该基金不计入市值/权重，并记录在 missing_nav。
+        """
         today = date.today()
         class_values: Dict[AssetClass, Decimal] = {}
         missing_nav: List[str] = []
@@ -110,6 +134,9 @@ class GenerateDailyReport:
         position_shares: Dict[str, Decimal],
         target_weights: Dict[AssetClass, Decimal],
     ) -> ReportData:
+        """
+        构造份额视图数据：按已确认份额聚合各资产类别份额并计算权重（不依赖 NAV）。
+        """
         class_shares: Dict[AssetClass, Decimal] = {}
         for fund_code, shares in position_shares.items():
             fund = self.fund_repo.get_fund(fund_code)
@@ -137,7 +164,11 @@ class GenerateDailyReport:
         )
 
     def _render(self, data: ReportData, target: Dict[AssetClass, Decimal]) -> str:
-        """将 ReportData 渲染成文本格式。"""
+        """
+        将 ReportData 渲染成文本格式。
+
+        说明：再平衡提示阈值当前固定为 ±5%（未读取配置）。
+        """
         lines: List[str] = []
 
         mode_text = "市值" if data.mode == "market" else "份额"
@@ -191,5 +222,13 @@ class GenerateDailyReport:
         return "".join(lines)
 
     def send(self, mode: str = "market") -> bool:
-        """发送日报。默认使用市值模式。"""
+        """
+        发送日报（默认市值模式）。
+
+        Args:
+            mode: 视图模式，`market` 或 `shares`。
+
+        Returns:
+            发送是否成功。
+        """
         return self.sender.send(self.build(mode=mode))

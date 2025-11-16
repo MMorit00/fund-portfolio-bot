@@ -23,7 +23,18 @@ class ConfirmPendingTrades:
         self.calendar = calendar
 
     def execute(self, *, today: date) -> int:
-        """返回本次确认成功的交易数量。"""
+        """
+        执行当日的交易确认。
+
+        Args:
+            today: 运行日；从仓储中读取 `confirm_date=today` 的 pending 交易。
+
+        Returns:
+            成功确认的交易数量。
+
+        副作用：
+            - 将符合条件的交易状态更新为 `confirmed`，写入份额与确认用 NAV（定价日 NAV）。
+        """
 
         # 找到今天应确认的交易（按交易日+T+N）
         # 简化：由仓储直接提供 today 应确认的 pending（实现可基于 get_confirm_date 过滤）

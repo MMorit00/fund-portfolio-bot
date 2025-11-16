@@ -8,6 +8,12 @@ from src.app.wiring import DependencyContainer
 
 
 def main() -> int:
+    """
+    定投生成任务入口：按计划生成当日 pending 交易。
+
+    Returns:
+        退出码：0=成功；5=未知错误。
+    """
     try:
         log("[Job] run_dca 开始")
         today = date.today()
@@ -27,4 +33,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

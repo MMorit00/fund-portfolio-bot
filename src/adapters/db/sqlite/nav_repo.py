@@ -9,12 +9,17 @@ from src.usecases.ports import NavRepo
 
 
 class SqliteNavRepo(NavRepo):
-    """SQLite NAV 仓储。"""
+    """
+    净值仓储（SQLite）。
+
+    职责：按 (fund_code, day) 写入/读取官方单位净值，采用字符串持久化 Decimal。
+    """
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
     def upsert(self, fund_code: str, day: date, nav: Decimal) -> None:  # type: ignore[override]
+        """插入或更新某日净值（主键冲突时覆盖）。"""
         with self.conn:
             self.conn.execute(
                 (
@@ -25,6 +30,7 @@ class SqliteNavRepo(NavRepo):
             )
 
     def get(self, fund_code: str, day: date) -> Optional[Decimal]:  # type: ignore[override]
+        """读取某日净值，未找到返回 None。"""
         row = self.conn.execute(
             "SELECT nav FROM navs WHERE fund_code = ? AND day = ?",
             (fund_code, day.isoformat()),
@@ -32,4 +38,3 @@ class SqliteNavRepo(NavRepo):
         if not row:
             return None
         return Decimal(row["nav"])
-

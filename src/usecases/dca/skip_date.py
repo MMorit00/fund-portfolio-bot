@@ -16,5 +16,14 @@ class SkipDcaForDate:
         self.trade_repo = trade_repo
 
     def execute(self, *, fund_code: str, day: date) -> int:
-        """返回被标记为 skipped 的条目数量。实现细节由仓储承担。"""
+        """
+        将指定基金在给定日期的定投买入（pending）标记为 skipped。
+
+        Args:
+            fund_code: 基金代码。
+            day: 目标日期（仅影响当日、类型为 buy、状态为 pending 的记录）。
+
+        Returns:
+            受影响的记录数。
+        """
         return self.trade_repo.skip_dca_for_date(fund_code, day)
