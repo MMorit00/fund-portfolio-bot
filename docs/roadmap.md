@@ -8,29 +8,7 @@
 - [x] T+1/T+2 确认（ConfirmPendingTrades）—— 已完成并装配
 - [x] 日报（GenerateDailyReport + Discord Webhook）—— 市值版（本地 NAV，缺失跳过并标注）已完成，保留份额模式用于兼容
 
-### 当前功能一览表（v0.1）
 
-- 录入交易（买/卖）  
-  - UseCase：`CreateTrade`  
-  - 入口：CLI `buy` / `sell`
-- 定投计划执行（按计划生成当日 pending）  
-  - UseCase：`RunDailyDca`  
-  - 入口：Job `run_dca`
-- 定投跳过（指定基金 + 日期）  
-  - UseCase：`SkipDcaForDate`  
-  - 入口：CLI `skip-dca`
-- 交易确认（T+N 转已确认）  
-  - UseCase：`ConfirmPendingTrades`  
-  - 入口：Job `confirm_trades`
-- 日报生成（市值/份额视图）  
-  - UseCase：`GenerateDailyReport`  
-  - 入口：Job `daily_report`
-- 状态查看（终端输出市值视图）  
-  - UseCase：`GenerateDailyReport`  
-  - 入口：CLI `status`
-- 再平衡建议（基础版，CLI 扩展）  
-  - UseCase：`GenerateRebalanceSuggestion`  
-  - 入口：CLI `status --show-rebalance`
 
 ## v0.2（进行中）
 - [ ] 周报 / 月报（基础版）
@@ -79,3 +57,29 @@
   - 阶段 2：生成最小 mypy/ruff 配置文件（不在当前阶段落库，仅准备草案）
   - 阶段 3：启用基础规则并修复增量问题（不影响现有功能迭代）
   - 阶段 4：逐步收紧（如 disallow-any-generics 等），最终可选接入 CI
+
+
+
+## 当前功能一览表（v0.1）
+
+- 录入交易（买/卖）  
+  - UseCase：`CreateTrade`  
+  - 入口：CLI `buy` / `sell`
+- 定投计划执行（按计划生成当日 pending）  
+  - UseCase：`RunDailyDca`  
+  - 入口：Job `run_dca`
+- 定投跳过（指定基金 + 日期）  
+  - UseCase：`SkipDcaForDate`  
+  - 入口：CLI `skip-dca`
+- 交易确认（T+N 转已确认）  
+  - UseCase：`ConfirmPendingTrades`  
+  - 入口：Job `confirm_trades`
+- 日报生成（市值/份额视图）  
+  - UseCase：`GenerateDailyReport`  
+  - 入口：Job `daily_report`
+- 状态查看（终端输出市值视图）  
+  - UseCase：`GenerateDailyReport`  
+  - 入口：CLI `status`
+- 再平衡建议（基础版，CLI 扩展）  
+  - UseCase：`GenerateRebalanceSuggestion`  
+  - 入口：CLI `status --show-rebalance`
