@@ -196,3 +196,29 @@ python -m src.jobs.confirm_trades --day YYYY-MM-DD
 ```
 
 确认任务输出会统计：成功确认数量、因定价日 NAV 缺失而跳过的数量与涉及基金代码。
+
+## 2025-11-21 日志规范约定
+
+### 日志前缀规范
+
+为便于后续日志分析与定位，各适配器的 print 日志应使用统一前缀：
+
+- **EastmoneyNavProvider**：`[EastmoneyNav]` - 东方财富净值数据源相关日志
+- **LocalNavProvider**：`[LocalNav]` - 本地 SQLite NAV 仓储日志
+- **DiscordReportSender**：`[Discord]` - Discord Webhook 推送日志
+- **通用 Job**：`[Job:xxx]` - 定时任务脚本日志，如 `[Job:fetch_navs]`、`[Job:confirm_trades]`
+
+### 日志内容约定
+
+1. **错误与异常**：包含足够上下文（fund_code、day、attempt 等）以便排查
+2. **状态提示**：成功/失败统计信息使用 `✅` / `⚠️` 前缀增强可读性
+3. **详细模式**：保留 `ENABLE_SQL_DEBUG` 环境变量控制 SQL trace 输出
+
+### 示例
+
+```
+[EastmoneyNav] 获取 NAV 失败：fund=110022 day=2025-11-20 attempt=2 err=ConnectTimeout
+[LocalNav] 成功写入 NAV：fund=110022 day=2025-11-20 nav=1.2345
+[Discord] Webhook 推送失败：status=400 msg="Invalid request"
+[Job:fetch_navs] ✅ 抓取完成：成功 45/50，失败 5 只
+```

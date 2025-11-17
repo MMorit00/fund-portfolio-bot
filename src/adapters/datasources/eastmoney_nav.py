@@ -38,7 +38,7 @@ class EastmoneyNavProvider(NavProvider):
 
         Args:
             timeout: 单次请求超时时间（秒）。
-            retries: 失败重试次数（>=0）。
+            retries: 最大重试次数（>=0）；不包含初次请求，如 retries=2 则最多尝试 3 次（1 次初次 + 2 次重试）。
             base_url: 东方财富接口基础地址（可选，未填时使用默认占位）。
             user_agent: 自定义 User-Agent 头（可选）。
             backoff_base: 重试指数退避基础间隔（秒），实际等待约为 base * 2^attempt。
@@ -91,14 +91,14 @@ class EastmoneyNavProvider(NavProvider):
                 nav = self._parse_nav(data)
                 if nav is None or nav <= Decimal("0"):
                     print(
-                        f"[NavProvider] 无效 NAV 数据：fund={fund_code} day={day} data={data!r}"
+                        f"[EastmoneyNav] 无效 NAV 数据：fund={fund_code} day={day} data={data!r}"
                     )
                     return None
                 return nav
             except Exception as err:  # noqa: BLE001
                 # 防御性兜底：不向上抛异常，避免打断批量任务
                 print(
-                    f"[NavProvider] 获取 NAV 失败：fund={fund_code} day={day} attempt={attempt} err={err}"
+                    f"[EastmoneyNav] 获取 NAV 失败：fund={fund_code} day={day} attempt={attempt} err={err}"
                 )
                 if attempt >= self.retries:
                     return None
@@ -138,13 +138,13 @@ class EastmoneyNavProvider(NavProvider):
                 resp.raise_for_status()
             if resp.status_code != 200:
                 print(
-                    f"[NavProvider] HTTP 状态异常：status={resp.status_code} url={url}"
+                    f"[EastmoneyNav] HTTP 状态异常：status={resp.status_code} url={url}"
                 )
                 return None
             try:
                 return resp.json()
             except ValueError as err:
-                print(f"[NavProvider] JSON 解析失败：url={url} err={err}")
+                print(f"[EastmoneyNav] JSON 解析失败：url={url} err={err}")
                 return None
 
     def _parse_nav(self, raw: dict) -> Decimal | None:

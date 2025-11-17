@@ -102,9 +102,10 @@ class DependencyContainer:
 
     def get_run_daily_dca_usecase(self) -> RunDailyDca:
         """获取 RunDailyDca UseCase。"""
-        if not self.dca_repo or not self.fund_repo or not self.trade_repo:
+        if not self.dca_repo:
             raise RuntimeError("容器未初始化，请在 with 块中使用")
-        return RunDailyDca(self.dca_repo, self.fund_repo, self.trade_repo)
+        create_trade = self.get_create_trade_usecase()
+        return RunDailyDca(self.dca_repo, create_trade)
 
     def get_skip_dca_usecase(self) -> SkipDcaForDate:
         """获取 SkipDcaForDate UseCase。"""

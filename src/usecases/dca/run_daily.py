@@ -4,8 +4,8 @@ from datetime import date
 from decimal import Decimal
 
 from src.core.dca_plan import DcaPlan
-from src.core.trade import Trade
-from src.usecases.ports import DcaPlanRepo, FundRepo, TradeRepo
+from src.usecases.ports import DcaPlanRepo
+from src.usecases.trading.create_trade import CreateTrade
 
 
 class RunDailyDca:
@@ -18,10 +18,9 @@ class RunDailyDca:
     - monthly: rule = 1..31（若当月无该日，顺延到月末可留 TODO）
     """
 
-    def __init__(self, dca_repo: DcaPlanRepo, fund_repo: FundRepo, trade_repo: TradeRepo) -> None:
+    def __init__(self, dca_repo: DcaPlanRepo, create_trade: CreateTrade) -> None:
         self.dca_repo = dca_repo
-        self.fund_repo = fund_repo
-        self.trade_repo = trade_repo
+        self.create_trade = create_trade
 
     def execute(self, *, today: date) -> int:
         """
@@ -38,20 +37,17 @@ class RunDailyDca:
         for p in plans:
             if not self._due(p, today):
                 continue
-            fund = self.fund_repo.get_fund(p.fund_code)
-            if not fund:
+            try:
+                self.create_trade.execute(
+                    fund_code=p.fund_code,
+                    trade_type="buy",
+                    amount=p.amount,
+                    trade_day=today,
+                )
+                count += 1
+            except ValueError:
+                # 基金不存在或配置无效，跳过
                 continue
-            t = Trade(
-                id=None,
-                fund_code=p.fund_code,
-                type="buy",
-                amount=p.amount,
-                trade_date=today,
-                status="pending",
-                market=fund.market,
-            )
-            self.trade_repo.add(t)
-            count += 1
         return count
 
     def _due(self, plan: DcaPlan, day: date) -> bool:
