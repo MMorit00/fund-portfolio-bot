@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Dict, List, Optional, Protocol
+from typing import Protocol
 
 from src.core.asset_class import AssetClass
 from src.core.dca_plan import DcaPlan

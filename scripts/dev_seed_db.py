@@ -131,8 +131,11 @@ def main() -> None:
     # 自动执行一次确认，便于演示：默认模拟"在确认日"运行（对任意实际日期可复现）
     # 开关：SEED_SIMULATE_CONFIRM（优先）或兼容 SEED_CONFIRM（均默认开启）
     if os.getenv("SEED_SIMULATE_CONFIRM", os.getenv("SEED_CONFIRM", "1")) == "1":
-        confirmed = ConfirmPendingTrades(trade_repo, LocalNavProvider(nav_repo), calendar).execute(today=confirm_day)
-        print(f"Confirmed on confirm_day({confirm_day}): {confirmed}")
+        result = ConfirmPendingTrades(trade_repo, LocalNavProvider(nav_repo), calendar).execute(today=confirm_day)
+        print(
+            f"Confirmed on confirm_day({confirm_day}): {result.confirmed_count}, "
+            f"skipped={result.skipped_count}"
+        )
 
     positions = trade_repo.position_shares()
     print("Current confirmed positions:", positions)

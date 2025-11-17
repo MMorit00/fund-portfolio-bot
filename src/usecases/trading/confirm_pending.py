@@ -2,8 +2,18 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from dataclasses import dataclass
 from src.core.trading.calendar import TradingCalendar
 from src.usecases.ports import NavProvider, TradeRepo
+
+
+@dataclass(slots=True)
+class ConfirmResult:
+    """确认结果统计。"""
+
+    confirmed_count: int
+    skipped_count: int
+    skipped_funds: list[str]
 
 
 class ConfirmPendingTrades:
@@ -22,7 +32,7 @@ class ConfirmPendingTrades:
         self.nav_provider = nav_provider
         self.calendar = calendar
 
-    def execute(self, *, today: date) -> int:
+    def execute(self, *, today: date) -> ConfirmResult:
         """
         执行当日的交易确认。
 
@@ -41,15 +51,23 @@ class ConfirmPendingTrades:
         to_confirm = self.trade_repo.list_pending_to_confirm(today)
 
         confirmed_count = 0
+        skipped_count = 0
+        skipped_funds_set: set[str] = set()
         for t in to_confirm:
             # 仅使用定价日 NAV（定价日=交易日或其后首个交易日）；缺失/无效则跳过
             pricing_day = self.calendar.next_trading_day_or_self(t.trade_date, market=t.market)
             nav = self.nav_provider.get_nav(t.fund_code, pricing_day)
             if nav is None or nav <= Decimal("0"):
                 # 无净值数据，留待后续重试
+                skipped_count += 1
+                skipped_funds_set.add(t.fund_code)
                 continue
 
             shares = (t.amount / nav)
             self.trade_repo.confirm(t.id or 0, shares, nav)
             confirmed_count += 1
-        return confirmed_count
+        return ConfirmResult(
+            confirmed_count=confirmed_count,
+            skipped_count=skipped_count,
+            skipped_funds=sorted(skipped_funds_set),
+        )

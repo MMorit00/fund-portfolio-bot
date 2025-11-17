@@ -16,6 +16,7 @@ from src.app import config
 from src.adapters.datasources.local_nav import LocalNavProvider
 from src.adapters.datasources.eastmoney_nav import EastmoneyNavProvider
 from src.core.trading.calendar import SimpleTradingCalendar
+from src.adapters.db.sqlite.trading_calendar import SqliteTradingCalendar
 from src.usecases.dca.run_daily import RunDailyDca
 from src.usecases.dca.skip_date import SkipDcaForDate
 from src.usecases.portfolio.daily_report import GenerateDailyReport
@@ -56,6 +57,25 @@ class DependencyContainer:
 
         # 初始化仓储
         self.fund_repo = SqliteFundRepo(self.conn)
+
+        # 选择交易日历实现
+        backend = config.get_trading_calendar_backend()
+        if backend == "db":
+            # 确认 trading_calendar 表存在
+            exists = (
+                self.conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='trading_calendar'"
+                ).fetchone()
+                is not None
+            )
+            if not exists:
+                raise RuntimeError(
+                    "TRADING_CALENDAR_BACKEND=db，但未发现 trading_calendar 表，请先执行迁移/导入"
+                )
+            self.calendar = SqliteTradingCalendar(self.conn)
+        else:
+            self.calendar = SimpleTradingCalendar()
+
         # 初始化适配器与仓储
         self.trade_repo = SqliteTradeRepo(self.conn, self.calendar)
         self.nav_repo = SqliteNavRepo(self.conn)

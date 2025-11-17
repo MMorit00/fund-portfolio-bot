@@ -160,3 +160,39 @@ python -m src.jobs.daily_report    # 生成并推送日报
 python -m src.jobs.fetch_navs --date YYYY-MM-DD
 python -m src.jobs.confirm_trades  # （未来可扩展 --day 参数）
 ```
+
+## 2025-11-21 交易日历导入与确认重跑（v0.3）
+
+### 导入交易日历（SQLite）
+
+CSV 放置建议：`data/trading_calendar/a_shares.csv`，表头支持：
+- `market,day,is_trading_day`（更通用）或 `day,is_trading_day`（market 默认 A）
+
+示例命令：
+
+```
+DB_PATH=data/portfolio.db \
+python scripts/import_trading_calendar.py data/trading_calendar/a_shares.csv
+```
+
+启用 DB 版交易日历：
+
+```
+TRADING_CALENDAR_BACKEND=db \
+DB_PATH=data/portfolio.db \
+python -m src.jobs.confirm_trades
+```
+
+注意：当 `TRADING_CALENDAR_BACKEND=db` 且未找到 `trading_calendar` 表时，会报错退出。
+
+### 补录 NAV 后补确认
+
+```
+# 1) 补录当日官方 NAV
+python -m src.jobs.fetch_navs --date YYYY-MM-DD
+
+# 2) 对该日重跑确认
+python -m src.jobs.confirm_trades --day YYYY-MM-DD
+```
+
+确认任务输出会统计：成功确认数量、因定价日 NAV 缺失而跳过的数量与涉及基金代码。

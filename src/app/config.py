@@ -50,3 +50,13 @@ def enable_sql_debug() -> bool:
 
 
 TIMEZONE = "Asia/Shanghai"
+
+
+def get_trading_calendar_backend() -> str:
+    """
+    返回交易日历后端类型："simple" 或 "db"。
+
+    - 未设置时默认 "simple"；
+    - 显式设置为 "db" 时，要求存在 trading_calendar 表，否则视为配置错误。
+    """
+    return os.getenv("TRADING_CALENDAR_BACKEND", "simple").lower()

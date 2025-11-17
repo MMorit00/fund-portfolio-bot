@@ -26,6 +26,10 @@
   - 采用 `uv` 统一安装/锁定/运行：`uv pip`, `uv run`
   - 补充锁定文件与脚本：`uv.lock`、常用命令别名
   - 文档：在 `docs/operations-log.md` 增加 UV 使用说明（安装、常见命令）
+- [ ] 确认规则 v0.3（DB TradingCalendar + NAV 补录/重跑确认）
+  - 新增 `trading_calendar` 表（market, day, is_trading_day）与导入脚本
+  - 新实现 `SqliteTradingCalendar` 并通过 env 切换（TRADING_CALENDAR_BACKEND=db|simple）
+  - `confirm_trades --day` 支持指定确认日；文档化“补录 NAV → 补确认”的操作路径
 
 
 
