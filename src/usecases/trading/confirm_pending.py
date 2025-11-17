@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from dataclasses import dataclass
+
 from src.core.trading.calendar import TradingCalendar
 from src.core.trading.precision import quantize_shares
 from src.usecases.ports import NavProvider, TradeRepo

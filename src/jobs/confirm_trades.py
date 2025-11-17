@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import sys
 from datetime import date
-import argparse
 
 from src.app.log import log
 from src.app.wiring import DependencyContainer

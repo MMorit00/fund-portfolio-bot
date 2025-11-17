@@ -7,7 +7,7 @@
 - 金额/净值/份额：使用 `decimal.Decimal`，禁止 float 参与金融计算。
 - 舍入与保留：金额 2 位、净值 4 位、份额 4 位（可配置，保持一致）。
 - 文件命名：snake_case；路径表达语义，文件名尽量简短。
-- 导入顺序：标准库 → 第三方 → 项目内部。
+- 导入顺序：`__future__` → 标准库 → 第三方 → 项目内部（由 ruff 自动维护）。
 - 目录职责：
   - `core` 仅含纯领域逻辑，不依赖外部库实现
   - `usecases` 仅依赖 `core` 与 `ports`（Protocol）
@@ -89,3 +89,68 @@ Action = str  # 难以检查与约束
 - 模块级 docstring 用于说明模块职责与注意事项（尤其是涉及业务口径的模块，如交易确认、再平衡等）。
 - 对外暴露的函数/方法、或参数含义复杂时，建议使用 `Args:` / `Returns:` 块说明业务语义、取值约束和副作用。（公共 API / Protocol 的实现，对外暴露给别的模块或脚本频繁调用）
 - 避免机械、过度冗长的 Args/Returns 描述：不重复写类型信息，仅保留对理解业务有帮助的说明（类型信息以注解为准）。
+
+## Import 顺序规范（ruff isort）
+
+项目使用 ruff 自动维护 import 顺序，无需手动调整。
+
+### 分组规则（组间用空行分隔）
+
+```python
+# 1. __future__ imports（特殊，单独一组）
+from __future__ import annotations
+
+# 2. 标准库（Python 内置模块）
+import os
+import sqlite3
+from datetime import date, timedelta
+from decimal import Decimal
+from typing import Literal, Protocol
+
+# 3. 第三方库（如 httpx、fastapi 等）
+import httpx
+
+# 4. 本项目模块（src.*）
+from src.adapters.db.sqlite.fund_repo import SqliteFundRepo
+from src.core.asset_class import AssetClass
+from src.usecases.ports import AllocConfigRepo, FundRepo
+```
+
+### 组内排序规则
+
+1. **`import` 语句优先于 `from...import`**
+2. **同类型 import 按模块名字母序排序**
+3. **同一模块的多个导入合并到一行，并按字母序排列**
+
+```python
+# ✅ 正确
+from src.usecases.ports import AllocConfigRepo, FundRepo, NavProvider
+
+# ❌ 错误（会被 ruff 自动合并与排序）
+from src.usecases.ports import FundRepo
+from src.usecases.ports import AllocConfigRepo
+```
+
+### 工具配置
+
+在 `pyproject.toml` 中已配置：
+
+```toml
+[tool.ruff.lint]
+select = ["F", "E", "I"]  # I = isort（import 排序）
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]  # 标记 src.* 为本项目模块
+```
+
+### 日常使用
+
+```bash
+# 自动修复 import 顺序
+ruff check --select I --fix .
+
+# 或者修复所有可修复问题
+ruff check --fix .
+```
+
+**原则**：交给工具自动维护，不手动调整顺序。

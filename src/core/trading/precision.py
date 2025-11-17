@@ -7,7 +7,7 @@
 - NAV：4 位小数（基金净值通常为 4 位小数）
 """
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 
 def quantize_amount(amount: Decimal) -> Decimal:

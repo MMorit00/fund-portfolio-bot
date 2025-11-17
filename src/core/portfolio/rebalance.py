@@ -7,7 +7,9 @@ from typing import Literal
 from src.core.asset_class import AssetClass
 
 
-def calc_weight_difference(actual: dict[AssetClass, Decimal], target: dict[AssetClass, Decimal]) -> dict[AssetClass, Decimal]:
+def calc_weight_difference(  # noqa: E501
+    actual: dict[AssetClass, Decimal], target: dict[AssetClass, Decimal]
+) -> dict[AssetClass, Decimal]:
     """
     计算每个资产类别的权重差值（实际权重 - 目标权重）。
 

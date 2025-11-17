@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from decimal import Decimal
-
-from src.core.asset_class import AssetClass
 from src.usecases.ports import TradeRepo
 
 

@@ -9,7 +9,6 @@ from src.core.asset_class import AssetClass
 from src.core.portfolio.rebalance import calc_weight_difference
 from src.usecases.ports import AllocConfigRepo, FundRepo, NavProvider, ReportSender, TradeRepo
 
-
 ReportMode = Literal["market", "shares"]
 
 
@@ -241,7 +240,7 @@ class GenerateDailyReport:
         if data.mode == "market" and data.missing_nav:
             # v0.2 严格版提示：当日 NAV 缺失会导致市值低估
             lines.append(
-                f"\n提示：今日 {data.funds_with_nav}/{data.total_funds_in_position} 只基金有有效 NAV，总市值可能低估。\n"
+                f"\n提示：今日 {data.funds_with_nav}/{data.total_funds_in_position} 只基金有有效 NAV，总市值可能低估。\n"  # noqa: E501
             )
             lines.append("\nNAV 缺失（未计入市值）：\n")
             for code in data.missing_nav:

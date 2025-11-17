@@ -30,8 +30,8 @@ class SqliteTradeRepo(TradeRepo):
         with self.conn:
             cursor = self.conn.execute(
                 (
-                    "INSERT INTO trades (fund_code, type, amount, trade_date, status, market, shares, nav, remark, confirm_date) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    "INSERT INTO trades (fund_code, type, amount, trade_date, status, market, "  # noqa: E501
+                    "shares, nav, remark, confirm_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 ),
                 (
                     trade.fund_code,

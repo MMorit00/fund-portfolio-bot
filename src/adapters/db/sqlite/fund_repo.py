@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from src.core.asset_class import AssetClass
-from src.usecases.ports import FundRepo, FundInfo
+from src.usecases.ports import FundInfo, FundRepo
 
 
 class SqliteFundRepo(FundRepo):
@@ -22,7 +22,8 @@ class SqliteFundRepo(FundRepo):
             self.conn.execute(
                 (
                     "INSERT INTO funds(fund_code, name, asset_class, market) VALUES(?, ?, ?, ?) "
-                    "ON CONFLICT(fund_code) DO UPDATE SET name=excluded.name, asset_class=excluded.asset_class, market=excluded.market"
+                    "ON CONFLICT(fund_code) DO UPDATE SET name=excluded.name, "  # noqa: E501
+                    "asset_class=excluded.asset_class, market=excluded.market"
                 ),
                 (fund_code, name, asset_class.value, market),
             )

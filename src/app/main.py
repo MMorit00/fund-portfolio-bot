@@ -154,7 +154,7 @@ def main() -> int:
                 text = report_uc.build(mode="market")
                 if getattr(args, "show_rebalance", False):
                     from datetime import date as _date
-                    from src.core.portfolio.rebalance import RebalanceAdvice
+
 
                     rebalance_uc = container.get_rebalance_suggestion_usecase()
                     result = rebalance_uc.execute(today=_date.today())
@@ -177,7 +177,7 @@ def main() -> int:
                         amount = adv.amount.quantize(Decimal("0.01"))
                         direction = "增持" if adv.action == "buy" else "减持"
                         lines.append(
-                            f"- {adv.asset_class.value}：偏离 {dev_pct:.1f}%（阈值 {th_pct:.1f}%），建议{direction} {amount} 元\n"
+                            f"- {adv.asset_class.value}：偏离 {dev_pct:.1f}%（阈值 {th_pct:.1f}%），建议{direction} {amount} 元\n"  # noqa: E501
                         )
                     if not any_action:
                         lines.append("- 所有资产类别均在阈值内，观察\n")

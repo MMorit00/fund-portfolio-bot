@@ -5,7 +5,6 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-
 TradeType = Literal["buy", "sell"]
 TradeStatus = Literal["pending", "confirmed", "skipped"]
 MarketType = Literal["A", "QDII"]

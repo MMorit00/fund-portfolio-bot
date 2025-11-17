@@ -29,10 +29,11 @@ src/
 
 docs/
   architecture.md    # 架构与分层说明
-  python-style.md    # Python 编码规范
-  operations-log.md  # 环境与运维记录
+  python-style.md    # Python 编码规范（含 import 顺序）
+  operations-log.md  # 环境与运维记录（含日志规范）
   coding-log.md      # 开发变更记录
   roadmap.md         # Roadmap 与大 TODO
+  tooling.md         # 工具链配置（ruff / mypy）
 
 data/
   portfolio.db       # SQLite 数据文件（实际创建后才存在）
@@ -43,10 +44,11 @@ scripts/
 
 在开始任何任务前，你应该优先阅读：
 
-- `docs/architecture.md`
-- `docs/python-style.md`
-- `docs/roadmap.md`（了解当前版本目标）
-- 最近几条 `docs/coding-log.md`（了解最新变更）
+- `docs/architecture.md`（架构与分层）
+- `docs/python-style.md`（编码规范，含类型、import、docstring）
+- `docs/roadmap.md`（当前版本目标）
+- 最近几条 `docs/coding-log.md`（最新变更）
+- `docs/tooling.md`（工具链使用，按需查阅）
 
 
 ## 2. Python 编码规范（摘要）
@@ -55,7 +57,7 @@ scripts/
 
 1. **类型注解必须写全**
    - 所有公开函数/方法都要写参数和返回值类型
-   - 能用标准库类型就用标准库（`list[int]` / `dict[str, Any]`）
+   - 使用现代语法：`list[int]` / `dict[str, Any]` / `X | None`（不用 `List/Dict/Optional`）
 
 2. **数值使用 Decimal（涉及金额与净值）**
    - 禁止在业务层里用 float 做金额/净值计算
@@ -74,6 +76,8 @@ scripts/
    - MVP 阶段不引入 logging 框架，只使用：
      - `app/log.py` 中的 `log()`（内部即 `print`）
      - SQLite 连接的 `set_trace_callback` 打印 SQL（可由配置开关控制）
+   - **日志前缀规范**（见 `docs/operations-log.md`）：
+     - `[EastmoneyNav]`、`[LocalNav]`、`[Discord]`、`[Job:xxx]` 等
    - 不要引入新的日志依赖库
 
 6. **代码组织原则（重要）**
@@ -151,6 +155,7 @@ scripts/
      - `usecases/` 只通过 `ports.py` 依赖外部
    - 业务逻辑写在 `core` / `usecases`，`adapters` 只做 IO/持久化
    - 为新增的公开类/函数写中文 docstring
+   - **编码完成后运行 `ruff check --fix .` 自动修复格式问题**
 
 5. **错误与日志策略（MVP）**
    - 不设计复杂错误体系，除入口脚本外一般不 try/except
@@ -162,6 +167,19 @@ scripts/
    - 在做出"架构/行为上的决定"时，应该适当更新：
      - `docs/coding-log.md`（简要记录做了什么）
      - 必要时更新 `docs/architecture.md` 或 `docs/roadmap.md`
+
+7. **文档管理原则**
+   - **保持文档精简**：删除过时、重复或价值不大的文档
+   - **单一权威来源**：同一信息只在一处维护（如配置在 `pyproject.toml`，不在文档中重复）
+   - **定期审查**：完成阶段性任务后，检查是否有文档可以删除或合并
+   - **文档分类**：
+     - 规范类（`python-style.md`、`architecture.md`）：长期保留
+     - 操作手册（`operations-log.md`）：记录运维操作
+     - 草案/参考类（`tooling.md`）：仅保留有长期价值的部分
+   - **删除标准**：
+     - 内容已过时且无历史参考价值
+     - 与其他文档高度重复
+     - 仅为临时讨论/决策记录，已落地到代码
 
 
 ---

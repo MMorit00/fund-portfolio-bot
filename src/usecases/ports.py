@@ -7,7 +7,7 @@ from typing import Protocol
 
 from src.core.asset_class import AssetClass
 from src.core.dca_plan import DcaPlan
-from src.core.trade import Trade, MarketType
+from src.core.trade import MarketType, Trade
 
 
 @dataclass(slots=True)

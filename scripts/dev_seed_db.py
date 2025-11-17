@@ -13,6 +13,7 @@ import os
 from datetime import date, timedelta
 from decimal import Decimal
 
+from src.adapters.datasources.local_nav import LocalNavProvider
 from src.adapters.db.sqlite.alloc_config_repo import SqliteAllocConfigRepo
 from src.adapters.db.sqlite.db_helper import SqliteDbHelper
 from src.adapters.db.sqlite.dca_plan_repo import SqliteDcaPlanRepo
@@ -20,12 +21,10 @@ from src.adapters.db.sqlite.fund_repo import SqliteFundRepo
 from src.adapters.db.sqlite.nav_repo import SqliteNavRepo
 from src.adapters.db.sqlite.trade_repo import SqliteTradeRepo
 from src.core.asset_class import AssetClass
-from src.core.dca_plan import DcaPlan
 from src.core.trade import Trade
+from src.core.trading.calendar import SimpleTradingCalendar
 from src.core.trading.settlement import get_confirm_date
 from src.usecases.trading.confirm_pending import ConfirmPendingTrades
-from src.adapters.datasources.local_nav import LocalNavProvider
-from src.core.trading.calendar import SimpleTradingCalendar
 
 
 def prev_business_day(d: date, n: int = 1) -> date:
@@ -62,7 +61,7 @@ def main() -> None:
     calendar = SimpleTradingCalendar()
     trade_repo = SqliteTradeRepo(conn, calendar)
     nav_repo = SqliteNavRepo(conn)
-    dca_repo = SqliteDcaPlanRepo(conn)
+    _ = SqliteDcaPlanRepo(conn)  # dca_repo 初始化但未使用
     alloc_repo = SqliteAllocConfigRepo(conn)
 
     # 可选：重置核心表，避免历史数据干扰
@@ -83,7 +82,8 @@ def main() -> None:
     with conn:
         conn.execute(
             "INSERT INTO dca_plans(fund_code, amount, frequency, rule) VALUES(?, ?, ?, ?)"
-            " ON CONFLICT(fund_code) DO UPDATE SET amount=excluded.amount, frequency=excluded.frequency, rule=excluded.rule",
+            " ON CONFLICT(fund_code) DO UPDATE SET amount=excluded.amount, "  # noqa: E501
+            "frequency=excluded.frequency, rule=excluded.rule",
             ("110022", "1000", "weekly", "MON"),
         )
 
