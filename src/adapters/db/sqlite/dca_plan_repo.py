@@ -3,7 +3,6 @@ from __future__ import annotations
 import sqlite3
 from datetime import date
 from decimal import Decimal
-from typing import List, Optional
 
 from src.core.dca_plan import DcaPlan
 from src.usecases.ports import DcaPlanRepo
@@ -19,12 +18,12 @@ class SqliteDcaPlanRepo(DcaPlanRepo):
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def list_due_plans(self, day: date) -> List[DcaPlan]:  # type: ignore[override]
+    def list_due_plans(self, day: date) -> list[DcaPlan]:  # type: ignore[override]
         """返回需检查的定投计划（MVP 返回全部）。"""
         rows = self.conn.execute("SELECT * FROM dca_plans ORDER BY fund_code").fetchall()
         return [_row_to_plan(r) for r in rows]
 
-    def get_plan(self, fund_code: str) -> Optional[DcaPlan]:  # type: ignore[override]
+    def get_plan(self, fund_code: str) -> DcaPlan | None:  # type: ignore[override]
         """读取某基金定投计划，未配置返回 None。"""
         row = self.conn.execute(
             "SELECT * FROM dca_plans WHERE fund_code = ?",

@@ -3,7 +3,6 @@ from __future__ import annotations
 import sqlite3
 from datetime import date
 from decimal import Decimal
-from typing import Optional
 
 from src.usecases.ports import NavRepo
 
@@ -29,7 +28,7 @@ class SqliteNavRepo(NavRepo):
                 (fund_code, day.isoformat(), format(nav, "f")),
             )
 
-    def get(self, fund_code: str, day: date) -> Optional[Decimal]:  # type: ignore[override]
+    def get(self, fund_code: str, day: date) -> Decimal | None:  # type: ignore[override]
         """读取某日净值，未找到返回 None。"""
         row = self.conn.execute(
             "SELECT nav FROM navs WHERE fund_code = ? AND day = ?",

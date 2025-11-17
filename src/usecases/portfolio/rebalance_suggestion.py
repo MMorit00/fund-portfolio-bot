@@ -81,7 +81,7 @@ class GenerateRebalanceSuggestion:
             if nav is None or nav <= Decimal("0"):
                 continue
             value = shares * nav
-            asset_class: AssetClass = fund["asset_class"]
+            asset_class: AssetClass = fund.asset_class
             class_values[asset_class] = class_values.get(asset_class, Decimal("0")) + value
 
         total_value = sum(class_values.values(), Decimal("0"))

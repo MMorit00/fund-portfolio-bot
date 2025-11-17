@@ -3,7 +3,6 @@ from __future__ import annotations
 import sqlite3
 from datetime import date
 from decimal import Decimal
-from typing import Dict, List, Optional
 
 from src.core.trade import Trade
 from src.core.trading.calendar import TradingCalendar
@@ -58,9 +57,10 @@ class SqliteTradeRepo(TradeRepo):
             market=trade.market,
             shares=trade.shares,
             remark=trade.remark,
+            confirm_date=confirm_day,
         )
 
-    def list_pending_to_confirm(self, confirm_date: date) -> List[Trade]:  # type: ignore[override]
+    def list_pending_to_confirm(self, confirm_date: date) -> list[Trade]:  # type: ignore[override]
         """按预写的确认日查询待确认交易，按 id 升序返回。"""
         rows = self.conn.execute(
             "SELECT * FROM trades WHERE status = ? AND confirm_date = ? ORDER BY id",
@@ -81,12 +81,12 @@ class SqliteTradeRepo(TradeRepo):
                 ),
             )
 
-    def position_shares(self) -> Dict[str, Decimal]:  # type: ignore[override]
+    def position_shares(self) -> dict[str, Decimal]:  # type: ignore[override]
         """按基金代码聚合已确认交易，返回净持仓份额（买入为正，卖出为负）。"""
         rows = self.conn.execute(
             "SELECT fund_code, type, shares FROM trades WHERE status = 'confirmed' AND shares IS NOT NULL"
         ).fetchall()
-        position: Dict[str, Decimal] = {}
+        position: dict[str, Decimal] = {}
         for row in rows:
             shares = Decimal(row["shares"])
             if row["type"] == "sell":
@@ -111,7 +111,7 @@ class SqliteTradeRepo(TradeRepo):
         return cur.rowcount
 
 
-def _decimal_to_str(value: Optional[Decimal]) -> Optional[str]:
+def _decimal_to_str(value: Decimal | None) -> str | None:
     """将 Decimal 转换为字符串格式，None 原样返回。"""
     if value is None:
         return None
@@ -121,6 +121,7 @@ def _decimal_to_str(value: Optional[Decimal]) -> Optional[str]:
 def _row_to_trade(row: sqlite3.Row) -> Trade:
     """将 trades 表的 SQLite 行记录转换为 Trade 实体。"""
     shares = row["shares"]
+    confirm_date_str = row["confirm_date"]
     return Trade(
         id=int(row["id"]),
         fund_code=row["fund_code"],
@@ -131,4 +132,5 @@ def _row_to_trade(row: sqlite3.Row) -> Trade:
         market=row["market"],
         shares=Decimal(shares) if shares is not None else None,
         remark=row["remark"],
+        confirm_date=date.fromisoformat(confirm_date_str) if confirm_date_str else None,
     )

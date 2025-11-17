@@ -48,7 +48,7 @@ class RunDailyDca:
                 amount=p.amount,
                 trade_date=today,
                 status="pending",
-                market=fund.get("market", "A"),
+                market=fund.market,
             )
             self.trade_repo.add(t)
             count += 1

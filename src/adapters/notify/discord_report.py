@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from src.usecases.ports import ReportSender
 
@@ -12,7 +11,7 @@ class DiscordReportSender(ReportSender):
     MVP 阶段可使用 requests/httpx 发送文本消息。
     """
 
-    def __init__(self, webhook_url: Optional[str] = None) -> None:
+    def __init__(self, webhook_url: str | None = None) -> None:
         """
         初始化发送器。
 

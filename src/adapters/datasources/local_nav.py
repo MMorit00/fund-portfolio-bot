@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Optional
 
 from src.usecases.ports import NavProvider, NavRepo
 
@@ -20,7 +19,7 @@ class LocalNavProvider(NavProvider):
     def __init__(self, nav_repo: NavRepo) -> None:
         self.nav_repo = nav_repo
 
-    def get_nav(self, fund_code: str, day: date) -> Optional[Decimal]:
+    def get_nav(self, fund_code: str, day: date) -> Decimal | None:
         """从本地 NavRepo 获取指定日期的净值。"""
         return self.nav_repo.get(fund_code, day)
 

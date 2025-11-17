@@ -3,11 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Dict, List
+from typing import Literal
 
 from src.core.asset_class import AssetClass
 from src.core.portfolio.rebalance import calc_weight_difference
 from src.usecases.ports import AllocConfigRepo, FundRepo, NavProvider, ReportSender, TradeRepo
+
+
+ReportMode = Literal["market", "shares"]
 
 
 @dataclass
@@ -26,13 +29,13 @@ class ReportData:
     - funds_with_nav：当日拿到有效 NAV（>0）的基金数量。
     """
 
-    mode: str  # "market" 或 "shares"
+    mode: ReportMode
     as_of: date
     total_value: Decimal
-    class_value: Dict[AssetClass, Decimal]
-    class_weight: Dict[AssetClass, Decimal]
-    deviation: Dict[AssetClass, Decimal]
-    missing_nav: List[str]
+    class_value: dict[AssetClass, Decimal]
+    class_weight: dict[AssetClass, Decimal]
+    deviation: dict[AssetClass, Decimal]
+    missing_nav: list[str]
     # 统计字段：市值模式有效；份额模式下为 0
     total_funds_in_position: int
     funds_with_nav: int
@@ -68,7 +71,7 @@ class GenerateDailyReport:
         self.nav_provider = nav_provider
         self.sender = sender
 
-    def build(self, mode: str = "market") -> str:
+    def build(self, mode: ReportMode = "market") -> str:
         """
         构造日报文本内容。
 
@@ -78,8 +81,6 @@ class GenerateDailyReport:
         Returns:
             文本格式的日报内容。
         """
-        if mode not in {"market", "shares"}:
-            raise ValueError("mode 仅支持 market 或 shares")
 
         target_weights = self.alloc_repo.get_target_weights()
         position_shares = self.trade_repo.position_shares()
@@ -94,11 +95,11 @@ class GenerateDailyReport:
 
     def _build_market_view(
         self,
-        position_shares: Dict[str, Decimal],
-        target_weights: Dict[AssetClass, Decimal],
+        position_shares: dict[str, Decimal],
+        target_weights: dict[AssetClass, Decimal],
     ) -> ReportData:
         """
-        构造市值视图数据：按“确认为准的份额 × 当日 NAV”聚合市值与权重。
+        构造市值视图数据：按"确认为准的份额 × 当日 NAV"聚合市值与权重。
 
         规则（v0.2 严格版）：
         - 仅使用当日 NAV；`nav is None or nav <= 0` 视为缺失；
@@ -106,8 +107,8 @@ class GenerateDailyReport:
         - 额外统计参与基金数与当日有效 NAV 基金数，用于文案提示。
         """
         today = date.today()
-        class_values: Dict[AssetClass, Decimal] = {}
-        missing_nav: List[str] = []
+        class_values: dict[AssetClass, Decimal] = {}
+        missing_nav: list[str] = []
         total_funds_in_position = 0
         funds_with_nav = 0
 
@@ -126,12 +127,12 @@ class GenerateDailyReport:
                 continue
 
             value = shares * nav
-            asset_class = fund["asset_class"]
+            asset_class = fund.asset_class
             class_values[asset_class] = class_values.get(asset_class, Decimal("0")) + value
             funds_with_nav += 1
 
         total_value = sum(class_values.values(), Decimal("0"))
-        class_weight: Dict[AssetClass, Decimal] = {}
+        class_weight: dict[AssetClass, Decimal] = {}
         if total_value > Decimal("0"):
             for asset_class, value in class_values.items():
                 class_weight[asset_class] = value / total_value
@@ -152,22 +153,22 @@ class GenerateDailyReport:
 
     def _build_share_view(
         self,
-        position_shares: Dict[str, Decimal],
-        target_weights: Dict[AssetClass, Decimal],
+        position_shares: dict[str, Decimal],
+        target_weights: dict[AssetClass, Decimal],
     ) -> ReportData:
         """
         构造份额视图数据：按已确认份额聚合各资产类别份额并计算权重（不依赖 NAV）。
         """
-        class_shares: Dict[AssetClass, Decimal] = {}
+        class_shares: dict[AssetClass, Decimal] = {}
         for fund_code, shares in position_shares.items():
             fund = self.fund_repo.get_fund(fund_code)
             if not fund:
                 continue
-            asset_class = fund["asset_class"]
+            asset_class = fund.asset_class
             class_shares[asset_class] = class_shares.get(asset_class, Decimal("0")) + shares
 
         total_shares = sum(class_shares.values(), Decimal("0"))
-        class_weight: Dict[AssetClass, Decimal] = {}
+        class_weight: dict[AssetClass, Decimal] = {}
         if total_shares > Decimal("0"):
             for asset_class, shares in class_shares.items():
                 class_weight[asset_class] = shares / total_shares
@@ -186,13 +187,13 @@ class GenerateDailyReport:
             funds_with_nav=0,
         )
 
-    def _render(self, data: ReportData, target: Dict[AssetClass, Decimal]) -> str:
+    def _render(self, data: ReportData, target: dict[AssetClass, Decimal]) -> str:
         """
         将 ReportData 渲染成文本格式。
 
         说明：再平衡提示阈值当前固定为 ±5%（未读取配置）。
         """
-        lines: List[str] = []
+        lines: list[str] = []
 
         mode_text = "市值" if data.mode == "market" else "份额"
         lines.append(f"【持仓日报 {data.as_of} | 模式：{mode_text}】\n")
@@ -248,7 +249,7 @@ class GenerateDailyReport:
 
         return "".join(lines)
 
-    def send(self, mode: str = "market") -> bool:
+    def send(self, mode: ReportMode = "market") -> bool:
         """
         发送日报（默认市值模式）。
 

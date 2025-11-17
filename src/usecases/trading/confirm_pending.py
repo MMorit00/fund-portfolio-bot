@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 from dataclasses import dataclass
 from src.core.trading.calendar import TradingCalendar
+from src.core.trading.precision import quantize_shares
 from src.usecases.ports import NavProvider, TradeRepo
 
 
@@ -63,7 +64,7 @@ class ConfirmPendingTrades:
                 skipped_funds_set.add(t.fund_code)
                 continue
 
-            shares = (t.amount / nav)
+            shares = quantize_shares(t.amount / nav)
             self.trade_repo.confirm(t.id or 0, shares, nav)
             confirmed_count += 1
         return ConfirmResult(

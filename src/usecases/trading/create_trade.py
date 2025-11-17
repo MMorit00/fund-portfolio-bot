@@ -41,10 +41,6 @@ class CreateTrade:
         if not fund:
             raise ValueError(f"未知基金代码：{fund_code}")
 
-        market = fund.get("market")
-        if market not in ("A", "QDII"):
-            raise ValueError("基金 market 配置无效，应为 'A' 或 'QDII'")
-
         trade = Trade(
             id=None,
             fund_code=fund_code,
@@ -52,6 +48,6 @@ class CreateTrade:
             amount=amount,
             trade_date=trade_day,
             status="pending",
-            market=market,
+            market=fund.market,
         )
         return self.trade_repo.add(trade)

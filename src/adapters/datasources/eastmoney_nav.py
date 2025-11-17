@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from time import sleep
-from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
@@ -30,8 +29,8 @@ class EastmoneyNavProvider(NavProvider):
         *,
         timeout: float = 3.0,
         retries: int = 2,
-        base_url: Optional[str] = None,
-        user_agent: Optional[str] = None,
+        base_url: str | None = None,
+        user_agent: str | None = None,
         backoff_base: float = 0.2,
     ) -> None:
         """
@@ -58,7 +57,7 @@ class EastmoneyNavProvider(NavProvider):
         )
         self.backoff_base = backoff_base
 
-    def get_nav(self, fund_code: str, day: date) -> Optional[Decimal]:
+    def get_nav(self, fund_code: str, day: date) -> Decimal | None:
         """
         读取东方财富的官方单位净值（骨架实现）。
 
@@ -123,7 +122,7 @@ class EastmoneyNavProvider(NavProvider):
         }
         return f"{self.base_url}?{urlencode(params)}"
 
-    def _fetch_raw_json(self, url: str, *, headers: dict[str, str]) -> Optional[dict]:
+    def _fetch_raw_json(self, url: str, *, headers: dict[str, str]) -> dict | None:
         """
         发起 HTTP GET 并返回 JSON。
 
@@ -148,7 +147,7 @@ class EastmoneyNavProvider(NavProvider):
                 print(f"[NavProvider] JSON 解析失败：url={url} err={err}")
                 return None
 
-    def _parse_nav(self, raw: dict) -> Optional[Decimal]:
+    def _parse_nav(self, raw: dict) -> Decimal | None:
         """
         从东方财富响应中解析单位净值（占位实现）。
 

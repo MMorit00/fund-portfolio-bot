@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Dict, List, Optional
 
 from src.core.asset_class import AssetClass
-from src.usecases.ports import FundRepo
+from src.usecases.ports import FundRepo, FundInfo
 
 
 class SqliteFundRepo(FundRepo):
@@ -28,7 +27,7 @@ class SqliteFundRepo(FundRepo):
                 (fund_code, name, asset_class.value, market),
             )
 
-    def get_fund(self, fund_code: str) -> Optional[Dict]:  # type: ignore[override]
+    def get_fund(self, fund_code: str) -> FundInfo | None:  # type: ignore[override]
         """按基金代码读取，未找到返回 None。"""
         row = self.conn.execute(
             "SELECT * FROM funds WHERE fund_code = ?",
@@ -36,19 +35,19 @@ class SqliteFundRepo(FundRepo):
         ).fetchone()
         if not row:
             return None
-        return _row_to_dict(row)
+        return _row_to_fund_info(row)
 
-    def list_funds(self) -> List[Dict]:  # type: ignore[override]
+    def list_funds(self) -> list[FundInfo]:  # type: ignore[override]
         """按 fund_code 排序返回全部基金。"""
         rows = self.conn.execute("SELECT * FROM funds ORDER BY fund_code").fetchall()
-        return [_row_to_dict(r) for r in rows]
+        return [_row_to_fund_info(r) for r in rows]
 
 
-def _row_to_dict(row: sqlite3.Row) -> Dict:
-    """将 SQLite Row 转换为基金信息字典。"""
-    return {
-        "fund_code": row["fund_code"],
-        "name": row["name"],
-        "asset_class": AssetClass(row["asset_class"]),
-        "market": row["market"],
-    }
+def _row_to_fund_info(row: sqlite3.Row) -> FundInfo:
+    """将 SQLite Row 转换为 FundInfo 对象。"""
+    return FundInfo(
+        fund_code=row["fund_code"],
+        name=row["name"],
+        asset_class=AssetClass(row["asset_class"]),
+        market=row["market"],
+    )

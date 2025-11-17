@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Dict, List, Optional, Literal
+from typing import Literal
 
 from src.core.asset_class import AssetClass
 
 
-def calc_weight_difference(actual: Dict[AssetClass, Decimal], target: Dict[AssetClass, Decimal]) -> Dict[AssetClass, Decimal]:
+def calc_weight_difference(actual: dict[AssetClass, Decimal], target: dict[AssetClass, Decimal]) -> dict[AssetClass, Decimal]:
     """
     计算每个资产类别的权重差值（实际权重 - 目标权重）。
 
@@ -15,7 +15,7 @@ def calc_weight_difference(actual: Dict[AssetClass, Decimal], target: Dict[Asset
     所有权重使用 [0,1] 间的小数表示。
     """
 
-    dev: Dict[AssetClass, Decimal] = {}
+    dev: dict[AssetClass, Decimal] = {}
     for cls, tgt in target.items():
         a = actual.get(cls, Decimal("0"))
         dev[cls] = a - tgt
@@ -54,11 +54,11 @@ class RebalanceAdvice:
 
 def build_rebalance_advice(
     total_value: Decimal,
-    actual_weight: Dict[AssetClass, Decimal],
-    target_weight: Dict[AssetClass, Decimal],
-    thresholds: Optional[Dict[AssetClass, Decimal]] = None,
+    actual_weight: dict[AssetClass, Decimal],
+    target_weight: dict[AssetClass, Decimal],
+    thresholds: dict[AssetClass, Decimal] | None = None,
     default_threshold: Decimal = Decimal("0.05"),
-) -> List[RebalanceAdvice]:
+) -> list[RebalanceAdvice]:
     """
     基于当前权重、目标权重与阈值，构造按资产类别的再平衡建议列表。
 
@@ -70,7 +70,7 @@ def build_rebalance_advice(
     - 返回列表按 abs(diff) 从大到小排序。
     """
 
-    advices: List[RebalanceAdvice] = []
+    advices: list[RebalanceAdvice] = []
     for cls, tgt in target_weight.items():
         cur = actual_weight.get(cls, Decimal("0"))
         diff = cur - tgt

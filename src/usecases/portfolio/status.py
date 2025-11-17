@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Dict
 
 from src.core.asset_class import AssetClass
 from src.usecases.ports import TradeRepo
@@ -16,7 +15,7 @@ class GetStatusSummary:
     def __init__(self, trade_repo: TradeRepo) -> None:
         self.trade_repo = trade_repo
 
-    def execute(self) -> Dict[str, str]:
+    def execute(self) -> dict[str, str]:
         # TODO: 返回总市值/分类权重等（占位）
         return {"message": "状态摘要：待实现"}
 
