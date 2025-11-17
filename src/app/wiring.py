@@ -14,14 +14,15 @@ from src.adapters.db.sqlite.trade_repo import SqliteTradeRepo
 from src.adapters.notify.discord_report import DiscordReportSender
 from src.app import config
 from src.adapters.datasources.local_nav import LocalNavProvider
+from src.adapters.datasources.eastmoney_nav import EastmoneyNavProvider
 from src.core.trading.calendar import SimpleTradingCalendar
 from src.usecases.dca.run_daily import RunDailyDca
 from src.usecases.dca.skip_date import SkipDcaForDate
 from src.usecases.portfolio.daily_report import GenerateDailyReport
 from src.usecases.portfolio.rebalance_suggestion import GenerateRebalanceSuggestion
 from src.usecases.trading.confirm_pending import ConfirmPendingTrades
-from src.usecases.ports import FundRepo, NavRepo
 from src.usecases.trading.create_trade import CreateTrade
+from src.usecases.marketdata.fetch_navs_for_day import FetchNavsForDay
 
 
 class DependencyContainer:
@@ -131,24 +132,11 @@ class DependencyContainer:
             self.nav_provider,
         )
 
-    # === 底层仓储访问（Job/脚本使用） ===
+    # === 其他 UseCase ===
 
-    def get_fund_repo(self) -> FundRepo:
-        """
-        返回基金仓储实例。
-
-        仅在 with DependencyContainer() 上下文中调用，主要供 Job/脚本使用。
-        """
-        if not self.fund_repo:
+    def get_fetch_navs_usecase(self) -> FetchNavsForDay:
+        """获取 FetchNavsForDay UseCase（Eastmoney Provider）。"""
+        if not self.fund_repo or not self.nav_repo:
             raise RuntimeError("容器未初始化，请在 with 块中使用")
-        return self.fund_repo
-
-    def get_nav_repo(self) -> NavRepo:
-        """
-        返回净值仓储实例。
-
-        仅在 with DependencyContainer() 上下文中调用，主要供 Job/脚本使用。
-        """
-        if not self.nav_repo:
-            raise RuntimeError("容器未初始化，请在 with 块中使用")
-        return self.nav_repo
+        provider = EastmoneyNavProvider()
+        return FetchNavsForDay(self.fund_repo, self.nav_repo, provider)

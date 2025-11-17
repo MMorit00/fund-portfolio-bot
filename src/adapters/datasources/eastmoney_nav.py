@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from time import sleep
 from typing import Optional
+from urllib.parse import urlencode
 
 import httpx
 
@@ -47,7 +48,10 @@ class EastmoneyNavProvider(NavProvider):
             raise ValueError("retries 必须 >= 0")
         self.timeout = timeout
         self.retries = retries
-        self.base_url = base_url or "https://example-eastmoney-nav-endpoint"  # TODO: 替换为真实地址
+        # 东方财富历史净值 REST 接口（按日查询）
+        # 示例：
+        # https://api.fund.eastmoney.com/f10/lsjz?fundCode=110022&pageIndex=1&pageSize=1&startDate=2025-11-20&endDate=2025-11-20
+        self.base_url = base_url or "https://api.fund.eastmoney.com/f10/lsjz"
         self.user_agent = (
             user_agent
             or "fund-portfolio-bot/0.1 (+https://github.com/your-repo-or-homepage)"
@@ -72,7 +76,12 @@ class EastmoneyNavProvider(NavProvider):
             若成功获取且 NAV>0 则返回 Decimal 净值；否则返回 None。
         """
         url = self._build_url(fund_code, day)
-        headers = {"User-Agent": self.user_agent}
+        headers = {
+            "User-Agent": self.user_agent,
+            # Eastmoney 对 Referer 比较敏感，缺失可能返回 403/空数据
+            "Referer": "https://fundf10.eastmoney.com/",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+        }
 
         attempt = 0
         while True:
@@ -104,8 +113,15 @@ class EastmoneyNavProvider(NavProvider):
         说明：
         - 真实接入时应根据具体 API 规则拼接查询参数（如代码、日期范围等）。
         """
-        # TODO: 根据东方财富实际 API 设计 URL 与查询参数
-        return f"{self.base_url}?code={fund_code}&date={day.isoformat()}"
+        # f10/lsjz 接口支持 startDate/endDate，按同一天精确取 1 条
+        params = {
+            "fundCode": fund_code,
+            "pageIndex": 1,
+            "pageSize": 1,
+            "startDate": day.isoformat(),
+            "endDate": day.isoformat(),
+        }
+        return f"{self.base_url}?{urlencode(params)}"
 
     def _fetch_raw_json(self, url: str, *, headers: dict[str, str]) -> Optional[dict]:
         """
@@ -140,8 +156,24 @@ class EastmoneyNavProvider(NavProvider):
         - 当前仅为结构占位，假设 raw 中存在某个字段存放净值；
         - 真实接入时请根据实际字段名做解析。
         """
-        # TODO: 根据真实响应结构提取 NAV 字段，例如 raw["data"]["nav"]
-        nav_str = raw.get("nav")  # type: ignore[assignment]
+        # 典型返回结构（示意）：
+        # {
+        #   "ErrCode": 0,
+        #   "Data": {
+        #       "LSJZList": [ {"FSRQ": "2025-11-20", "DWJZ": "1.2345", ...} ],
+        #       ...
+        #   }
+        # }
+        data = raw.get("Data") or raw.get("data")
+        if not isinstance(data, dict):
+            return None
+        items = data.get("LSJZList") or data.get("lsjzList") or data.get("Datas")
+        if not isinstance(items, list) or not items:
+            return None
+        item = items[0]
+        if not isinstance(item, dict):
+            return None
+        nav_str = item.get("DWJZ") or item.get("dwjz")
         if not nav_str:
             return None
         try:

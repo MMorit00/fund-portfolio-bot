@@ -139,6 +139,11 @@ python -m src.jobs.fetch_navs --date 2025-11-20
 - 仅当返回值存在且 > 0 时，才会写入 `navs` 表（`upsert`，幂等）；
 - 获取失败或 NAV 无效时，记录基金代码到失败列表，并在 Job 结束时打印提示。
 
+依赖与请求说明：
+- 依赖 `httpx`；建议使用 UV 安装：`uv add httpx`（或 `pip install httpx`）。
+- Eastmoney 接口：`https://api.fund.eastmoney.com/f10/lsjz`（按日历史净值）。
+- 请求头：已在 Provider 固定 `User-Agent`、`Referer: https://fundf10.eastmoney.com/`、`Accept: application/json`，以减少 403 风险。
+
 ### 推荐调度顺序（本地 cron / GitHub Actions）
 
 在每天交易日结束后按顺序执行：

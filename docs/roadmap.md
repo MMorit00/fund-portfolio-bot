@@ -66,6 +66,9 @@
 
 ## 当前功能一览表（v0.1 / 现状）
 
+- 市场数据抓取（按日官方 NAV） — UseCase: `FetchNavsForDay`
+  - Job：`python -m src.jobs.fetch_navs`
+
 - 录入交易（买/卖） — UseCase: `CreateTrade`
   - CLI：`python -m src.app.main buy|sell ...`
 

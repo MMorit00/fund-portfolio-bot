@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import argparse
 from datetime import date
-from decimal import Decimal
 import sys
 
 from src.app.log import log
 from src.app.wiring import DependencyContainer
-from src.adapters.datasources.eastmoney_nav import EastmoneyNavProvider
+from src.usecases.marketdata.fetch_navs_for_day import FetchNavsForDay
 
 
 def _parse_date(value: str | None) -> date:
@@ -51,7 +50,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     """
-    抓取净值任务入口（骨架实现）。
+    抓取净值任务入口（调用 UseCase）。
 
     说明：
     - 遍历当前 DB 中已配置的全部基金，按指定日期调用 EastmoneyNavProvider 获取 NAV；
@@ -68,32 +67,17 @@ def main() -> int:
         log(f"[Job] fetch_navs 开始：day={target_day}")
 
         with DependencyContainer() as container:
-            fund_repo = container.get_fund_repo()
-            nav_repo = container.get_nav_repo()
-            provider = EastmoneyNavProvider()
-
-            funds = fund_repo.list_funds()
-            total = len(funds)
-            success = 0
-            failed_codes: list[str] = []
-
-            for f in funds:
-                code = f["fund_code"]
-                nav = provider.get_nav(code, target_day)
-                if nav is None or nav <= Decimal("0"):
-                    failed_codes.append(code)
-                    continue
-                nav_repo.upsert(code, target_day, nav)
-                success += 1
+            uc: FetchNavsForDay = container.get_fetch_navs_usecase()
+            result = uc.execute(day=target_day)
 
         log(
-            f"[Job] fetch_navs 结束：day={target_day} total={total} "
-            f"success={success} failed={len(failed_codes)}"
+            f"[Job] fetch_navs 结束：day={result.day} total={result.total} "
+            f"success={result.success} failed={len(result.failed_codes)}"
         )
-        if failed_codes:
+        if result.failed_codes:
             log(
                 "[Job] fetch_navs 失败基金代码（部分可能因 NAV 缺失或网络错误）： "
-                + ", ".join(sorted(failed_codes))
+                + ", ".join(sorted(result.failed_codes))
             )
         return 0
     except Exception as err:  # noqa: BLE001

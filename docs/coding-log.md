@@ -157,3 +157,17 @@
 
 ### 补充
 - 当日 total_value == 0（例如当日 NAV 全部缺失）时，UseCase 返回 `no_market_data=True` 与提示文案，CLI 展示“当日 NAV 缺失，无法给出金额建议”。
+
+## 2025-11-20 外部 NAV 接入与 UseCase 抽取
+
+### 完成内容
+- EastmoneyNavProvider 接入东方财富历史净值 REST（f10/lsjz）：
+  - URL：按日查询 `startDate=endDate=day&pageSize=1`；
+  - Header：固定 `Referer` 与 `Accept`，保持自定义 `User-Agent`；
+  - 重试：429/5xx 抛异常交由外层指数退避重试，其它非 200 返回 None。
+- 抽取 UseCase `FetchNavsForDay`：遍历基金 → 调 Provider → `NavRepo.upsert` → 汇总统计；
+- 调整 `jobs/fetch_navs.py`：入口仅解析参数并调用 UseCase。
+
+### 决策
+- 抓取范围采用“严格版”：仅抓指定日，不做回退；失败列表由 Job 输出；
+- UseCase 与 Job 分层明确：Job 负责入参与日志，UseCase 负责业务循环与统计。
