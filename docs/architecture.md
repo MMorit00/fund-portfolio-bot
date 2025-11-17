@@ -48,6 +48,26 @@ scripts/        # 辅助脚本（如备份）
 - `jobs/confirm_trades.py` 按 T+N 规则确认份额
 - `jobs/daily_report.py` 生成并发送日报（Discord Webhook）
 
+## NAV 数据流（v0.3 草案）
+
+- 外部数据源适配器：
+  - `EastmoneyNavProvider`（`src/adapters/datasources/eastmoney_nav.py`）
+    - 使用 httpx 同步客户端，从东方财富接口按“基金代码 + 日期”获取官方单位净值；
+    - 处理超时/重试/HTTP 状态码与解析错误，所有异常收敛为可选值（失败返回 None）。
+- 本地净值仓储：
+  - `SqliteNavRepo`（`src/adapters/db/sqlite/nav_repo.py`）
+    - 表：`navs(fund_code, day, nav)`；
+    - 接口：`upsert()` + `get()`，以文本形式持久化 Decimal。
+- 运行时 Provider：
+  - `LocalNavProvider`（`src/adapters/datasources/local_nav.py`）
+    - 仅从本地 `navs` 表读取 NAV，供用例 `ConfirmPendingTrades`、`GenerateDailyReport`、`GenerateRebalanceSuggestion` 使用；
+    - 不直接访问外部 HTTP。
+- 数据流整体关系：
+  1. Job `fetch_navs` 通过 `EastmoneyNavProvider` 从外部拉取某日 NAV；
+  2. 调用 `SqliteNavRepo.upsert` 落地到 `navs` 表（按 fund_code+day 幂等）；
+  3. 运行确认/日报时，通过 `LocalNavProvider` 从 `navs` 读取对应日期 NAV；
+  4. 核心用例与领域层只感知 `NavProvider` 接口，不关心外部数据源细节。
+
 ## 架构图（PlantUML）
 
 - 源文件：`docs/architecture/fund-portfolio-architecture.puml`

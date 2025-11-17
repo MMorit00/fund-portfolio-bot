@@ -13,27 +13,15 @@ from src.adapters.db.sqlite.nav_repo import SqliteNavRepo
 from src.adapters.db.sqlite.trade_repo import SqliteTradeRepo
 from src.adapters.notify.discord_report import DiscordReportSender
 from src.app import config
+from src.adapters.datasources.local_nav import LocalNavProvider
 from src.core.trading.calendar import SimpleTradingCalendar
 from src.usecases.dca.run_daily import RunDailyDca
 from src.usecases.dca.skip_date import SkipDcaForDate
 from src.usecases.portfolio.daily_report import GenerateDailyReport
 from src.usecases.portfolio.rebalance_suggestion import GenerateRebalanceSuggestion
 from src.usecases.trading.confirm_pending import ConfirmPendingTrades
+from src.usecases.ports import FundRepo, NavRepo
 from src.usecases.trading.create_trade import CreateTrade
-
-
-class LocalNavProvider:
-    """
-    本地 NavProvider 实现（方案 A）：从 NavRepo 读取 NAV。
-    不做 HTTP 抓取，仅依赖 dev_seed_db 或手工写入的数据。
-    """
-
-    def __init__(self, nav_repo: SqliteNavRepo) -> None:
-        self.nav_repo = nav_repo
-
-    def get_nav(self, fund_code: str, day: date) -> Optional[Decimal]:
-        """从本地 NavRepo 获取指定日期的净值。"""
-        return self.nav_repo.get(fund_code, day)
 
 
 class DependencyContainer:
@@ -82,6 +70,8 @@ class DependencyContainer:
         """关闭数据库连接。"""
         if self.helper:
             self.helper.close()
+
+    # === UseCase 构造方法 ===
 
     def get_create_trade_usecase(self) -> CreateTrade:
         """获取 CreateTrade UseCase。"""
@@ -140,3 +130,25 @@ class DependencyContainer:
             self.fund_repo,
             self.nav_provider,
         )
+
+    # === 底层仓储访问（Job/脚本使用） ===
+
+    def get_fund_repo(self) -> FundRepo:
+        """
+        返回基金仓储实例。
+
+        仅在 with DependencyContainer() 上下文中调用，主要供 Job/脚本使用。
+        """
+        if not self.fund_repo:
+            raise RuntimeError("容器未初始化，请在 with 块中使用")
+        return self.fund_repo
+
+    def get_nav_repo(self) -> NavRepo:
+        """
+        返回净值仓储实例。
+
+        仅在 with DependencyContainer() 上下文中调用，主要供 Job/脚本使用。
+        """
+        if not self.nav_repo:
+            raise RuntimeError("容器未初始化，请在 with 块中使用")
+        return self.nav_repo

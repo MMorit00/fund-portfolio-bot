@@ -11,7 +11,7 @@
 
 
 ## v0.2（进行中）
-- [ ] 周报 / 月报（基础版）
+- [ ] 周报 / 月报（基础版）[暂时跳过这个 v0.2最后]
 - [x] 交易确认规则 v0.2（TradingCalendar + 定价日）—— 引入 `TradingCalendar` 与“定价日+lag”口径，统一 ConfirmPendingTrades 规则
 - [x] NAV 策略 v0.2（严格版）—— 确认用定价日 NAV，日报/status 仅用当日 NAV，不做回退并提示低估风险
 - [x] 再平衡建议（文字提示 + 建议金额）—— UseCase `GenerateRebalanceSuggestion` 已落地，CLI `status --show-rebalance` 可查看建议
@@ -22,6 +22,10 @@
 - [ ] 盘中估值作为附加信息（不作为核心口径）
 - [ ] 自然语言 AI 接口（基于现有 UseCases）
 - [ ] 静态类型与代码检查（mypy/ruff）最小配置与渐进收紧（文档先行→最小配置→逐步收紧）
+- [ ] 使用 UV 管理项目（依赖与运行环境）
+  - 采用 `uv` 统一安装/锁定/运行：`uv pip`, `uv run`
+  - 补充锁定文件与脚本：`uv.lock`、常用命令别名
+  - 文档：在 `docs/operations-log.md` 增加 UV 使用说明（安装、常见命令）
 
 
 
@@ -60,26 +64,21 @@
 
 
 
-## 当前功能一览表（v0.1）
+## 当前功能一览表（v0.1 / 现状）
 
-- 录入交易（买/卖）  
-  - UseCase：`CreateTrade`  
-  - 入口：CLI `buy` / `sell`
-- 定投计划执行（按计划生成当日 pending）  
-  - UseCase：`RunDailyDca`  
-  - 入口：Job `run_dca`
-- 定投跳过（指定基金 + 日期）  
-  - UseCase：`SkipDcaForDate`  
-  - 入口：CLI `skip-dca`
-- 交易确认（T+N 转已确认）  
-  - UseCase：`ConfirmPendingTrades`  
-  - 入口：Job `confirm_trades`
-- 日报生成（市值/份额视图）  
-  - UseCase：`GenerateDailyReport`  
-  - 入口：Job `daily_report`
-- 状态查看（终端输出市值视图）  
-  - UseCase：`GenerateDailyReport`  
-  - 入口：CLI `status`
-- 再平衡建议（基础版，CLI 扩展）  
-  - UseCase：`GenerateRebalanceSuggestion`  
-  - 入口：CLI `status --show-rebalance`
+- 录入交易（买/卖） — UseCase: `CreateTrade`
+  - CLI：`python -m src.app.main buy|sell ...`
+
+- 定投计划 — UseCase: `RunDailyDca`
+  - Job：`python -m src.jobs.run_dca`
+  - 子功能：定投跳过 — UseCase: `SkipDcaForDate`
+    - CLI：`python -m src.app.main skip-dca --fund-code ... --date ...`
+
+- 交易确认（T+N） — UseCase: `ConfirmPendingTrades`
+  - Job：`python -m src.jobs.confirm_trades`
+
+- 日报生成（市值/份额视图） — UseCase: `GenerateDailyReport`
+  - Job：`python -m src.jobs.daily_report`
+  - CLI：`python -m src.app.main status`
+  - 子功能：再平衡建议（基础版） — UseCase: `GenerateRebalanceSuggestion`
+    - CLI：`python -m src.app.main status --show-rebalance`

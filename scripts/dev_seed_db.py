@@ -24,7 +24,7 @@ from src.core.dca_plan import DcaPlan
 from src.core.trade import Trade
 from src.core.trading.settlement import get_confirm_date
 from src.usecases.trading.confirm_pending import ConfirmPendingTrades
-from src.app.wiring import LocalNavProvider
+from src.adapters.datasources.local_nav import LocalNavProvider
 from src.core.trading.calendar import SimpleTradingCalendar
 
 

@@ -1,28 +1,103 @@
 from __future__ import annotations
 
+import argparse
+from datetime import date
+from decimal import Decimal
 import sys
+
 from src.app.log import log
+from src.app.wiring import DependencyContainer
+from src.adapters.datasources.eastmoney_nav import EastmoneyNavProvider
+
+
+def _parse_date(value: str | None) -> date:
+    """
+    解析命令行日期参数。
+
+    Args:
+        value: 日期字符串（YYYY-MM-DD）或 None。
+
+    Returns:
+        解析后的日期；None 时返回今天。
+
+    Raises:
+        ValueError: 日期格式非法。
+    """
+    if not value:
+        return date.today()
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"日期格式无效：{value}（期望：YYYY-MM-DD）") from exc
+
+
+def parse_args() -> argparse.Namespace:
+    """
+    解析 fetch_navs 命令行参数。
+
+    支持参数：
+    - --date：目标日期（YYYY-MM-DD），默认今天。
+    """
+    parser = argparse.ArgumentParser(
+        prog="python -m src.jobs.fetch_navs",
+        description="从外部数据源抓取基金净值并落库",
+    )
+    parser.add_argument(
+        "--date",
+        help="目标日期（格式：YYYY-MM-DD，默认今天）",
+    )
+    return parser.parse_args()
 
 
 def main() -> int:
     """
-    抓取净值任务入口（占位）。
+    抓取净值任务入口（骨架实现）。
 
-    说明（v0.2 严格版）：
-    - 当前项目以本地 `navs` 表为主数据源（由 `dev_seed_db.py` 或手工 upsert 填充）。
-    - 本入口仅预留“外部数据源抓取”的装配位置，未来可切换为 Eastmoney 等 Provider。
-    - 预计在后续版本中补充：超时/重试/缓存策略与批量落库逻辑。
+    说明：
+    - 遍历当前 DB 中已配置的全部基金，按指定日期调用 EastmoneyNavProvider 获取 NAV；
+    - 对获取成功且 NAV>0 的记录调用 NavRepo.upsert，保证按 (fund_code, day) 幂等；
+    - 对失败/无效的记录仅计入失败列表并打印日志，不中断整体流程。
 
     Returns:
         退出码：0=成功；4=参数/实现错误。
     """
     try:
-        log("[Job] fetch_navs 开始")
-        # TODO: 装配 provider+repo，抓取当日 NAV（占位）
-        log("[Job] fetch_navs 结束")
+        args = parse_args()
+        target_day = _parse_date(getattr(args, "date", None))
+
+        log(f"[Job] fetch_navs 开始：day={target_day}")
+
+        with DependencyContainer() as container:
+            fund_repo = container.get_fund_repo()
+            nav_repo = container.get_nav_repo()
+            provider = EastmoneyNavProvider()
+
+            funds = fund_repo.list_funds()
+            total = len(funds)
+            success = 0
+            failed_codes: list[str] = []
+
+            for f in funds:
+                code = f["fund_code"]
+                nav = provider.get_nav(code, target_day)
+                if nav is None or nav <= Decimal("0"):
+                    failed_codes.append(code)
+                    continue
+                nav_repo.upsert(code, target_day, nav)
+                success += 1
+
+        log(
+            f"[Job] fetch_navs 结束：day={target_day} total={total} "
+            f"success={success} failed={len(failed_codes)}"
+        )
+        if failed_codes:
+            log(
+                "[Job] fetch_navs 失败基金代码（部分可能因 NAV 缺失或网络错误）： "
+                + ", ".join(sorted(failed_codes))
+            )
         return 0
     except Exception as err:  # noqa: BLE001
-        print("执行失败：fetch_navs", err)
+        log(f"执行失败：fetch_navs {err}")
         return 4
 
 

@@ -116,3 +116,42 @@ python -m src.jobs.daily_report
 3. **Discord 推送**：
    - 需要配置 `DISCORD_WEBHOOK_URL` 环境变量
    - 未配置时日报仍会生成，但不会推送
+
+## 2025-11-20 NAV 抓取 Job（v0.3 草案）
+
+### 使用方法
+
+抓取今天全部基金的 NAV：
+
+```
+python -m src.jobs.fetch_navs
+```
+
+抓取指定日期的 NAV：
+
+```
+python -m src.jobs.fetch_navs --date 2025-11-20
+```
+
+说明：
+- Job 会遍历 `funds` 表中已配置的所有基金；
+- 对每只基金调用 `EastmoneyNavProvider.get_nav(fund_code, day)` 获取官方单位净值；
+- 仅当返回值存在且 > 0 时，才会写入 `navs` 表（`upsert`，幂等）；
+- 获取失败或 NAV 无效时，记录基金代码到失败列表，并在 Job 结束时打印提示。
+
+### 推荐调度顺序（本地 cron / GitHub Actions）
+
+在每天交易日结束后按顺序执行：
+
+```
+python -m src.jobs.fetch_navs      # 抓取 NAV
+python -m src.jobs.confirm_trades  # 确认到期 pending
+python -m src.jobs.daily_report    # 生成并推送日报
+```
+
+如需对历史日期补 NAV 与确认，可先对指定日期运行：
+
+```
+python -m src.jobs.fetch_navs --date YYYY-MM-DD
+python -m src.jobs.confirm_trades  # （未来可扩展 --day 参数）
+```
