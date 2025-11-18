@@ -11,8 +11,9 @@ Codex 在本项目中的主要职责：
 
 1. **架构与设计辅助**
    - 阅读 `docs/architecture.md` / `docs/python-style.md` / `docs/roadmap.md`
-   - 评估新需求如何融入现有分层结构
+   - 评估新需求如何融入现有分层结构（含 roadmap 中的 v0.2/v0.3 规划）
    - 给出模块拆分、目录命名、协议设计等建议
+   - 围绕 roadmap 中的“AI 数据布局”（动作标签、ContextSnapshot、Outcome 等），负责概念建模与 schema/迁移文档草稿，但**不设计具体 AI 产品功能**
 
 2. **开发计划与任务拆分**
    - 根据需求编写实现计划（步骤化）
