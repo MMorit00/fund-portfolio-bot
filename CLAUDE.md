@@ -177,9 +177,36 @@ scripts/
      - 操作手册（`operations-log.md`）：记录运维操作
      - 草案/参考类（`tooling.md`）：仅保留有长期价值的部分
    - **删除标准**：
-     - 内容已过时且无历史参考价值
-     - 与其他文档高度重复
-     - 仅为临时讨论/决策记录，已落地到代码
+    - 内容已过时且无历史参考价值
+    - 与其他文档高度重复
+    - 仅为临时讨论/决策记录，已落地到代码
+
+---
+
+## 8. 近期实现提示（v0.2 严格版：展示日与抓取）
+
+- 日报/状态视图默认展示日 = 上一交易日（当前按“上一工作日”近似）。
+  - CLI：`status --mode {market,shares} --as-of YYYY-MM-DD`（未提供 `--as-of` 时默认上一交易日）
+  - Job：`daily_report --mode {market,shares} --as-of YYYY-MM-DD`
+  - 严格不回退：对选定展示日，仅使用该日 NAV；缺失即剔除，文末提示“总市值可能低估”。
+
+- 抓取与报表职责分离：
+  - 抓取（HTTP）：`fetch_navs` / `fetch_navs_range`（EastmoneyNavProvider）
+  - 报表/确认（只读本地）：LocalNavProvider 读取 `navs` 表
+
+- 区间抓取：
+  - `python -m src.jobs.fetch_navs_range --from YYYY-MM-DD --to YYYY-MM-DD`
+  - 闭区间逐日抓取（严格只抓指定日），幂等 upsert；失败清单在任务末尾汇总打印
+
+- 推荐每日顺序：
+  - `fetch_navs --date T` → `confirm_trades --day T+1` → `daily_report --as-of T`
+
+- 代码落点：
+  - 展示日参数：`src/usecases/portfolio/daily_report.py`（build/send 接受 as_of）
+  - CLI/Job 参数：`src/app/main.py`（status），`src/jobs/daily_report.py`，`src/jobs/fetch_navs_range.py`
+  - 确认口径：`src/core/trading/settlement.py` 与 `src/usecases/trading/confirm_pending.py`
+
+如果你要新增功能，请先确认是否影响上述口径或职责边界；若需要改动，请在 PR 里同步更新 `docs/operations-log.md` 与 `docs/roadmap.md`。
 
 
 ---

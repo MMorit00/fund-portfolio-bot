@@ -149,9 +149,10 @@ python -m src.jobs.fetch_navs --date 2025-11-20
 在每天交易日结束后按顺序执行：
 
 ```
-python -m src.jobs.fetch_navs      # 抓取 NAV
-python -m src.jobs.confirm_trades  # 确认到期 pending
-python -m src.jobs.daily_report    # 生成并推送日报
+# 假设上一交易日为 T
+python -m src.jobs.fetch_navs --date T      # 抓取 T 日 NAV（严格：只抓指定日，不回退）
+python -m src.jobs.confirm_trades --day T+1 # 确认到期 pending（用“定价日 NAV”，缺失标记 delayed）
+python -m src.jobs.daily_report --as-of T   # 生成并推送日报（展示日=T，仅用当日 NAV）
 ```
 
 如需对历史日期补 NAV 与确认，可先对指定日期运行：
@@ -160,6 +161,40 @@ python -m src.jobs.daily_report    # 生成并推送日报
 python -m src.jobs.fetch_navs --date YYYY-MM-DD
 python -m src.jobs.confirm_trades  # （未来可扩展 --day 参数）
 ```
+
+## 2025-11-22 日报展示日与状态视图（v0.2 严格）
+
+- 展示日默认：上一交易日（当前用“上一工作日”近似，节假日表在 v0.3 引入）
+- 市值视图：仅统计展示日 NAV>0 的基金，不足部分剔除，并在文末提示“总市值可能低估”
+- 份额视图：不依赖 NAV，作为 NAV 不全时的兜底
+
+常用命令：
+
+```
+# 状态（默认上一交易日市值视图）
+python -m src.app.main status
+
+# 指定视图与展示日
+python -m src.app.main status --mode market --as-of 2025-11-12
+python -m src.app.main status --mode shares --as-of 2025-11-12
+
+# 发送日报（默认上一交易日）
+python -m src.jobs.daily_report --mode market
+```
+
+## 2025-11-22 历史 NAV 区间抓取（v0.2）
+
+```
+python -m src.jobs.fetch_navs_range --from 2025-01-01 --to 2025-03-31
+
+# 回填完成后，补确认到区间末日：
+python -m src.jobs.confirm_trades --day 2025-04-01
+
+# 查看状态/日报（必要时用 shares 兜底）：
+python -m src.app.main status --mode market --as-of 2025-03-31
+```
+
+说明：区间抓取采用“严格口径”，只抓指定日，不做最近交易日回退。幂等 upsert，失败/缺失会汇总打印，便于后续定向重跑。
 
 ## 2025-11-21 交易日历导入与确认重跑（v0.3）
 

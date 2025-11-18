@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from src.app.log import log
@@ -51,6 +51,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="附加输出再平衡建议（基础版，仅文字提示）",
     )
+    status_parser.add_argument(
+        "--mode",
+        choices=["market", "shares"],
+        default="market",
+        help="视图模式：market=市值视图（默认）、shares=份额视图",
+    )
+    status_parser.add_argument(
+        "--as-of",
+        help="展示日（YYYY-MM-DD），默认上一交易日（按工作日口径）",
+    )
 
     return parser.parse_args()
 
@@ -97,6 +107,19 @@ def parse_amount(amount_str: str) -> Decimal:
         return amount
     except InvalidOperation as e:
         raise ValueError(f"金额格式无效：{amount_str}（期望 Decimal，例如 1000 或 1000.50）") from e
+
+
+def _prev_business_day(ref: date) -> date:
+    """
+    返回上一工作日（简化：仅周末视为非交易日）。
+
+    说明：此处不依赖 TradingCalendar，仅用于状态/日报默认展示日；
+    未来切换到 DB 日历时可在 wiring 中提供统一工具函数。
+    """
+    d = ref - timedelta(days=1)
+    while d.weekday() >= 5:  # 5,6 = 周六/周日
+        d = d - timedelta(days=1)
+    return d
 
 
 def main() -> int:
@@ -151,18 +174,23 @@ def main() -> int:
         if args.command == "status":
             with DependencyContainer() as container:
                 report_uc = container.get_daily_report_usecase()
-                text = report_uc.build(mode="market")
+
+                # 视图模式与展示日
+                mode = getattr(args, "mode", "market")
+                as_of_arg = getattr(args, "as_of", None)
+                as_of = parse_date(as_of_arg) if as_of_arg else _prev_business_day(date.today())
+
+                text = report_uc.build(mode=mode, as_of=as_of)
+
                 if getattr(args, "show_rebalance", False):
-                    from datetime import date as _date
-
-
                     rebalance_uc = container.get_rebalance_suggestion_usecase()
-                    result = rebalance_uc.execute(today=_date.today())
+                    # 与状态视图保持同一展示日口径
+                    result = rebalance_uc.execute(today=as_of)
 
                     lines: list[str] = [text.rstrip(), "\n再平衡建议（基础版）：\n"]
                     if getattr(result, "no_market_data", False):
-                        # 当日 NAV 缺失，无法给出金额建议
-                        lines.append("- 当日 NAV 缺失，无法给出金额建议\n")
+                        # 展示日 NAV 缺失，无法给出金额建议
+                        lines.append("- 展示日 NAV 缺失，无法给出金额建议\n")
                         text = "".join(lines)
                         log(text)
                         return 0

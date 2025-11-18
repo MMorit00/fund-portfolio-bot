@@ -71,12 +71,13 @@ class GenerateDailyReport:
         self.nav_provider = nav_provider
         self.sender = sender
 
-    def build(self, mode: ReportMode = "market") -> str:
+    def build(self, mode: ReportMode = "market", *, as_of: date | None = None) -> str:
         """
         构造日报文本内容。
 
         Args:
             mode: 视图模式，`market`（市值）或 `shares`（份额），默认 `market`。
+            as_of: 展示日（通常为上一交易日）。未提供时由调用方决定默认值。
 
         Returns:
             文本格式的日报内容。
@@ -85,10 +86,13 @@ class GenerateDailyReport:
         target_weights = self.alloc_repo.get_target_weights()
         position_shares = self.trade_repo.position_shares()
 
+        # 由调用方传入 as_of，未传入时使用今天（调用方通常会提供上一交易日）
+        eff_as_of = as_of or date.today()
+
         report_data = (
-            self._build_market_view(position_shares, target_weights)
+            self._build_market_view(position_shares, target_weights, eff_as_of)
             if mode == "market"
-            else self._build_share_view(position_shares, target_weights)
+            else self._build_share_view(position_shares, target_weights, eff_as_of)
         )
 
         # v0.2.1: 获取最近交易用于确认情况展示
@@ -100,6 +104,7 @@ class GenerateDailyReport:
         self,
         position_shares: dict[str, Decimal],
         target_weights: dict[AssetClass, Decimal],
+        as_of: date,
     ) -> ReportData:
         """
         构造市值视图数据：按"确认为准的份额 × 当日 NAV"聚合市值与权重。
@@ -109,7 +114,7 @@ class GenerateDailyReport:
         - 缺失基金不计入市值与权重，代码记录在 missing_nav；
         - 额外统计参与基金数与当日有效 NAV 基金数，用于文案提示。
         """
-        today = date.today()
+        today = as_of
         class_values: dict[AssetClass, Decimal] = {}
         missing_nav: list[str] = []
         total_funds_in_position = 0
@@ -158,6 +163,7 @@ class GenerateDailyReport:
         self,
         position_shares: dict[str, Decimal],
         target_weights: dict[AssetClass, Decimal],
+        as_of: date,
     ) -> ReportData:
         """
         构造份额视图数据：按已确认份额聚合各资产类别份额并计算权重（不依赖 NAV）。
@@ -180,7 +186,7 @@ class GenerateDailyReport:
 
         return ReportData(
             mode="shares",
-            as_of=date.today(),
+            as_of=as_of,
             total_value=total_shares,
             class_value=class_shares,
             class_weight=class_weight,
@@ -352,14 +358,15 @@ class GenerateDailyReport:
             return "等待 1-2 个工作日，基金公司可能延后披露净值"
         return "请到支付宝查看订单状态，如显示「确认中」则正常等待；如显示「失败/撤单」请及时在系统中标记"
 
-    def send(self, mode: ReportMode = "market") -> bool:
+    def send(self, mode: ReportMode = "market", *, as_of: date | None = None) -> bool:
         """
         发送日报（默认市值模式）。
 
         Args:
             mode: 视图模式，`market` 或 `shares`。
+            as_of: 展示日（通常为上一交易日）。
 
         Returns:
             发送是否成功。
         """
-        return self.sender.send(self.build(mode=mode))
+        return self.sender.send(self.build(mode=mode, as_of=as_of))

@@ -47,7 +47,7 @@ class FetchNavsForDay:
         failed_codes: List[str] = []
 
         for f in funds:
-            code = f["fund_code"]
+            code = f.fund_code
             nav = self.provider.get_nav(code, day)
             if nav is None or nav <= Decimal("0"):
                 failed_codes.append(code)
