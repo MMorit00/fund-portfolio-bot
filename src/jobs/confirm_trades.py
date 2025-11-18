@@ -31,7 +31,7 @@ def _parse_day(value: str | None) -> date:
 
 def main() -> int:
     """
-    确认交易任务入口：按 v0.2 规则与 DB 预写确认日确认当日交易。
+    确认交易任务入口：按 v0.2.1 规则与 DB 预写确认日确认当日交易。
 
     Returns:
         退出码：0=成功；5=未知错误。
@@ -44,12 +44,18 @@ def main() -> int:
         with DependencyContainer() as container:
             usecase = container.get_confirm_pending_trades_usecase()
             result = usecase.execute(today=day)
-            log(
-                f"✅ 成功确认 {result.confirmed_count} 笔交易；"
-                f"因 NAV 缺失跳过 {result.skipped_count} 笔，基金："
-                + (", ".join(result.skipped_funds) if result.skipped_funds else "无")
-                + (f"；标记为延迟 {result.delayed_count} 笔" if result.delayed_count > 0 else "")
-            )
+
+            # 构造输出信息（区分"未到期跳过"与"超期延迟"）
+            parts = [f"✅ 成功确认 {result.confirmed_count} 笔交易"]
+
+            if result.skipped_count > 0:
+                funds_str = ", ".join(result.skipped_funds) if result.skipped_funds else "无"
+                parts.append(f"NAV 缺失暂跳过 {result.skipped_count} 笔（未到确认日），基金：{funds_str}")
+
+            if result.delayed_count > 0:
+                parts.append(f"标记为延迟 {result.delayed_count} 笔（已超期但 NAV 缺失）")
+
+            log("；".join(parts))
 
         log("[Job] confirm_trades 结束")
         return 0

@@ -58,11 +58,14 @@
 > 目标：让一个只用支付宝的用户，真的可以用这套系统跑完一整套伪同步闭环，而且数字大体可信。
 
 - [x] 交易确认规则 v0.2（TradingCalendar + 定价日）
-  - 引入 `TradingCalendar` 与“定价日+lag”口径，统一 ConfirmPendingTrades 规则。
+  - 引入 `TradingCalendar` 与"定价日+lag"口径，统一 ConfirmPendingTrades 规则。
 - [x] NAV 策略 v0.2（严格版）
   - 确认用定价日 NAV，日报/status 仅用当日 NAV，不做回退并提示低估风险。
 - [x] 再平衡建议（文字提示 + 建议金额）
   - UseCase `GenerateRebalanceSuggestion` 已落地，CLI `status --show-rebalance` 可查看建议。
+- [x] 确认延迟追踪（v0.2.1）
+  - 显式标记超期但 NAV 缺失的交易为 `delayed`，在日报中展示延迟原因和建议。
+  - 支持自动恢复：补充 NAV 后自动确认并清除延迟标记。
 
 - [ ] T+N & NAV 地基收尾（数字大体可信）
   - 引入/完善交易日历表，至少覆盖工作日 + 法定节假日的简单规则。

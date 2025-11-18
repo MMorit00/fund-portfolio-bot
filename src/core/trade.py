@@ -18,8 +18,8 @@ class Trade:
     注意：金额/份额均使用 Decimal，禁止 float。
 
     确认延迟追踪（v0.2.1）：
-    - confirmation_status: 确认状态（NORMAL/DELAYED）
-    - delayed_reason: 延迟原因（NAV_MISSING/UNKNOWN）
+    - confirmation_status: 确认状态（normal/delayed）
+    - delayed_reason: 延迟原因（nav_missing/unknown）
     - delayed_since: 首次检测到延迟的日期
     """
 

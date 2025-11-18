@@ -7,6 +7,7 @@ from typing import Literal
 
 from src.core.asset_class import AssetClass
 from src.core.portfolio.rebalance import calc_weight_difference
+from src.core.trade import Trade
 from src.usecases.ports import AllocConfigRepo, FundRepo, NavProvider, ReportSender, TradeRepo
 
 ReportMode = Literal["market", "shares"]
@@ -190,7 +191,7 @@ class GenerateDailyReport:
         )
 
     def _render(
-        self, data: ReportData, target: dict[AssetClass, Decimal], recent_trades: list
+        self, data: ReportData, target: dict[AssetClass, Decimal], recent_trades: list[Trade]
     ) -> str:
         """
         将 ReportData 渲染成文本格式（v0.2.1：新增交易确认情况）。
@@ -258,7 +259,7 @@ class GenerateDailyReport:
 
         return "".join(lines)
 
-    def _render_confirmation_status(self, trades: list, today: date) -> str:
+    def _render_confirmation_status(self, trades: list[Trade], today: date) -> str:
         """
         生成交易确认情况板块（v0.2.1）。
 
@@ -303,11 +304,16 @@ class GenerateDailyReport:
                 trade_type_text = "买入" if t.type == "buy" else "卖出"
                 if t.confirm_date:
                     days_until_confirm = (t.confirm_date - today).days
+                    # 处理负天数情况（理论上不应出现，但防御性处理）
+                    if days_until_confirm >= 0:
+                        days_text = f"（还有{days_until_confirm}天）"
+                    else:
+                        days_text = f"（已过期{abs(days_until_confirm)}天，待补充净值/待确认）"
+
                     lines.append(
                         f"  - {t.trade_date.strftime('%m-%d')} {trade_type_text} "
                         f"{t.fund_code} {t.amount:.2f}元 "
-                        f"→ 预计 {t.confirm_date.strftime('%m-%d')} 确认"
-                        f"（还有{days_until_confirm}天）\n"
+                        f"→ 预计 {t.confirm_date.strftime('%m-%d')} 确认{days_text}\n"
                     )
                 else:
                     lines.append(
