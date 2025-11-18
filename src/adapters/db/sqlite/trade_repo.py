@@ -31,7 +31,8 @@ class SqliteTradeRepo(TradeRepo):
             cursor = self.conn.execute(
                 (
                     "INSERT INTO trades (fund_code, type, amount, trade_date, status, market, "  # noqa: E501
-                    "shares, nav, remark, confirm_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    "shares, nav, remark, confirm_date, confirmation_status, delayed_reason, delayed_since) "  # noqa: E501
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 ),
                 (
                     trade.fund_code,
@@ -44,6 +45,9 @@ class SqliteTradeRepo(TradeRepo):
                     None,
                     trade.remark,
                     confirm_day.isoformat(),
+                    trade.confirmation_status,
+                    trade.delayed_reason,
+                    trade.delayed_since.isoformat() if trade.delayed_since else None,
                 ),
             )
             trade_id = cursor.lastrowid or 0
@@ -58,21 +62,37 @@ class SqliteTradeRepo(TradeRepo):
             shares=trade.shares,
             remark=trade.remark,
             confirm_date=confirm_day,
+            confirmation_status=trade.confirmation_status,
+            delayed_reason=trade.delayed_reason,
+            delayed_since=trade.delayed_since,
         )
 
     def list_pending_to_confirm(self, confirm_date: date) -> list[Trade]:  # type: ignore[override]
-        """按预写的确认日查询待确认交易，按 id 升序返回。"""
+        """
+        查询待确认交易（v0.2.1：包括过期交易以支持延迟追踪）。
+
+        返回所有 confirm_date <= 指定日期 的 pending 交易，按 id 升序。
+        """
         rows = self.conn.execute(
-            "SELECT * FROM trades WHERE status = ? AND confirm_date = ? ORDER BY id",
+            "SELECT * FROM trades WHERE status = ? AND confirm_date <= ? ORDER BY id",
             ("pending", confirm_date.isoformat()),
         ).fetchall()
         return [_row_to_trade(r) for r in rows]
 
     def confirm(self, trade_id: int, shares: Decimal, nav: Decimal) -> None:  # type: ignore[override]
-        """将指定交易标记为已确认，并写入份额与确认用 NAV。"""
+        """将指定交易标记为已确认，并写入份额与确认用 NAV（v0.2.1：重置延迟标记）。"""
         with self.conn:
             self.conn.execute(
-                "UPDATE trades SET status = ?, shares = ?, nav = ? WHERE id = ?",
+                """
+                UPDATE trades SET
+                    status = ?,
+                    shares = ?,
+                    nav = ?,
+                    confirmation_status = 'normal',
+                    delayed_reason = NULL,
+                    delayed_since = NULL
+                WHERE id = ?
+                """,
                 (
                     "confirmed",
                     _decimal_to_str(shares),
@@ -80,6 +100,41 @@ class SqliteTradeRepo(TradeRepo):
                     trade_id,
                 ),
             )
+
+    def update(self, trade: Trade) -> None:  # type: ignore[override]
+        """更新交易记录（v0.2.1：支持延迟追踪字段更新）。"""
+        with self.conn:
+            self.conn.execute(
+                """
+                UPDATE trades SET
+                    status = ?,
+                    shares = ?,
+                    confirmation_status = ?,
+                    delayed_reason = ?,
+                    delayed_since = ?
+                WHERE id = ?
+                """,
+                (
+                    trade.status,
+                    _decimal_to_str(trade.shares),
+                    trade.confirmation_status,
+                    trade.delayed_reason,
+                    trade.delayed_since.isoformat() if trade.delayed_since else None,
+                    trade.id,
+                ),
+            )
+
+    def list_recent_trades(self, days: int = 7) -> list[Trade]:  # type: ignore[override]
+        """列出最近 N 天的交易（v0.2.1：用于日报展示）。"""
+        rows = self.conn.execute(
+            """
+            SELECT * FROM trades
+            WHERE trade_date >= date('now', '-' || ? || ' days')
+            ORDER BY trade_date DESC, id DESC
+            """,
+            (days,),
+        ).fetchall()
+        return [_row_to_trade(r) for r in rows]
 
     def position_shares(self) -> dict[str, Decimal]:  # type: ignore[override]
         """按基金代码聚合已确认交易，返回净持仓份额（买入为正，卖出为负）。"""
@@ -122,6 +177,16 @@ def _row_to_trade(row: sqlite3.Row) -> Trade:
     """将 trades 表的 SQLite 行记录转换为 Trade 实体。"""
     shares = row["shares"]
     confirm_date_str = row["confirm_date"]
+    # v0.2.1: 使用 try-except 处理可能缺失的新字段（向后兼容）
+    try:
+        confirmation_status = row["confirmation_status"] or "normal"
+        delayed_reason = row["delayed_reason"]
+        delayed_since_str = row["delayed_since"]
+    except (KeyError, IndexError):
+        confirmation_status = "normal"
+        delayed_reason = None
+        delayed_since_str = None
+
     return Trade(
         id=int(row["id"]),
         fund_code=row["fund_code"],
@@ -133,4 +198,8 @@ def _row_to_trade(row: sqlite3.Row) -> Trade:
         shares=Decimal(shares) if shares is not None else None,
         remark=row["remark"],
         confirm_date=date.fromisoformat(confirm_date_str) if confirm_date_str else None,
+        # v0.2.1: 确认延迟追踪字段
+        confirmation_status=confirmation_status,
+        delayed_reason=delayed_reason,
+        delayed_since=date.fromisoformat(delayed_since_str) if delayed_since_str else None,
     )

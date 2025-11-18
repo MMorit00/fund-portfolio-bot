@@ -90,7 +90,10 @@ class GenerateDailyReport:
             else self._build_share_view(position_shares, target_weights)
         )
 
-        return self._render(report_data, target_weights)
+        # v0.2.1: 获取最近交易用于确认情况展示
+        recent_trades = self.trade_repo.list_recent_trades(days=7)
+
+        return self._render(report_data, target_weights, recent_trades)
 
     def _build_market_view(
         self,
@@ -186,9 +189,11 @@ class GenerateDailyReport:
             funds_with_nav=0,
         )
 
-    def _render(self, data: ReportData, target: dict[AssetClass, Decimal]) -> str:
+    def _render(
+        self, data: ReportData, target: dict[AssetClass, Decimal], recent_trades: list
+    ) -> str:
         """
-        将 ReportData 渲染成文本格式。
+        将 ReportData 渲染成文本格式（v0.2.1：新增交易确认情况）。
 
         说明：再平衡提示阈值当前固定为 ±5%（未读取配置）。
         """
@@ -237,6 +242,11 @@ class GenerateDailyReport:
         if not has_rebalance_hint:
             lines.append("- 当前配置均衡，无需调整\n")
 
+        # v0.2.1: 交易确认情况
+        confirmation_section = self._render_confirmation_status(recent_trades, data.as_of)
+        if confirmation_section:
+            lines.append(confirmation_section)
+
         if data.mode == "market" and data.missing_nav:
             # v0.2 严格版提示：当日 NAV 缺失会导致市值低估
             lines.append(
@@ -247,6 +257,94 @@ class GenerateDailyReport:
                 lines.append(f"- {code}\n")
 
         return "".join(lines)
+
+    def _render_confirmation_status(self, trades: list, today: date) -> str:
+        """
+        生成交易确认情况板块（v0.2.1）。
+
+        分三类：
+        1. 已确认（正常）
+        2. 待确认（未到确认日）
+        3. 异常延迟（已到确认日但 NAV 缺失）
+        """
+        if not trades:
+            return ""
+
+        confirmed_trades = []
+        waiting_trades = []
+        delayed_trades = []
+
+        for t in trades:
+            if t.status == "confirmed":
+                confirmed_trades.append(t)
+            elif t.status == "pending":
+                if t.confirmation_status == "delayed":
+                    delayed_trades.append(t)
+                else:
+                    waiting_trades.append(t)
+
+        lines = ["\n【交易确认情况】\n"]
+
+        # 1. 已确认
+        if confirmed_trades:
+            lines.append(f"\n✅ 已确认（{len(confirmed_trades)}笔）\n")
+            for t in confirmed_trades[:5]:  # 最近5笔
+                trade_type_text = "买入" if t.type == "buy" else "卖出"
+                lines.append(
+                    f"  - {t.trade_date.strftime('%m-%d')} {trade_type_text} "
+                    f"{t.fund_code} {t.amount:.2f}元 "
+                    f"→ 已确认 {t.shares:.2f}份\n"
+                )
+
+        # 2. 待确认
+        if waiting_trades:
+            lines.append(f"\n⏳ 待确认（{len(waiting_trades)}笔）\n")
+            for t in waiting_trades:
+                trade_type_text = "买入" if t.type == "buy" else "卖出"
+                if t.confirm_date:
+                    days_until_confirm = (t.confirm_date - today).days
+                    lines.append(
+                        f"  - {t.trade_date.strftime('%m-%d')} {trade_type_text} "
+                        f"{t.fund_code} {t.amount:.2f}元 "
+                        f"→ 预计 {t.confirm_date.strftime('%m-%d')} 确认"
+                        f"（还有{days_until_confirm}天）\n"
+                    )
+                else:
+                    lines.append(
+                        f"  - {t.trade_date.strftime('%m-%d')} {trade_type_text} "
+                        f"{t.fund_code} {t.amount:.2f}元 → 确认日待定\n"
+                    )
+
+        # 3. 异常延迟
+        if delayed_trades:
+            lines.append(f"\n⚠️ 异常延迟（{len(delayed_trades)}笔）\n")
+            for t in delayed_trades:
+                trade_type_text = "买入" if t.type == "buy" else "卖出"
+                delayed_days = (today - t.confirm_date).days if t.confirm_date else 0
+
+                lines.append(
+                    f"  - {t.trade_date.strftime('%m-%d')} {trade_type_text} "
+                    f"{t.fund_code} {t.amount:.2f}元\n"
+                )
+                if t.confirm_date:
+                    lines.append(f"    理论确认日：{t.confirm_date.strftime('%Y-%m-%d')}\n")
+                lines.append(f"    当前状态：确认延迟（已超过 {delayed_days} 天）\n")
+                lines.append(f"    延迟原因：{self._get_delayed_reason_text(t.delayed_reason)}\n")
+                lines.append(f"    建议：{self._get_delayed_suggestion(delayed_days)}\n")
+
+        return "".join(lines)
+
+    def _get_delayed_reason_text(self, reason: str | None) -> str:
+        """延迟原因文案。"""
+        if reason == "nav_missing":
+            return "NAV 数据缺失（未获取到定价日官方净值）"
+        return "原因未明"
+
+    def _get_delayed_suggestion(self, delayed_days: int) -> str:
+        """延迟建议文案。"""
+        if delayed_days <= 2:
+            return "等待 1-2 个工作日，基金公司可能延后披露净值"
+        return "请到支付宝查看订单状态，如显示「确认中」则正常等待；如显示「失败/撤单」请及时在系统中标记"
 
     def send(self, mode: ReportMode = "market") -> bool:
         """

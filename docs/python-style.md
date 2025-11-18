@@ -47,6 +47,7 @@
 
 - 常量与命名：
   - 需要稳定不可变的配置用 `Final[...]`；避免一字母变量名，提升可读性与可检索性。
+  - **状态标记值使用小写**：对于数据库字段或 API 中的状态标记（如 `confirmation_status`、`delayed_reason`），统一使用**小写**字符串值（如 `"normal"` / `"delayed"` / `"nav_missing"`），便于阅读和调试。避免使用全大写（`"NORMAL"`）或驼峰（`"NavMissing"`）。
 
 - 端口与分层：
   - 对外依赖统一走 `Protocol`（结构化类型），UseCase 仅依赖端口与领域模型，不引用具体适配器类型。

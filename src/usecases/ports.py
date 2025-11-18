@@ -78,6 +78,12 @@ class TradeRepo(Protocol):
     def confirm(self, trade_id: int, shares: Decimal, nav: Decimal) -> None:
         """将交易更新为 confirmed，并写入份额与用于确认的 NAV。"""
 
+    def update(self, trade: Trade) -> None:
+        """更新交易记录（v0.2.1：支持延迟追踪字段更新）。"""
+
+    def list_recent_trades(self, days: int = 7) -> list[Trade]:
+        """列出最近 N 天的交易（v0.2.1：用于日报展示）。"""
+
     def position_shares(self) -> dict[str, Decimal]:
         """聚合已确认交易，返回净持仓份额（fund_code -> shares）。"""
 

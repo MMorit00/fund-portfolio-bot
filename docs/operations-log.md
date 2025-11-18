@@ -222,3 +222,85 @@ python -m src.jobs.confirm_trades --day YYYY-MM-DD
 [Discord] Webhook 推送失败：status=400 msg="Invalid request"
 [Job:fetch_navs] ✅ 抓取完成：成功 45/50，失败 5 只
 ```
+
+## 2025-11-XX 处理确认延迟（v0.2.1）
+
+### 查看当前延迟交易
+
+查询所有处于延迟状态的交易：
+
+```sql
+SELECT
+    fund_code,
+    type,
+    amount,
+    trade_date,
+    confirm_date,
+    delayed_reason,
+    delayed_since,
+    julianday('now') - julianday(confirm_date) as days_delayed
+FROM trades
+WHERE confirmation_status = 'delayed'
+ORDER BY delayed_since;
+```
+
+### 手动补充 NAV 后重新确认
+
+如果发现延迟是由于 NAV 数据缺失导致的，可以：
+
+**1. 导入缺失的 NAV 数据**
+
+```bash
+# 方式 1：使用 fetch_navs job（推荐）
+python -m src.jobs.fetch_navs --date 2025-11-15
+
+# 方式 2：手动插入（临时）
+sqlite3 data/portfolio.db "INSERT INTO navs (fund_code, day, nav) VALUES ('110022', '2025-11-15', 1.2345)"
+```
+
+**2. 重新运行确认 job**
+
+```bash
+python -m src.jobs.confirm_trades
+```
+
+系统会自动：
+- 检测之前延迟的交易
+- 尝试获取 NAV
+- 如果 NAV 已可用，则确认交易并重置延迟标记
+
+### 手动标记交易为已确认（异常场景）
+
+如果确认支付宝订单已成功，但系统 NAV 数据始终缺失，可以手动填入：
+
+```sql
+-- 从支付宝复制确认信息后手动更新
+UPDATE trades
+SET
+    status = 'confirmed',
+    shares = 404.86,                -- 从支付宝复制
+    confirmation_status = 'normal',
+    delayed_reason = NULL,
+    delayed_since = NULL
+WHERE id = 123;
+```
+
+### 日报中的延迟提示
+
+每日报告的"交易确认情况"板块会自动显示延迟交易：
+
+```
+⚠️ 异常延迟（1笔）
+  - 11-14 买入 华宝油气 800元
+    理论确认日：2025-11-16（T+2）
+    当前状态：确认延迟（已超过 2 天）
+    延迟原因：NAV 数据缺失（未获取到定价日官方净值）
+    建议：请到支付宝查看订单状态，如显示「确认中」则正常等待；如显示「失败/撤单」请及时在系统中标记
+```
+
+### 注意事项
+
+1. **不要修改 `confirm_date`**：这是理论确认日，用于追踪延迟时长
+2. **优先使用 fetch_navs 补数据**：避免手动插入错误的 NAV 值
+3. **延迟超过 3 天**：建议到支付宝核实订单状态，可能存在交易失败或撤单
+4. **测试延迟场景**：可使用 `SEED_CREATE_DELAYED_TRADE=1` 运行 dev_seed_db.py

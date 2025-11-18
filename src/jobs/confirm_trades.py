@@ -48,6 +48,7 @@ def main() -> int:
                 f"✅ 成功确认 {result.confirmed_count} 笔交易；"
                 f"因 NAV 缺失跳过 {result.skipped_count} 笔，基金："
                 + (", ".join(result.skipped_funds) if result.skipped_funds else "无")
+                + (f"；标记为延迟 {result.delayed_count} 笔" if result.delayed_count > 0 else "")
             )
 
         log("[Job] confirm_trades 结束")

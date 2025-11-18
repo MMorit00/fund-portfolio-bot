@@ -134,8 +134,25 @@ def main() -> None:
         result = ConfirmPendingTrades(trade_repo, LocalNavProvider(nav_repo), calendar).execute(today=confirm_day)
         print(
             f"Confirmed on confirm_day({confirm_day}): {result.confirmed_count}, "
-            f"skipped={result.skipped_count}"
+            f"skipped={result.skipped_count}, delayed={result.delayed_count}"
         )
+
+    # v0.2.1: 可选创建"延迟确认"测试场景
+    # 场景：3天前买入某基金 500元，理论上昨天（T+2）应该确认，但 navs 表中没有对应定价日的 NAV
+    if os.getenv("SEED_CREATE_DELAYED_TRADE", "0") == "1":
+        delayed_trade_day = prev_business_day(today, 3)
+        delayed_trade = Trade(
+            id=None,
+            fund_code="162411",  # 使用一个不同的基金代码
+            type="buy",
+            amount=Decimal("500"),
+            trade_date=delayed_trade_day,
+            status="pending",
+            market="QDII",
+        )
+        saved_delayed = trade_repo.add(delayed_trade)
+        print(f"[DevSeed] Created delayed trade: id={saved_delayed.id}, fund_code=162411, trade_date={delayed_trade_day}")
+        print("[DevSeed] 注意：未为该基金添加 NAV 数据，确认时将被标记为延迟")
 
     positions = trade_repo.position_shares()
     print("Current confirmed positions:", positions)
