@@ -32,10 +32,10 @@ class Trade:
     market: MarketType
     shares: Decimal | None = None
     remark: str | None = None
+    pricing_date: date | None = None
     confirm_date: date | None = None
 
     # v0.2.1: 确认延迟追踪
     confirmation_status: str = "normal"      # normal / delayed
     delayed_reason: str | None = None        # nav_missing / unknown
     delayed_since: date | None = None        # 首次延迟日期
-

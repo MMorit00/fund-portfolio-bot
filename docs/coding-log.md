@@ -188,3 +188,22 @@
 ### 验证
 - 本地 seed → status（market/shares）输出正确；daily_report 参数生效
 - 区间抓取在网络受限环境下稳定汇总失败；在可联网环境对交易日日期可成功入库
+
+## 2025-11-19 交易日历架构升级（策略化）与 Schema v3
+
+### 完成内容
+- 引入策略对象 `SettlementPolicy`（定价日历/计数日历/卫兵日历/settle_lag），并接入 `DateMath`（按命名日历键 `CN_A`/`US_NYSE`）。
+- 新增 `CalendarStore`（SQLite）读取 `trading_calendar`，启用严格模式（缺失即报错）。
+- `SqliteTradeRepo` 写入 `pricing_date` 与 `confirm_date`（策略版）；`ConfirmPendingTrades` 优先使用入库的 `pricing_date` 确认份额。
+- `SCHEMA_VERSION=3`，`trades` 新增列 `pricing_date TEXT NOT NULL`（历史库需迁移或重建）。
+- 新 Job：`src/jobs/sync_calendar.py`（exchange_calendars 注油，限制到“日历最大已知日期”）。
+- 新 Job：`src/jobs/patch_calendar.py`（Akshare 修补，仅覆盖到“数据源最大已知日期”）。
+
+### 决策
+- QDII 默认策略：guard=`CN_A`，pricing/计数=`US_NYSE`，lag=2。
+- `CalendarStore` 严格口径：杜绝工作日近似导致的误判；缺失通过“注油/修补”解决。
+- 移除 TuShare 占位与入口；修补数据统一走 Akshare。
+
+### 兼容与迁移
+- 旧库处理：备份后重建，或执行 `ALTER TABLE trades ADD COLUMN pricing_date TEXT;` 并为历史记录回填（建议按策略重算）。
+- 2026 错误数据修复：重新注油（XC）→ 删除 2026 CN_A → Akshare 修补（自动仅到 2025-12-31）。

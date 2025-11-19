@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Personal fund portfolio management tool"
 requires-python = ">=3.10"
 dependencies = [
+    "akshare>=1.17.85",
+    "exchange-calendars>=4.11.3",
     "httpx>=0.27.0",
+    "pandas>=2.0.0",
 ]
 
 [build-system]

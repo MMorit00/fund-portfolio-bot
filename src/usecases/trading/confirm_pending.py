@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-from src.core.trading.calendar import TradingCalendar
 from src.core.trading.precision import quantize_shares
 from src.usecases.ports import NavProvider, TradeRepo
 
@@ -32,10 +31,9 @@ class ConfirmPendingTrades:
     - 确认日来源于 DB 预写的 confirm_date（写入时按当时规则计算），此处不再重算。
     """
 
-    def __init__(self, trade_repo: TradeRepo, nav_provider: NavProvider, calendar: TradingCalendar) -> None:
+    def __init__(self, trade_repo: TradeRepo, nav_provider: NavProvider) -> None:
         self.trade_repo = trade_repo
         self.nav_provider = nav_provider
-        self.calendar = calendar
 
     def execute(self, *, today: date) -> ConfirmResult:
         """
@@ -66,8 +64,10 @@ class ConfirmPendingTrades:
         skipped_funds_set: set[str] = set()
 
         for t in to_confirm:
-            # 仅使用定价日 NAV（定价日=交易日或其后首个交易日）
-            pricing_day = self.calendar.next_trading_day_or_self(t.trade_date, market=t.market)
+            # 仅使用定价日 NAV（由 TradeRepo.add 写入时计算，保证非空）
+            pricing_day = t.pricing_date
+            if pricing_day is None:
+                raise ValueError(f"交易记录缺少 pricing_date：trade_id={t.id}")
             nav = self.nav_provider.get_nav(t.fund_code, pricing_day)
 
             if nav is not None and nav > Decimal("0"):

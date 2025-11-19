@@ -5,8 +5,9 @@ from datetime import date
 from decimal import Decimal
 
 from src.core.trade import Trade
-from src.core.trading.calendar import TradingCalendar
-from src.core.trading.settlement import get_confirm_date
+from src.core.trading.date_math import DateMath
+from src.core.trading.policy import default_policy
+from src.core.trading.settlement import get_settlement_dates
 from src.usecases.ports import TradeRepo
 
 
@@ -20,19 +21,20 @@ class SqliteTradeRepo(TradeRepo):
     - 已确认持仓份额聚合。
     """
 
-    def __init__(self, conn: sqlite3.Connection, calendar: TradingCalendar) -> None:
+    def __init__(self, conn: sqlite3.Connection, date_math: DateMath) -> None:
         self.conn = conn
-        self.calendar = calendar
+        self.date_math = date_math
 
     def add(self, trade: Trade) -> Trade:  # type: ignore[override]
-        """新增一条交易记录，并根据交易日历计算并写入确认日。"""
-        confirm_day = get_confirm_date(trade.market, trade.trade_date, self.calendar)
+        """新增一条交易记录，并按策略写入定价日/确认日。"""
+        policy = default_policy(trade.market)
+        pricing_day, confirm_day = get_settlement_dates(trade.trade_date, policy, self.date_math)
         with self.conn:
             cursor = self.conn.execute(
                 (
                     "INSERT INTO trades (fund_code, type, amount, trade_date, status, market, "  # noqa: E501
-                    "shares, nav, remark, confirm_date, confirmation_status, delayed_reason, delayed_since) "  # noqa: E501
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    "shares, nav, remark, pricing_date, confirm_date, confirmation_status, delayed_reason, delayed_since) "  # noqa: E501
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 ),
                 (
                     trade.fund_code,
@@ -44,6 +46,7 @@ class SqliteTradeRepo(TradeRepo):
                     _decimal_to_str(trade.shares),
                     None,
                     trade.remark,
+                    pricing_day.isoformat(),
                     confirm_day.isoformat(),
                     trade.confirmation_status,
                     trade.delayed_reason,
@@ -61,6 +64,7 @@ class SqliteTradeRepo(TradeRepo):
             market=trade.market,
             shares=trade.shares,
             remark=trade.remark,
+            pricing_date=pricing_day,
             confirm_date=confirm_day,
             confirmation_status=trade.confirmation_status,
             delayed_reason=trade.delayed_reason,
@@ -197,6 +201,7 @@ def _row_to_trade(row: sqlite3.Row) -> Trade:
         market=row["market"],
         shares=Decimal(shares) if shares is not None else None,
         remark=row["remark"],
+        pricing_date=date.fromisoformat(row["pricing_date"]) if row["pricing_date"] else None,
         confirm_date=date.fromisoformat(confirm_date_str) if confirm_date_str else None,
         # v0.2.1: 确认延迟追踪字段
         confirmation_status=confirmation_status,

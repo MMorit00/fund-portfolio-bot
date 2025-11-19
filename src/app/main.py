@@ -7,7 +7,6 @@ from decimal import Decimal, InvalidOperation
 
 from src.app.log import log
 from src.app.wiring import DependencyContainer
-from src.core.trading.settlement import get_confirm_date
 
 
 def parse_args() -> argparse.Namespace:
@@ -151,12 +150,11 @@ def main() -> int:
                     amount=amount,
                     trade_day=trade_day,
                 )
-                # 计算确认日（基于 v0.2 日历与规则）
-                confirm_date = get_confirm_date(trade.market, trade.trade_date, container.calendar)
 
             log(
                 f"✅ 交易已创建：ID={trade.id} fund={trade.fund_code} type={trade.type} "
-                f"amount={trade.amount} date={trade.trade_date} confirm_date={confirm_date}"
+                f"amount={trade.amount} date={trade.trade_date} "
+                f"pricing_date={trade.pricing_date} confirm_date={trade.confirm_date}"
             )
             return 0
 
@@ -219,7 +217,7 @@ def main() -> int:
     except ValueError as err:
         log(f"❌ 错误：{err}")
         if "未知基金代码" in str(err):
-            log("提示：请检查是否已在 funds 表中配置，或先运行 dev_seed_db")
+            log("提示：请先在 funds 表配置该基金（fund_code/name/asset_class/market），再重试")
         return 4
 
     except Exception as err:  # noqa: BLE001

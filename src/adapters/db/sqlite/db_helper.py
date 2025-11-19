@@ -6,7 +6,7 @@ from typing import Optional
 
 from src.app.config import enable_sql_debug, get_db_path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA_DDL = """
 CREATE TABLE IF NOT EXISTS funds (
@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS trades (
     shares TEXT,
     nav TEXT,
     remark TEXT,
+    pricing_date TEXT NOT NULL,
     confirm_date TEXT NOT NULL,
     confirmation_status TEXT DEFAULT 'normal',
     delayed_reason TEXT,

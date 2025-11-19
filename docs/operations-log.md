@@ -256,6 +256,44 @@ python -m src.jobs.confirm_trades --day YYYY-MM-DD
 [LocalNav] 成功写入 NAV：fund=110022 day=2025-11-20 nav=1.2345
 [Discord] Webhook 推送失败：status=400 msg="Invalid request"
 [Job:fetch_navs] ✅ 抓取完成：成功 45/50，失败 5 只
+
+
+## 2025-11-19 日历基础设施与修补（Akshare 版）
+
+- 依赖安装（uv）：
+  - `uv add exchange-calendars`
+  - `uv add akshare`
+- 注油（exchange_calendars → 全量 0/1）：
+  - `TRADING_CALENDAR_BACKEND=db DB_PATH=data/portfolio.db \
+     uv run python -m src.jobs.sync_calendar --cal CN_A --from 2024-01-01 --to 2030-12-31`
+  - `TRADING_CALENDAR_BACKEND=db DB_PATH=data/portfolio.db \
+     uv run python -m src.jobs.sync_calendar --cal US_NYSE --from 2020-01-01 --to 2030-12-31`
+- 修补（Akshare → 仅覆盖“已发布最大日期”以内）：
+  - `DB_PATH=data/portfolio.db uv run python -m src.jobs.patch_calendar`
+  - 日志示例：`[Patch] 数据源最大已知日期: 2025-12-31`，修补范围自动限制为 `min(今天+365, 最大已知日期)`
+- 验证（SQL）：
+  - 月度统计：
+    - `sqlite3 data/portfolio.db "SELECT market, COUNT(*) AS total, SUM(is_trading_day) AS opens, COUNT(*)-SUM(is_trading_day) AS closes FROM trading_calendar GROUP BY market;"`
+  - 点查（国庆场景）：
+    - `sqlite3 data/portfolio.db "SELECT * FROM trading_calendar WHERE market='CN_A' AND day='2025-10-01';"  -- 预期 0`
+    - `sqlite3 data/portfolio.db "SELECT * FROM trading_calendar WHERE market='US_NYSE' AND day='2025-10-01';"  -- 预期 1`
+
+说明：
+- `sync_calendar` 现在具备“上限保护”：只写入到 exchange_calendars 已知的最大日期，防止越界写 0。
+- `patch_calendar` 改为 Akshare 方案，仅覆盖到数据源最大日期，避免未来未发布年份被错误覆盖为休市。
+
+
+## 2025-11-19 冒烟测试（QDII + 国庆节 + 卫兵日历）
+
+- 准备：
+  - `sqlite3 data/portfolio.db "INSERT INTO funds(fund_code,name,asset_class,market) VALUES('000xxx','Smoke QDII','US_QDII','QDII') ON CONFLICT(fund_code) DO UPDATE SET name=excluded.name, asset_class=excluded.asset_class, market=excluded.market;"`
+  - `export TRADING_CALENDAR_BACKEND=db; export DB_PATH=data/portfolio.db`
+- 运行：
+  - `uv run python -m src.app.main buy --fund-code 000xxx --amount 1000 --date 2025-10-01`
+- 结果（示例）：
+  - `pricing_date=2025-10-09`、`confirm_date=2025-10-13`
+  - 解释：`CN_A` 卫兵放行日为 10-09（10-01..10-08 休市），定价 `US_NYSE`，T+2 得到 10-13。
+
 ```
 
 ## 2025-11-XX 处理确认延迟（v0.2.1）

@@ -73,3 +73,12 @@ scripts/        # 辅助脚本（如备份）
 - 源文件：`docs/architecture/fund-portfolio-architecture.puml`
 - 预览：使用 IDE PlantUML 插件或命令行 `plantuml docs/architecture/fund-portfolio-architecture.puml`
 - 说明：本图以实际目录分组（`src/jobs`, `src/app`, `src/usecases`, `src/core`, `src/adapters`），仅展示当前仓库已有文件与关键依赖，突出核心流程与设计依赖关系。
+
+## 日历与确认（v0.3 核心补充）
+
+- 策略对象：`src/core/trading/policy.py` 定义 `SettlementPolicy`，结合 `DateMath`（`src/core/trading/date_math.py`）实现“卫兵+定价+计数”的组合策略。
+- 日历存取：`src/adapters/db/sqlite/calendar_store.py` 从 `trading_calendar` 表读取，采用严格模式（缺失即报错）。
+- 注油与修补：
+  - 注油：`src/jobs/sync_calendar.py`（exchange_calendars），仅写到“日历最大已知日期”。
+  - 修补：`src/jobs/patch_calendar.py`（Akshare/新浪），仅写到“数据源最大已知日期”。
+- 交易表持久化：`trades.pricing_date` 入库，确认严格按定价日 NAV；`SCHEMA_VERSION=3`。

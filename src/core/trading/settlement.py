@@ -4,6 +4,8 @@ from datetime import date
 
 from src.core.trade import MarketType
 from src.core.trading.calendar import TradingCalendar
+from src.core.trading.date_math import DateMath
+from src.core.trading.policy import SettlementPolicy
 
 
 def get_confirm_date(market: MarketType, trade_date: date, calendar: TradingCalendar) -> date:
@@ -27,3 +29,23 @@ def get_confirm_date(market: MarketType, trade_date: date, calendar: TradingCale
     pricing_date = calendar.next_trading_day_or_self(trade_date, market=market)
     confirm_date = calendar.next_trading_day(pricing_date, market=market, offset=lag)
     return confirm_date
+
+
+def determine_pricing_date(trade_date: date, policy: SettlementPolicy, dm: DateMath) -> date:
+    """
+    计算定价日（策略版）：先过 guard（若有），再在定价日历上取下一开市日。
+
+    参数：
+        trade_date: 下单/约定日。
+        policy: 结算策略（含 guard 与定价/计数日历）。
+        dm: 日期运算服务。
+    """
+    effective = dm.next_open(policy.guard_calendar, trade_date) if policy.guard_calendar else trade_date
+    return dm.next_open(policy.pricing_calendar, effective)
+
+
+def get_settlement_dates(trade_date: date, policy: SettlementPolicy, dm: DateMath) -> tuple[date, date]:
+    """返回 (pricing_date, confirm_date)，计数在 `lag_counting_calendar` 上进行。"""
+    pricing = determine_pricing_date(trade_date, policy, dm)
+    confirm = dm.shift(policy.lag_counting_calendar, pricing, policy.settle_lag)
+    return pricing, confirm
