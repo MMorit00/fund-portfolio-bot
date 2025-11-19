@@ -3,7 +3,7 @@ from __future__ import annotations
 from src.core.protocols import TradeRepo
 
 
-class GetStatusSummary:
+class MakeStatusSummary:
     """
     获取组合简要状态概览（总市值、各类权重等）。
     MVP 简化：由仓储计算或提供聚合视图（后续实现）。

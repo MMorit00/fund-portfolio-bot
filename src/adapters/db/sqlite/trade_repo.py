@@ -7,7 +7,7 @@ from decimal import Decimal
 from src.core.protocols import CalendarProtocol, TradeRepo
 from src.core.trade import Trade
 from src.core.trading.policy import default_policy
-from src.core.trading.settlement import get_settlement_dates
+from src.core.trading.settlement import calc_settlement_dates
 
 
 class SqliteTradeRepo(TradeRepo):
@@ -27,7 +27,7 @@ class SqliteTradeRepo(TradeRepo):
     def add(self, trade: Trade) -> Trade:  # type: ignore[override]
         """新增一条交易记录，并按策略写入定价日/确认日。"""
         policy = default_policy(trade.market)
-        pricing_day, confirm_day = get_settlement_dates(trade.trade_date, policy, self.calendar)
+        pricing_day, confirm_day = calc_settlement_dates(trade.trade_date, policy, self.calendar)
         with self.conn:
             cursor = self.conn.execute(
                 (

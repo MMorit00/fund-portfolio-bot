@@ -5,7 +5,7 @@ from datetime import date
 from src.core.protocols import DcaPlanRepo, TradeRepo
 
 
-class SkipDcaForDate:
+class SkipDca:
     """
     将指定基金在某日的定投标记为 skipped。
     MVP 简化：依赖 TradeRepo 在该日生成的 pending 定投交易进行状态更新。

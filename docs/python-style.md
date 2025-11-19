@@ -59,6 +59,38 @@ src/adapters/db/sqlite/calendar.py         → SqliteCalendarService
 - `NavSourceProtocol`：外部数据源抓取（HTTP、CSV）
 - `CalendarProtocol`：交易日历查询与 T+N 偏移计算
 
+## 函数与 UseCase 命名规范
+
+### 函数命名动词白名单
+
+| 动词 | 含义 | 示例 |
+|------|------|------|
+| `calc_` | 纯计算，无副作用 | `calc_pricing_date()`, `calc_weight_diff()` |
+| `get_` | 本地/DB 查询（快速） | `get_fund()`, `get_nav()` |
+| `fetch_` | 外部获取（IO 操作） | `fetch_navs()` |
+| `list_` | 列表查询 | `list_funds()`, `list_pending_to_confirm()` |
+| `add_` | 新增实体 | `add_fund()`, `add(trade)` |
+| `update_` | 更新实体 | `update(trade)` |
+| `upsert_` | 插入或更新（幂等） | `upsert(nav)` |
+| `build_` | 构造结构化数据 | `build_rebalance_advice()` |
+| `render_` | 渲染文本 | `render(report)` |
+| `quantize_` | 精度处理 | `quantize_amount()` |
+
+### UseCase 类命名白名单
+
+| 动词 | 含义 | 是否持久化 | 示例 |
+|------|------|-----------|------|
+| `Create` | 创建并保存实体 | ✅ 是 | `CreateTrade` |
+| `Make` | 临时生成数据/报告 | ❌ 否 | `MakeDailyReport`, `MakeRebalance` |
+| `Fetch` | 从外部获取数据 | ❌ 否 | `FetchNavs` |
+| `Run` | 执行流程/批处理 | ✅ 可能 | `RunDailyDca` |
+| `Confirm` | 确认业务状态 | ✅ 是 | `ConfirmTrades` |
+| `Skip` | 跳过某项操作 | ✅ 是 | `SkipDca` |
+
+**判断标准**：
+- 如果 UseCase 内部调用 `repo.add()` → 用 `Create`
+- 如果只是组装数据后发送/返回 → 用 `Make`
+- 如果从外部 IO 获取 → 用 `Fetch`
 
 ## Docstring 与注释风格
 

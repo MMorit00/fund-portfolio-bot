@@ -32,8 +32,8 @@ from src.adapters.db.sqlite.trade_repo import SqliteTradeRepo
 from src.core.asset_class import AssetClass
 from src.core.trade import Trade
 from src.core.trading.policy import default_policy
-from src.core.trading.settlement import get_settlement_dates
-from src.usecases.trading.confirm_pending import ConfirmPendingTrades
+from src.core.trading.settlement import calc_settlement_dates
+from src.usecases.trading.confirm_pending import ConfirmTrades
 
 
 def _seed_basic_calendar(conn, today: date, days_back: int = 30) -> None:
@@ -169,7 +169,7 @@ def main() -> None:
 
     # 计算定价日和确认日（使用策略）
     policy = default_policy("A")
-    pricing_date, confirm_date = get_settlement_dates(trade_day_a, policy, calendar)
+    pricing_date, confirm_date = calc_settlement_dates(trade_day_a, policy, calendar)
 
     # Seed NAV：
     # - 定价日 NAV（用于确认份额）
@@ -204,7 +204,7 @@ def main() -> None:
     # 自动执行一次确认（默认开启）
     if os.getenv("SEED_SIMULATE_CONFIRM", "1") == "1":
         nav_service = LocalNavService(nav_repo)
-        usecase = ConfirmPendingTrades(trade_repo, nav_service)
+        usecase = ConfirmTrades(trade_repo, nav_service)
         result = usecase.execute(today=confirm_date)
         print(
             f"[DevSeed] 确认结果: confirmed={result.confirmed_count}, "

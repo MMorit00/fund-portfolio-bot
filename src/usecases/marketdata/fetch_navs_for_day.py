@@ -25,12 +25,12 @@ class FetchNavsResult:
     failed_codes: List[str]
 
 
-class FetchNavsForDay:
+class FetchNavs:
     """
     遍历当前已配置基金，按指定日期调用外部 NavProvider 获取单位净值并落库。
 
     口径：
-    - 仅抓取“指定日”的官方单位净值（严格版，不做回退）；
+    - 仅抓取"指定日"的官方单位净值（严格版，不做回退）；
     - 成功条件：provider 返回 Decimal 且 > 0；否则视为失败；
     - 落库：调用 NavRepo.upsert(fund_code, day, nav)，按 (fund_code, day) 幂等。
     """

@@ -7,9 +7,9 @@ from src.core.trade import MarketType
 from src.core.trading.policy import SettlementPolicy
 
 
-def get_confirm_date(market: MarketType, trade_date: date, calendar: CalendarProtocol) -> date:
+def calc_confirm_date(market: MarketType, trade_date: date, calendar: CalendarProtocol) -> date:
     """
-    计算确认日期（v0.2）：基于“定价日 + lag”的规则。
+    计算确认日期（v0.2）：基于"定价日 + lag"的规则。
 
     Args:
         market: 市场类型："A" 或 "QDII"。
@@ -30,7 +30,7 @@ def get_confirm_date(market: MarketType, trade_date: date, calendar: CalendarPro
     return confirm_date
 
 
-def determine_pricing_date(trade_date: date, policy: SettlementPolicy, calendar: CalendarProtocol) -> date:
+def calc_pricing_date(trade_date: date, policy: SettlementPolicy, calendar: CalendarProtocol) -> date:
     """
     计算定价日（策略版）：先过 guard（若有），再在定价日历上取下一开市日。
 
@@ -43,8 +43,8 @@ def determine_pricing_date(trade_date: date, policy: SettlementPolicy, calendar:
     return calendar.next_open(policy.pricing_calendar, effective)
 
 
-def get_settlement_dates(trade_date: date, policy: SettlementPolicy, calendar: CalendarProtocol) -> tuple[date, date]:
+def calc_settlement_dates(trade_date: date, policy: SettlementPolicy, calendar: CalendarProtocol) -> tuple[date, date]:
     """返回 (pricing_date, confirm_date)，计数在 `lag_counting_calendar` 上进行。"""
-    pricing = determine_pricing_date(trade_date, policy, calendar)
+    pricing = calc_pricing_date(trade_date, policy, calendar)
     confirm = calendar.shift(policy.lag_counting_calendar, pricing, policy.settle_lag)
     return pricing, confirm

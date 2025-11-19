@@ -18,7 +18,7 @@ class ConfirmResult:
     delayed_count: int  # v0.2.1: 标记为延迟的交易数
 
 
-class ConfirmPendingTrades:
+class ConfirmTrades:
     """
     将到达确认日的 pending 交易按官方净值确认份额。
 

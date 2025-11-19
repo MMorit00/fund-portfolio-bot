@@ -7,7 +7,7 @@ from typing import Literal
 from src.core.asset_class import AssetClass
 
 
-def calc_weight_difference(  # noqa: E501
+def calc_weight_diff(
     actual: dict[AssetClass, Decimal], target: dict[AssetClass, Decimal]
 ) -> dict[AssetClass, Decimal]:
     """
@@ -24,7 +24,7 @@ def calc_weight_difference(  # noqa: E501
     return dev
 
 
-def suggest_rebalance_amount(total_value: Decimal, weight_diff: Decimal) -> Decimal:
+def calc_rebalance_amount(total_value: Decimal, weight_diff: Decimal) -> Decimal:
     """
     基于权重差值给出渐进式再平衡金额建议。
 
@@ -67,7 +67,7 @@ def build_rebalance_advice(
     - 仅依赖传入参数，不做 IO；
     - abs(diff) <= threshold 时 action="hold", amount=0；
     - abs(diff) > threshold 时：
-        - amount = suggest_rebalance_amount(total_value, diff)（>=0）；
+        - amount = calc_rebalance_amount(total_value, diff)（>=0）；
         - diff > 0 → "sell"（超配），diff < 0 → "buy"（低配）。
     - 返回列表按 abs(diff) 从大到小排序。
     """
@@ -92,7 +92,7 @@ def build_rebalance_advice(
             )
             continue
 
-        amount = suggest_rebalance_amount(total_value, diff)
+        amount = calc_rebalance_amount(total_value, diff)
         action: Literal["buy", "sell"] = "sell" if diff > 0 else "buy"
         advices.append(
             RebalanceAdvice(

@@ -16,11 +16,11 @@ from src.adapters.notify.discord_report import DiscordReportService
 from src.app import config
 from src.core.protocols import CalendarProtocol
 from src.usecases.dca.run_daily import RunDailyDca
-from src.usecases.dca.skip_date import SkipDcaForDate
-from src.usecases.marketdata.fetch_navs_for_day import FetchNavsForDay
-from src.usecases.portfolio.daily_report import GenerateDailyReport
-from src.usecases.portfolio.rebalance_suggestion import GenerateRebalanceSuggestion
-from src.usecases.trading.confirm_pending import ConfirmPendingTrades
+from src.usecases.dca.skip_date import SkipDca
+from src.usecases.marketdata.fetch_navs_for_day import FetchNavs
+from src.usecases.portfolio.daily_report import MakeDailyReport
+from src.usecases.portfolio.rebalance_suggestion import MakeRebalance
+from src.usecases.trading.confirm_pending import ConfirmTrades
 from src.usecases.trading.create_trade import CreateTrade
 
 
@@ -110,20 +110,20 @@ class DependencyContainer:
         create_trade = self.get_create_trade_usecase()
         return RunDailyDca(self.dca_repo, create_trade)
 
-    def get_skip_dca_usecase(self) -> SkipDcaForDate:
-        """获取 SkipDcaForDate UseCase。"""
+    def get_skip_dca_usecase(self) -> SkipDca:
+        """获取 SkipDca UseCase。"""
         if not self.dca_repo or not self.trade_repo:
             raise RuntimeError("容器未初始化，请在 with 块中使用")
-        return SkipDcaForDate(self.dca_repo, self.trade_repo)
+        return SkipDca(self.dca_repo, self.trade_repo)
 
-    def get_confirm_pending_trades_usecase(self) -> ConfirmPendingTrades:
-        """获取 ConfirmPendingTrades UseCase。"""
+    def get_confirm_pending_trades_usecase(self) -> ConfirmTrades:
+        """获取 ConfirmTrades UseCase。"""
         if not self.trade_repo or not self.nav_provider:
             raise RuntimeError("容器未初始化，请在 with 块中使用")
-        return ConfirmPendingTrades(self.trade_repo, self.nav_provider)
+        return ConfirmTrades(self.trade_repo, self.nav_provider)
 
-    def get_daily_report_usecase(self) -> GenerateDailyReport:
-        """获取 GenerateDailyReport UseCase。"""
+    def get_daily_report_usecase(self) -> MakeDailyReport:
+        """获取 MakeDailyReport UseCase。"""
         if (
             not self.alloc_repo
             or not self.trade_repo
@@ -132,7 +132,7 @@ class DependencyContainer:
             or not self.nav_provider
         ):
             raise RuntimeError("容器未初始化，请在 with 块中使用")
-        return GenerateDailyReport(
+        return MakeDailyReport(
             self.alloc_repo,
             self.trade_repo,
             self.fund_repo,
@@ -140,8 +140,8 @@ class DependencyContainer:
             self.discord_sender,
         )
 
-    def get_rebalance_suggestion_usecase(self) -> GenerateRebalanceSuggestion:
-        """获取 GenerateRebalanceSuggestion UseCase。"""
+    def get_rebalance_suggestion_usecase(self) -> MakeRebalance:
+        """获取 MakeRebalance UseCase。"""
         if (
             not self.alloc_repo
             or not self.trade_repo
@@ -149,7 +149,7 @@ class DependencyContainer:
             or not self.nav_provider
         ):
             raise RuntimeError("容器未初始化，请在 with 块中使用")
-        return GenerateRebalanceSuggestion(
+        return MakeRebalance(
             self.alloc_repo,
             self.trade_repo,
             self.fund_repo,
@@ -158,9 +158,9 @@ class DependencyContainer:
 
     # === 其他 UseCase ===
 
-    def get_fetch_navs_usecase(self) -> FetchNavsForDay:
-        """获取 FetchNavsForDay UseCase（Eastmoney Provider）。"""
+    def get_fetch_navs_usecase(self) -> FetchNavs:
+        """获取 FetchNavs UseCase（Eastmoney Provider）。"""
         if not self.fund_repo or not self.nav_repo:
             raise RuntimeError("容器未初始化，请在 with 块中使用")
         provider = EastmoneyNavService()
-        return FetchNavsForDay(self.fund_repo, self.nav_repo, provider)
+        return FetchNavs(self.fund_repo, self.nav_repo, provider)

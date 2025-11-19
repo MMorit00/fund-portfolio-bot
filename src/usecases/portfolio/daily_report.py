@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Literal
 
 from src.core.asset_class import AssetClass
-from src.core.portfolio.rebalance import calc_weight_difference
+from src.core.portfolio.rebalance import calc_weight_diff
 from src.core.protocols import AllocConfigRepo, FundRepo, NavProtocol, ReportProtocol, TradeRepo
 from src.core.trade import Trade
 
@@ -41,13 +41,13 @@ class ReportData:
     funds_with_nav: int
 
 
-class GenerateDailyReport:
+class MakeDailyReport:
     """
     生成并发送文本日报（市值/份额两种模式）。
 
     业务口径：
-    - 仅统计“已确认份额”，不包含当日 pending；
-    - 市值模式按“确认为准的份额 × 当日官方 NAV”计算；`nav <= 0` 视为缺失并在文末列出；
+    - 仅统计"已确认份额"，不包含当日 pending；
+    - 市值模式按"确认为准的份额 × 当日官方 NAV"计算；`nav <= 0` 视为缺失并在文末列出；
     - 缺失 NAV 的基金不参与市值累计与权重分母；
     - v0.2 严格版不做 NAV 回退；
     - 再平衡提示阈值当前固定为 ±5%（后续可配置）。
@@ -145,7 +145,7 @@ class GenerateDailyReport:
             for asset_class, value in class_values.items():
                 class_weight[asset_class] = value / total_value
 
-        deviation = calc_weight_difference(class_weight, target_weights)
+        deviation = calc_weight_diff(class_weight, target_weights)
 
         return ReportData(
             mode="market",
@@ -182,7 +182,7 @@ class GenerateDailyReport:
             for asset_class, shares in class_shares.items():
                 class_weight[asset_class] = shares / total_shares
 
-        deviation = calc_weight_difference(class_weight, target_weights)
+        deviation = calc_weight_diff(class_weight, target_weights)
 
         return ReportData(
             mode="shares",

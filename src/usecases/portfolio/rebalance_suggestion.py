@@ -31,14 +31,14 @@ class RebalanceSuggestionResult:
     note: Optional[str] = None
 
 
-class GenerateRebalanceSuggestion:
+class MakeRebalance:
     """
     生成资产配置再平衡建议（基础版，仅文字提示，不自动下单）。
 
     口径：
-    - 权重口径与“市值版日报”一致：仅使用已确认份额与当日 NAV（严格版，不回退）；
+    - 权重口径与"市值版日报"一致：仅使用已确认份额与当日 NAV（严格版，不回退）；
     - 阈值来源优先使用 alloc_config.max_deviation；未配置时使用默认 5%；
-    - 建议金额采用 suggest_rebalance_amount（总市值 × |偏离| × 50%），仅用于提示。
+    - 建议金额采用 calc_rebalance_amount（总市值 × |偏离| × 50%），仅用于提示。
     """
 
     def __init__(
