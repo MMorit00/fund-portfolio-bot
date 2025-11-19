@@ -5,9 +5,9 @@ import os
 from src.core.protocols import ReportProtocol
 
 
-class DiscordReportSender(ReportProtocol):
+class DiscordReportService(ReportProtocol):
     """
-    Discord Webhook 发送器（占位）。
+    Discord 报告发送服务（占位）。
     MVP 阶段可使用 requests/httpx 发送文本消息。
     """
 

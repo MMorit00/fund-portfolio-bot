@@ -1,10 +1,18 @@
-"""Quick-and-dirty script to seed SQLite with sample data for local testing.
+"""开发环境数据初始化脚本（v0.3 版本）。
 
-改进要点（一致性）：
-- NAV 的日期与交易定价口径对齐：首选“交易日 NAV”。
-- 为 status/日报市值视图提供“当日 NAV”。
-- 提供可复现的演示：将 A 股样例设置为“前一工作日交易”，当日即可确认（T+1）。
-- 可选择重置表数据，避免历史数据干扰。
+职责：
+- 初始化开发用 SQLite 数据：基金/定投/配置/净值/样例交易
+- 填充基础交易日历数据（CN_A 最近 30 天）
+- 创建可复现的测试场景
+
+使用方式：
+    SEED_RESET=1 python -m scripts.dev_seed_db           # 重置所有数据
+    SEED_CREATE_DELAYED_TRADE=1 python -m scripts.dev_seed_db  # 创建延迟交易测试场景
+
+环境变量：
+    SEED_RESET: 是否重置核心表数据（默认 1）
+    SEED_SIMULATE_CONFIRM: 是否自动运行一次确认（默认 1）
+    SEED_CREATE_DELAYED_TRADE: 是否创建延迟交易测试场景（默认 0）
 """
 
 from __future__ import annotations
@@ -13,8 +21,9 @@ import os
 from datetime import date, timedelta
 from decimal import Decimal
 
-from src.adapters.datasources.local_nav import LocalNavProvider
+from src.adapters.datasources.local_nav import LocalNavService
 from src.adapters.db.sqlite.alloc_config_repo import SqliteAllocConfigRepo
+from src.adapters.db.sqlite.calendar import SqliteCalendarService
 from src.adapters.db.sqlite.db_helper import SqliteDbHelper
 from src.adapters.db.sqlite.dca_plan_repo import SqliteDcaPlanRepo
 from src.adapters.db.sqlite.fund_repo import SqliteFundRepo
@@ -22,47 +31,80 @@ from src.adapters.db.sqlite.nav_repo import SqliteNavRepo
 from src.adapters.db.sqlite.trade_repo import SqliteTradeRepo
 from src.core.asset_class import AssetClass
 from src.core.trade import Trade
-from src.core.trading.calendar import SimpleTradingCalendar
-from src.core.trading.settlement import get_confirm_date
+from src.core.trading.policy import default_policy
+from src.core.trading.settlement import get_settlement_dates
 from src.usecases.trading.confirm_pending import ConfirmPendingTrades
 
 
-def prev_business_day(d: date, n: int = 1) -> date:
+def _seed_basic_calendar(conn, today: date, days_back: int = 30) -> None:
     """
-    返回 d 之前的第 n 个工作日（仅考虑周末）。
+    填充基础交易日历数据（简化版：工作日 = 交易日）。
+
+    仅用于开发测试，生产环境应使用 sync_calendar/patch_calendar。
 
     Args:
-        d: 参考日期。
-        n: 向前追溯的工作日数量，默认 1。
+        conn: 数据库连接
+        today: 当前日期
+        days_back: 向前填充的天数（默认 30 天）
+    """
+    # 确保表存在
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS trading_calendar (
+            market TEXT NOT NULL,
+            day TEXT NOT NULL,
+            is_trading_day INTEGER NOT NULL CHECK(is_trading_day IN (0,1)),
+            PRIMARY KEY (market, day)
+        )
+    """)
+
+    rows = []
+    for i in range(days_back + 10):  # 多填充 10 天以覆盖 T+N
+        d = today - timedelta(days=days_back - i)
+        is_trading = 1 if d.weekday() < 5 else 0
+        rows.append(("CN_A", d.isoformat(), is_trading))
+
+    with conn:
+        conn.executemany(
+            """
+            INSERT INTO trading_calendar(market, day, is_trading_day)
+            VALUES (?, ?, ?)
+            ON CONFLICT(market, day) DO UPDATE SET is_trading_day=excluded.is_trading_day
+            """,
+            rows,
+        )
+    print(f"[DevSeed] 已填充 {len(rows)} 天的 CN_A 交易日历（工作日=交易日）")
+
+
+def _prev_business_day(d: date, calendar: SqliteCalendarService, n: int = 1) -> date:
+    """
+    返回 d 之前的第 n 个交易日。
+
+    Args:
+        d: 参考日期
+        calendar: 日历服务
+        n: 向前追溯的交易日数量
 
     Returns:
-        目标工作日日期。
+        目标交易日日期
     """
     days = 0
     cur = d
     while days < n:
         cur = cur - timedelta(days=1)
-        if cur.weekday() < 5:
+        if calendar.is_open("CN_A", cur):
             days += 1
     return cur
 
 
 def main() -> None:
     """
-    初始化开发用 SQLite 数据：基金/定投/配置/净值/样例交易。
+    初始化开发用 SQLite 数据。
 
-    行为：可通过 `SEED_RESET`/`SEED_SIMULATE_CONFIRM` 控制重置与自动确认。
+    行为：可通过环境变量控制重置与自动确认。
     """
     helper = SqliteDbHelper()
     helper.init_schema_if_needed()
     conn = helper.get_connection()
-
-    fund_repo = SqliteFundRepo(conn)
-    calendar = SimpleTradingCalendar()
-    trade_repo = SqliteTradeRepo(conn, calendar)
-    nav_repo = SqliteNavRepo(conn)
-    _ = SqliteDcaPlanRepo(conn)  # dca_repo 初始化但未使用
-    alloc_repo = SqliteAllocConfigRepo(conn)
 
     # 可选：重置核心表，避免历史数据干扰
     reset = os.getenv("SEED_RESET", "1") == "1"
@@ -73,19 +115,41 @@ def main() -> None:
             conn.execute("DELETE FROM funds")
             conn.execute("DELETE FROM dca_plans")
             conn.execute("DELETE FROM alloc_config")
+            conn.execute("DELETE FROM trading_calendar")
+        print("[DevSeed] 已重置所有核心表数据")
+
+    # 填充基础交易日历（开发用简化版）
+    today = date.today()
+    _seed_basic_calendar(conn, today, days_back=30)
+
+    # 初始化仓储和服务
+    fund_repo = SqliteFundRepo(conn)
+    calendar = SqliteCalendarService(conn)
+    trade_repo = SqliteTradeRepo(conn, calendar)
+    nav_repo = SqliteNavRepo(conn)
+    _ = SqliteDcaPlanRepo(conn)  # dca_repo 用于初始化表结构，不在脚本中直接使用
+    alloc_repo = SqliteAllocConfigRepo(conn)
 
     # Seed funds（幂等）
-    fund_repo.add_fund("110022", "Test Equity", AssetClass.CSI300, "A")
-    fund_repo.add_fund("000001", "Test QDII", AssetClass.US_QDII, "QDII")
+    fund_repo.add_fund("110022", "易方达沪深300ETF联接", AssetClass.CSI300, "A")
+    fund_repo.add_fund("000001", "华夏大盘精选", AssetClass.CSI300, "A")
+    fund_repo.add_fund("162411", "华宝标普美国消费", AssetClass.US_QDII, "QDII")
+    print("[DevSeed] 已添加 3 只测试基金")
 
     # Seed DCA plan
     with conn:
         conn.execute(
-            "INSERT INTO dca_plans(fund_code, amount, frequency, rule) VALUES(?, ?, ?, ?)"
-            " ON CONFLICT(fund_code) DO UPDATE SET amount=excluded.amount, "  # noqa: E501
-            "frequency=excluded.frequency, rule=excluded.rule",
+            """
+            INSERT INTO dca_plans(fund_code, amount, frequency, rule)
+            VALUES(?, ?, ?, ?)
+            ON CONFLICT(fund_code) DO UPDATE SET
+                amount=excluded.amount,
+                frequency=excluded.frequency,
+                rule=excluded.rule
+            """,
             ("110022", "1000", "weekly", "MON"),
         )
+    print("[DevSeed] 已添加定投计划：110022 每周1000元")
 
     # Seed alloc config
     with conn:
@@ -98,19 +162,25 @@ def main() -> None:
                 (AssetClass.CGB_3_5Y.value, "0.2", "0.03"),
             ],
         )
+    print("[DevSeed] 已设置资产配置目标权重")
 
-    # 日期选择：A 股示例用“前一工作日”为交易日，使 confirm_date = 今天（T+1）
-    today = date.today()
-    trade_day_a = prev_business_day(today, 1)
+    # 日期选择：A 股示例用"前一交易日"为交易日，使 confirm_date = 今天（T+1）
+    trade_day_a = _prev_business_day(today, calendar, n=1)
+
+    # 计算定价日和确认日（使用策略）
+    policy = default_policy("A")
+    pricing_date, confirm_date = get_settlement_dates(trade_day_a, policy, calendar)
 
     # Seed NAV：
-    # - 交易日 NAV（用于确认份额，符合口径）
+    # - 定价日 NAV（用于确认份额）
     # - 当日 NAV（用于市值视图 status/日报）
-    nav_repo.upsert("110022", trade_day_a, Decimal("1.2000"))
+    nav_repo.upsert("110022", pricing_date, Decimal("1.2000"))
     nav_repo.upsert("110022", today, Decimal("1.2345"))
-    nav_repo.upsert("000001", today, Decimal("0.8765"))
+    nav_repo.upsert("000001", today, Decimal("0.9876"))
+    nav_repo.upsert("162411", today, Decimal("0.8765"))
+    print(f"[DevSeed] 已添加 NAV 数据（定价日={pricing_date}, 今日={today}）")
 
-    # Create a sample trade（A 股，交易日=前一工作日，今天应确认）
+    # Create a sample trade（A 股，交易日=前一交易日，今天应确认）
     trade = Trade(
         id=None,
         fund_code="110022",
@@ -121,29 +191,32 @@ def main() -> None:
         market="A",
     )
     saved = trade_repo.add(trade)
-    print(f"Inserted trade id={saved.id}, trade_date={trade_day_a}, confirm_date preset")
+    print(
+        f"[DevSeed] 已创建交易: id={saved.id}, "
+        f"trade_date={trade_day_a}, pricing_date={saved.pricing_date}, "
+        f"confirm_date={saved.confirm_date}"
+    )
 
-    # Print pending list for confirm_date
-    confirm_day = get_confirm_date(trade.market, trade_day_a, calendar)
-    pending = trade_repo.list_pending_to_confirm(confirm_day)
-    print(f"Pending with confirm_date={confirm_day.isoformat()}: {len(pending)}")
+    # Print pending list
+    pending = trade_repo.list_pending_to_confirm(confirm_date)
+    print(f"[DevSeed] 待确认交易（confirm_date={confirm_date}）: {len(pending)} 笔")
 
-    # 自动执行一次确认，便于演示：默认模拟"在确认日"运行（对任意实际日期可复现）
-    # 开关：SEED_SIMULATE_CONFIRM（优先）或兼容 SEED_CONFIRM（均默认开启）
-    if os.getenv("SEED_SIMULATE_CONFIRM", os.getenv("SEED_CONFIRM", "1")) == "1":
-        result = ConfirmPendingTrades(trade_repo, LocalNavProvider(nav_repo), calendar).execute(today=confirm_day)
+    # 自动执行一次确认（默认开启）
+    if os.getenv("SEED_SIMULATE_CONFIRM", "1") == "1":
+        nav_service = LocalNavService(nav_repo)
+        usecase = ConfirmPendingTrades(trade_repo, nav_service)
+        result = usecase.execute(today=confirm_date)
         print(
-            f"Confirmed on confirm_day({confirm_day}): {result.confirmed_count}, "
+            f"[DevSeed] 确认结果: confirmed={result.confirmed_count}, "
             f"skipped={result.skipped_count}, delayed={result.delayed_count}"
         )
 
     # v0.2.1: 可选创建"延迟确认"测试场景
-    # 场景：3天前买入某基金 500元，理论上昨天（T+2）应该确认，但 navs 表中没有对应定价日的 NAV
     if os.getenv("SEED_CREATE_DELAYED_TRADE", "0") == "1":
-        delayed_trade_day = prev_business_day(today, 3)
+        delayed_trade_day = _prev_business_day(today, calendar, n=3)
         delayed_trade = Trade(
             id=None,
-            fund_code="162411",  # 使用一个不同的基金代码
+            fund_code="162411",
             type="buy",
             amount=Decimal("500"),
             trade_date=delayed_trade_day,
@@ -151,13 +224,21 @@ def main() -> None:
             market="QDII",
         )
         saved_delayed = trade_repo.add(delayed_trade)
-        print(f"[DevSeed] Created delayed trade: id={saved_delayed.id}, fund_code=162411, trade_date={delayed_trade_day}")
-        print("[DevSeed] 注意：未为该基金添加 NAV 数据，确认时将被标记为延迟")
+        print(
+            f"[DevSeed] 已创建延迟测试交易: id={saved_delayed.id}, "
+            f"fund_code=162411, trade_date={delayed_trade_day}"
+        )
+        print("[DevSeed] 注意：未为该基金添加定价日 NAV，确认时将被标记为延迟")
 
+    # 打印当前状态
     positions = trade_repo.position_shares()
-    print("Current confirmed positions:", positions)
+    print(f"[DevSeed] 当前持仓: {dict(positions)}")
 
-    print("Target weights:", alloc_repo.get_target_weights())
+    target_weights = alloc_repo.get_target_weights()
+    print(f"[DevSeed] 目标权重: {dict(target_weights)}")
+
+    print("\n✅ 开发数据初始化完成！")
+    print("提示：这是简化的测试数据，生产环境请使用 sync_calendar/patch_calendar 维护日历")
 
 
 if __name__ == "__main__":

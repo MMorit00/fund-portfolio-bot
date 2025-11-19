@@ -10,12 +10,12 @@ import httpx
 from src.core.protocols import NavSourceProtocol
 
 
-class EastmoneyNavProvider(NavSourceProtocol):
+class EastmoneyNavService(NavSourceProtocol):
     """
-    东方财富官方净值数据源适配器（骨架实现）。
+    东方财富 NAV 数据源服务（骨架实现）。
 
     设计原则：
-    - 仅负责“单只基金单日 NAV 的 HTTP 获取与解析”，不直接落库；
+    - 仅负责"单只基金单日 NAV 的 HTTP 获取与解析"，不直接落库；
     - 所有网络/解析异常均被捕获并记录，返回 None，由上层决定是否重试/告警；
     - 使用 httpx 同步 Client，支持超时与有限重试（指数退避）。
 

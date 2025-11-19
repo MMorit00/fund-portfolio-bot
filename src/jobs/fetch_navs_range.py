@@ -65,13 +65,17 @@ def main() -> int:
                     for code in result.failed_codes:
                         failed_aggregate.setdefault(code, []).append(day)
 
+                failed_count = len(result.failed_codes)
                 log(
-                    f"[Job] fetch_navs_range 逐日：day={day} total={result.total} success={result.success} failed={len(result.failed_codes)}"
+                    f"[Job] fetch_navs_range 逐日：day={day} "
+                    f"total={result.total} success={result.success} failed={failed_count}"
                 )
 
         # 汇总输出
+        total_failed = len(failed_aggregate)
         log(
-            f"[Job] fetch_navs_range 完成：days={total_days} max_total={total_funds} total_success={total_success} total_failed_codes={len(failed_aggregate)}"
+            f"[Job] fetch_navs_range 完成：days={total_days} max_total={total_funds} "
+            f"total_success={total_success} total_failed_codes={total_failed}"
         )
         if failed_aggregate:
             # 打印每个失败基金的日期列表（数量较多时也足以定位并重试）

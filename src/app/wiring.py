@@ -3,8 +3,8 @@ from __future__ import annotations
 import sqlite3
 from typing import Optional
 
-from src.adapters.datasources.eastmoney_nav import EastmoneyNavProvider
-from src.adapters.datasources.local_nav import LocalNavProvider
+from src.adapters.datasources.eastmoney_nav import EastmoneyNavService
+from src.adapters.datasources.local_nav import LocalNavService
 from src.adapters.db.sqlite.alloc_config_repo import SqliteAllocConfigRepo
 from src.adapters.db.sqlite.calendar import SqliteCalendarService
 from src.adapters.db.sqlite.db_helper import SqliteDbHelper
@@ -12,7 +12,7 @@ from src.adapters.db.sqlite.dca_plan_repo import SqliteDcaPlanRepo
 from src.adapters.db.sqlite.fund_repo import SqliteFundRepo
 from src.adapters.db.sqlite.nav_repo import SqliteNavRepo
 from src.adapters.db.sqlite.trade_repo import SqliteTradeRepo
-from src.adapters.notify.discord_report import DiscordReportSender
+from src.adapters.notify.discord_report import DiscordReportService
 from src.app import config
 from src.core.protocols import CalendarProtocol
 from src.usecases.dca.run_daily import RunDailyDca
@@ -43,8 +43,8 @@ class DependencyContainer:
         self.alloc_repo: Optional[SqliteAllocConfigRepo] = None
 
         # 适配器实例
-        self.nav_provider: Optional[LocalNavProvider] = None
-        self.discord_sender: Optional[DiscordReportSender] = None
+        self.nav_provider: Optional[LocalNavService] = None
+        self.discord_sender: Optional[DiscordReportService] = None
         self.calendar: Optional[CalendarProtocol] = None
 
     def __enter__(self) -> "DependencyContainer":
@@ -85,8 +85,8 @@ class DependencyContainer:
         self.dca_repo = SqliteDcaPlanRepo(self.conn)
         self.alloc_repo = SqliteAllocConfigRepo(self.conn)
 
-        self.nav_provider = LocalNavProvider(self.nav_repo)
-        self.discord_sender = DiscordReportSender()
+        self.nav_provider = LocalNavService(self.nav_repo)
+        self.discord_sender = DiscordReportService()
 
         return self
 
@@ -162,5 +162,5 @@ class DependencyContainer:
         """获取 FetchNavsForDay UseCase（Eastmoney Provider）。"""
         if not self.fund_repo or not self.nav_repo:
             raise RuntimeError("容器未初始化，请在 with 块中使用")
-        provider = EastmoneyNavProvider()
+        provider = EastmoneyNavService()
         return FetchNavsForDay(self.fund_repo, self.nav_repo, provider)

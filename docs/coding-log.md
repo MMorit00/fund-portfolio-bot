@@ -1,5 +1,53 @@
 # Coding Log（功能/架构决策）
 
+## 2025-11-19 v0.3 日历与接口重构
+
+### 完成内容
+- **核心接口统一到 `src/core/protocols.py`**：
+  - 新建 `src/core/fund.py`，将 `FundInfo` 数据类从 ports 迁移到核心层
+  - 新建 `src/core/protocols.py`，集中定义所有接口（Protocol）
+  - 删除 `src/usecases/ports.py`，完成接口层从 usecases 到 core 的迁移
+  - 接口命名规范化：
+    - Repository 接口：保持 `*Repo`（如 `TradeRepo`）
+    - Service 接口：使用 `*Protocol` 后缀（如 `NavProtocol` / `NavSourceProtocol` / `ReportProtocol` / `CalendarProtocol`）
+
+- **日历子系统收敛**：
+  - 统一日历协议：`CalendarProtocol` 提供 `is_open` / `next_open` / `shift` 三个方法
+  - 合并实现：`SqliteCalendarService` 整合了原 `SqliteTradingCalendar` + `DateMathService` + `SqliteCalendarStore` 的所有逻辑
+  - 删除冗余文件：
+    - `src/core/trading/calendar.py`（SimpleTradingCalendar + TradingCalendar 协议）
+    - `src/core/trading/date_math.py`（DateMath + DateMathService）
+    - `src/adapters/db/sqlite/calendar_store.py`（SqliteCalendarStore）
+    - `src/adapters/db/sqlite/trading_calendar.py`（SqliteTradingCalendar）
+  - **严格模式**：v0.3 起强制要求使用 DB 交易日历，删除工作日近似 fallback，缺失数据时直接抛错
+
+- **Service/Repo 实现命名统一**：
+  - `LocalNavProvider` → `LocalNavService`（实现 `NavProtocol`）
+  - `EastmoneyNavProvider` → `EastmoneyNavService`（实现 `NavSourceProtocol`）
+  - `DiscordReportSender` → `DiscordReportService`（实现 `ReportProtocol`）
+  - 文件名保持不变（按你的裁决，只在必要时重命名）
+
+- **依赖注入简化**：
+  - `DependencyContainer` 删除 `calendar_store` / `date_math` 字段
+  - 统一使用 `self.calendar: CalendarProtocol` 作为唯一日历服务
+  - `SqliteTradeRepo` 构造函数简化为 `__init__(conn, calendar)`
+
+### 决策
+- **接口分层明确**：核心接口在 `core/protocols.py`，领域数据类在 `core/`，杜绝 usecases 层定义接口
+- **NAV 接口拆分**：
+  - `NavProtocol`：运行时本地查询（确认、日报、再平衡）
+  - `NavSourceProtocol`：外部数据源抓取（HTTP、CSV 等）
+  - 明确职责边界，避免混用
+- **日历严格模式**：v0.3 起不再允许"工作日近似"作为 fallback，必须通过 `sync_calendar` / `patch_calendar` 维护完整日历数据
+- **calendar_key 设计**：使用灵活的字符串标识（如 "CN_A" / "US_NYSE"），不绑定到 `MarketType` 枚举，保持扩展性
+
+### 影响范围
+- 更新文件：17 个 UseCase / 6 个 Adapter / 3 个核心模块 / wiring.py / settlement.py
+- 删除文件：4 个旧日历实现 + 1 个 ports.py
+- 新增文件：2 个（core/fund.py + core/protocols.py）+ 1 个（adapters/db/sqlite/calendar.py）
+
+---
+
 ## 2025-11-14 项目骨架
 
 ### 完成内容

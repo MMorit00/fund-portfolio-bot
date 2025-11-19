@@ -44,8 +44,11 @@ def main() -> int:
     try:
         args = _parse_args()
         mode = getattr(args, "mode", "market")
+        as_of_arg = getattr(args, "as_of", None)
         as_of = (
-            date.fromisoformat(getattr(args, "as_of")) if getattr(args, "as_of", None) else _prev_business_day(date.today())
+            date.fromisoformat(as_of_arg)
+            if as_of_arg
+            else _prev_business_day(date.today())
         )
 
         log(f"[Job] daily_report 开始：as_of={as_of}, mode={mode}")
