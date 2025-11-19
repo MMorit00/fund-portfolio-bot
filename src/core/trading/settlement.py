@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from datetime import date
 
+from src.core.protocols import CalendarProtocol
 from src.core.trade import MarketType
-from src.core.trading.calendar import TradingCalendar
-from src.core.trading.date_math import DateMath
 from src.core.trading.policy import SettlementPolicy
 
 
-def get_confirm_date(market: MarketType, trade_date: date, calendar: TradingCalendar) -> date:
+def get_confirm_date(market: MarketType, trade_date: date, calendar: CalendarProtocol) -> date:
     """
     计算确认日期（v0.2）：基于“定价日 + lag”的规则。
 
@@ -31,21 +30,21 @@ def get_confirm_date(market: MarketType, trade_date: date, calendar: TradingCale
     return confirm_date
 
 
-def determine_pricing_date(trade_date: date, policy: SettlementPolicy, dm: DateMath) -> date:
+def determine_pricing_date(trade_date: date, policy: SettlementPolicy, calendar: CalendarProtocol) -> date:
     """
     计算定价日（策略版）：先过 guard（若有），再在定价日历上取下一开市日。
 
     参数：
         trade_date: 下单/约定日。
         policy: 结算策略（含 guard 与定价/计数日历）。
-        dm: 日期运算服务。
+        calendar: 交易日历服务。
     """
-    effective = dm.next_open(policy.guard_calendar, trade_date) if policy.guard_calendar else trade_date
-    return dm.next_open(policy.pricing_calendar, effective)
+    effective = calendar.next_open(policy.guard_calendar, trade_date) if policy.guard_calendar else trade_date
+    return calendar.next_open(policy.pricing_calendar, effective)
 
 
-def get_settlement_dates(trade_date: date, policy: SettlementPolicy, dm: DateMath) -> tuple[date, date]:
+def get_settlement_dates(trade_date: date, policy: SettlementPolicy, calendar: CalendarProtocol) -> tuple[date, date]:
     """返回 (pricing_date, confirm_date)，计数在 `lag_counting_calendar` 上进行。"""
-    pricing = determine_pricing_date(trade_date, policy, dm)
-    confirm = dm.shift(policy.lag_counting_calendar, pricing, policy.settle_lag)
+    pricing = determine_pricing_date(trade_date, policy, calendar)
+    confirm = calendar.shift(policy.lag_counting_calendar, pricing, policy.settle_lag)
     return pricing, confirm

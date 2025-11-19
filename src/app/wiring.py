@@ -1,23 +1,20 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date
 from typing import Optional
 
 from src.adapters.datasources.eastmoney_nav import EastmoneyNavProvider
 from src.adapters.datasources.local_nav import LocalNavProvider
 from src.adapters.db.sqlite.alloc_config_repo import SqliteAllocConfigRepo
-from src.adapters.db.sqlite.calendar_store import SqliteCalendarStore
+from src.adapters.db.sqlite.calendar import SqliteCalendarService
 from src.adapters.db.sqlite.db_helper import SqliteDbHelper
 from src.adapters.db.sqlite.dca_plan_repo import SqliteDcaPlanRepo
 from src.adapters.db.sqlite.fund_repo import SqliteFundRepo
 from src.adapters.db.sqlite.nav_repo import SqliteNavRepo
 from src.adapters.db.sqlite.trade_repo import SqliteTradeRepo
-from src.adapters.db.sqlite.trading_calendar import SqliteTradingCalendar
 from src.adapters.notify.discord_report import DiscordReportSender
 from src.app import config
-from src.core.trading.calendar import SimpleTradingCalendar
-from src.core.trading.date_math import CalendarStore, DateMathService
+from src.core.protocols import CalendarProtocol
 from src.usecases.dca.run_daily import RunDailyDca
 from src.usecases.dca.skip_date import SkipDcaForDate
 from src.usecases.marketdata.fetch_navs_for_day import FetchNavsForDay
@@ -48,10 +45,7 @@ class DependencyContainer:
         # 适配器实例
         self.nav_provider: Optional[LocalNavProvider] = None
         self.discord_sender: Optional[DiscordReportSender] = None
-        self.calendar: SimpleTradingCalendar = SimpleTradingCalendar()
-        # 新版：策略化日期运算（按 calendar_key）
-        self.calendar_store: Optional[CalendarStore] = None
-        self.date_math: Optional[DateMathService] = None
+        self.calendar: Optional[CalendarProtocol] = None
 
     def __enter__(self) -> "DependencyContainer":
         """初始化数据库连接与仓储。"""
@@ -62,37 +56,31 @@ class DependencyContainer:
         # 初始化仓储
         self.fund_repo = SqliteFundRepo(self.conn)
 
-        # 选择交易日历实现
+        # 初始化交易日历服务（v0.3：严格要求 DB 日历）
         backend = config.get_trading_calendar_backend()
-        if backend == "db":
-            # 确认 trading_calendar 表存在
-            exists = (
-                self.conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='trading_calendar'"
-                ).fetchone()
-                is not None
+        if backend != "db":
+            raise RuntimeError(
+                "v0.3 要求使用 DB 交易日历，请设置 TRADING_CALENDAR_BACKEND=db "
+                "并运行 sync_calendar/patch_calendar 任务"
             )
-            if not exists:
-                raise RuntimeError(
-                    "TRADING_CALENDAR_BACKEND=db，但未发现 trading_calendar 表，请先执行迁移/导入"
-                )
-            # 旧接口保留（部分 CLI 仍使用）；新策略化接口走 CalendarStore + DateMath
-            self.calendar = SqliteTradingCalendar(self.conn)
-            self.calendar_store = SqliteCalendarStore(self.conn)
-        else:
-            self.calendar = SimpleTradingCalendar()
-            # 无 DB 日历时，DateMath 将退回工作日近似（通过临时 store 封装）
-            class _WeekdayStore:
-                def is_open(self, calendar_key: str, day: date) -> bool:
-                    return day.weekday() < 5
 
-            self.calendar_store = _WeekdayStore()
+        # 确认 trading_calendar 表存在
+        exists = (
+            self.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='trading_calendar'"
+            ).fetchone()
+            is not None
+        )
+        if not exists:
+            raise RuntimeError(
+                "TRADING_CALENDAR_BACKEND=db，但未发现 trading_calendar 表，请先执行迁移/导入"
+            )
 
-        # 策略化日期运算服务
-        self.date_math = DateMathService(self.calendar_store)
+        # 使用统一的 CalendarService
+        self.calendar = SqliteCalendarService(self.conn)
 
         # 初始化适配器与仓储
-        self.trade_repo = SqliteTradeRepo(self.conn, self.date_math)
+        self.trade_repo = SqliteTradeRepo(self.conn, self.calendar)
         self.nav_repo = SqliteNavRepo(self.conn)
         self.dca_repo = SqliteDcaPlanRepo(self.conn)
         self.alloc_repo = SqliteAllocConfigRepo(self.conn)
