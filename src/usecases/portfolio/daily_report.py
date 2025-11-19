@@ -14,15 +14,15 @@ ReportMode = Literal["market", "shares"]
 
 
 @dataclass
-class ReportData:
+class ReportResult:
     """
     日报数据结构（支持市值视图与份额视图）。
 
     口径：
-    - 仅统计“已确认份额”，不包含当日 pending 交易；
-    - 市值模式仅使用“当日官方 NAV”，`nav <= 0` 视为缺失；
+    - 仅统计"已确认份额"，不包含当日 pending 交易；
+    - 市值模式仅使用"当日官方 NAV"，`nav <= 0` 视为缺失；
     - 缺失 NAV 的基金不计入市值与权重分母，并在 missing_nav 中列出；
-    - 不做“最近交易日 NAV”回退（v0.2 严格版），因此当日总市值可能被低估。
+    - 不做"最近交易日 NAV"回退（v0.2 严格版），因此当日总市值可能被低估。
 
     统计字段（仅在市值模式下有意义）：
     - total_funds_in_position：本次参与市值统计且在 fund_repo 中有配置的持仓基金数；
@@ -105,7 +105,7 @@ class MakeDailyReport:
         position_shares: dict[str, Decimal],
         target_weights: dict[AssetClass, Decimal],
         as_of: date,
-    ) -> ReportData:
+    ) -> ReportResult:
         """
         构造市值视图数据：按"确认为准的份额 × 当日 NAV"聚合市值与权重。
 
@@ -147,7 +147,7 @@ class MakeDailyReport:
 
         deviation = calc_weight_diff(class_weight, target_weights)
 
-        return ReportData(
+        return ReportResult(
             mode="market",
             as_of=today,
             total_value=total_value,
@@ -164,7 +164,7 @@ class MakeDailyReport:
         position_shares: dict[str, Decimal],
         target_weights: dict[AssetClass, Decimal],
         as_of: date,
-    ) -> ReportData:
+    ) -> ReportResult:
         """
         构造份额视图数据：按已确认份额聚合各资产类别份额并计算权重（不依赖 NAV）。
         """
@@ -184,7 +184,7 @@ class MakeDailyReport:
 
         deviation = calc_weight_diff(class_weight, target_weights)
 
-        return ReportData(
+        return ReportResult(
             mode="shares",
             as_of=as_of,
             total_value=total_shares,
@@ -197,10 +197,10 @@ class MakeDailyReport:
         )
 
     def _render(
-        self, data: ReportData, target: dict[AssetClass, Decimal], recent_trades: list[Trade]
+        self, data: ReportResult, target: dict[AssetClass, Decimal], recent_trades: list[Trade]
     ) -> str:
         """
-        将 ReportData 渲染成文本格式（v0.2.1：新增交易确认情况）。
+        将 ReportResult 渲染成文本格式（v0.2.1：新增交易确认情况）。
 
         说明：再平衡提示阈值当前固定为 ±5%（未读取配置）。
         """

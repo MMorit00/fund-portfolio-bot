@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import date
 
+from src.core.policy import SettlementPolicy
 from src.core.protocols import CalendarProtocol
 from src.core.trade import MarketType
-from src.core.trading.policy import SettlementPolicy
 
 
 def calc_confirm_date(market: MarketType, trade_date: date, calendar: CalendarProtocol) -> date:
@@ -48,3 +48,29 @@ def calc_settlement_dates(trade_date: date, policy: SettlementPolicy, calendar: 
     pricing = calc_pricing_date(trade_date, policy, calendar)
     confirm = calendar.shift(policy.lag_counting_calendar, pricing, policy.settle_lag)
     return pricing, confirm
+
+
+def default_policy(market: MarketType) -> SettlementPolicy:
+    """
+    按市场返回默认结算策略（系统内建规则）。
+
+    当前默认：
+    - A：定价/计数=CN_A，T+1；无 guard。
+    - QDII：定价/计数=US_NYSE，T+2；guard=CN_A（国内渠道开门约束）。
+
+    注意：这是业务规则，不是环境配置。未来可通过 per-fund 策略覆盖。
+    """
+    if market == "A":
+        return SettlementPolicy(
+            pricing_calendar="CN_A",
+            settle_lag=1,
+            lag_counting_calendar="CN_A",
+            guard_calendar=None,
+        )
+    # 默认将 QDII 视为美股定价、T+2，受 A 股渠道日历 guard
+    return SettlementPolicy(
+        pricing_calendar="US_NYSE",
+        settle_lag=2,
+        lag_counting_calendar="US_NYSE",
+        guard_calendar="CN_A",
+    )

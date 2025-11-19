@@ -46,11 +46,12 @@
 ### 文件位置
 
 ```
-src/core/protocols.py          → 所有 Protocol 接口
-src/core/fund.py               → FundInfo 数据类
-src/adapters/db/sqlite/trade_repo.py       → SqliteTradeRepo
-src/adapters/datasources/local_nav.py      → LocalNavService
-src/adapters/db/sqlite/calendar.py         → SqliteCalendarService
+src/core/protocols.py                    → 所有 Protocol 接口
+src/core/fund.py                         → FundInfo 数据类
+src/core/policy.py                       → SettlementPolicy 数据类
+src/adapters/db/sqlite/trade_repo.py     → SqliteTradeRepo
+src/adapters/datasources/local_nav.py    → LocalNavService
+src/adapters/db/sqlite/calendar.py       → SqliteCalendarService
 ```
 
 ### 职责分离示例
@@ -91,6 +92,34 @@ src/adapters/db/sqlite/calendar.py         → SqliteCalendarService
 - 如果 UseCase 内部调用 `repo.add()` → 用 `Create`
 - 如果只是组装数据后发送/返回 → 用 `Make`
 - 如果从外部 IO 获取 → 用 `Fetch`
+
+### UseCase 结果类命名规范
+
+**统一后缀**：所有 UseCase 返回的数据类使用 `Result` 后缀
+
+**命名原则**：
+1. **去冗余**：类名不重复字段名中的关键词
+   ```python
+   # ❌ 错误：Suggestion 重复
+   class RebalanceSuggestionResult:
+       suggestions: list[RebalanceAdvice]
+
+   # ✅ 正确：简洁无冗余
+   class RebalanceResult:
+       suggestions: list[RebalanceAdvice]
+   ```
+
+2. **保持简洁**：控制在 15 字符左右
+   - ✅ `ConfirmResult` (13)
+   - ✅ `FetchNavsResult` (15)
+   - ✅ `RebalanceResult` (15)
+   - ✅ `ReportResult` (12)
+
+3. **与 UseCase 对齐**：
+   - `MakeDailyReport` → `ReportResult`
+   - `MakeRebalance` → `RebalanceResult`
+   - `FetchNavs` → `FetchNavsResult`
+   - `ConfirmTrades` → `ConfirmResult`
 
 ## Docstring 与注释风格
 

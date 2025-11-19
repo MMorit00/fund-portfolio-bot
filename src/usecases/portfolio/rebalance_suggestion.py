@@ -14,7 +14,7 @@ from src.core.protocols import AllocConfigRepo, FundRepo, NavProtocol, TradeRepo
 
 
 @dataclass(slots=True)
-class RebalanceSuggestionResult:
+class RebalanceResult:
     """
     再平衡建议结果（基础版，仅资产类别粒度）。
 
@@ -53,7 +53,7 @@ class MakeRebalance:
         self.fund_repo = fund_repo
         self.nav_provider = nav_provider
 
-    def execute(self, *, today: date) -> RebalanceSuggestionResult:
+    def execute(self, *, today: date) -> RebalanceResult:
         """
         基于当日市值视图计算再平衡建议。
 
@@ -63,7 +63,7 @@ class MakeRebalance:
         3. 仅使用当日 NAV（nav<=0 视为缺失并剔除），聚合各资产类别市值与 total_value；
         4. 计算 actual_weight；
         5. 调用 build_rebalance_advice(total_value, actual_weight, target_weight, thresholds)；
-        6. 返回 RebalanceSuggestionResult。
+        6. 返回 RebalanceResult。
         """
 
         target_weights = self.alloc_repo.get_target_weights()
@@ -94,7 +94,7 @@ class MakeRebalance:
 
         if total_value == Decimal("0"):
             # 特判：当日 NAV 数据不足，无法给出金额建议
-            return RebalanceSuggestionResult(
+            return RebalanceResult(
                 as_of=today,
                 total_value=total_value,
                 suggestions=[],
@@ -110,7 +110,7 @@ class MakeRebalance:
             default_threshold=Decimal("0.05"),
         )
 
-        return RebalanceSuggestionResult(
+        return RebalanceResult(
             as_of=today,
             total_value=total_value,
             suggestions=suggestions,

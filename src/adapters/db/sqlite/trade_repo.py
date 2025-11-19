@@ -6,8 +6,7 @@ from decimal import Decimal
 
 from src.core.protocols import CalendarProtocol, TradeRepo
 from src.core.trade import Trade
-from src.core.trading.policy import default_policy
-from src.core.trading.settlement import calc_settlement_dates
+from src.core.trading.settlement import calc_settlement_dates, default_policy
 
 
 class SqliteTradeRepo(TradeRepo):
