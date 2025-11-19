@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.usecases.ports import TradeRepo
+from src.core.protocols import TradeRepo
 
 
 class GetStatusSummary:

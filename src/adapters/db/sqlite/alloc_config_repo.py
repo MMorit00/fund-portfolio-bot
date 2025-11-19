@@ -4,7 +4,7 @@ import sqlite3
 from decimal import Decimal
 
 from src.core.asset_class import AssetClass
-from src.usecases.ports import AllocConfigRepo
+from src.core.protocols import AllocConfigRepo
 
 
 class SqliteAllocConfigRepo(AllocConfigRepo):

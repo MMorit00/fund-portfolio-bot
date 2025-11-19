@@ -7,10 +7,10 @@ from urllib.parse import urlencode
 
 import httpx
 
-from src.usecases.ports import NavProvider
+from src.core.protocols import NavSourceProtocol
 
 
-class EastmoneyNavProvider(NavProvider):
+class EastmoneyNavProvider(NavSourceProtocol):
     """
     东方财富官方净值数据源适配器（骨架实现）。
 

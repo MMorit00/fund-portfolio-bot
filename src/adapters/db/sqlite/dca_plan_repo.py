@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 from src.core.dca_plan import DcaPlan
-from src.usecases.ports import DcaPlanRepo
+from src.core.protocols import DcaPlanRepo
 
 
 class SqliteDcaPlanRepo(DcaPlanRepo):

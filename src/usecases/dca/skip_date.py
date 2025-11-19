@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from src.usecases.ports import DcaPlanRepo, TradeRepo
+from src.core.protocols import DcaPlanRepo, TradeRepo
 
 
 class SkipDcaForDate:

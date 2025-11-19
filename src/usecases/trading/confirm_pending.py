@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
+from src.core.protocols import NavProtocol, TradeRepo
 from src.core.trading.precision import quantize_shares
-from src.usecases.ports import NavProvider, TradeRepo
 
 
 @dataclass(slots=True)
@@ -31,7 +31,7 @@ class ConfirmPendingTrades:
     - 确认日来源于 DB 预写的 confirm_date（写入时按当时规则计算），此处不再重算。
     """
 
-    def __init__(self, trade_repo: TradeRepo, nav_provider: NavProvider) -> None:
+    def __init__(self, trade_repo: TradeRepo, nav_provider: NavProtocol) -> None:
         self.trade_repo = trade_repo
         self.nav_provider = nav_provider
 

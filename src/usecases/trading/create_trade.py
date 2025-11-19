@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+from src.core.protocols import FundRepo, TradeRepo
 from src.core.trade import Trade
-from src.usecases.ports import FundRepo, TradeRepo
 
 
 class CreateTrade:

@@ -1,27 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Protocol
 
 from src.core.asset_class import AssetClass
 from src.core.dca_plan import DcaPlan
-from src.core.trade import MarketType, Trade
+from src.core.fund import FundInfo
+from src.core.trade import Trade
 
-
-@dataclass(slots=True)
-class FundInfo:
-    """
-    基金信息数据类。
-
-    包含基金代码、名称、资产类别和市场类型。
-    """
-
-    fund_code: str
-    name: str
-    asset_class: AssetClass
-    market: MarketType
+# ============================================================================
+# Repository 接口（数据访问层协议）
+# ============================================================================
 
 
 class FundRepo(Protocol):
@@ -91,18 +81,6 @@ class TradeRepo(Protocol):
         """将指定日期的 pending 买入定投标记为 skipped，返回影响行数。"""
 
 
-class NavProvider(Protocol):
-    """外部数据源：按日期获取官方单位净值。"""
-
-    def get_nav(self, fund_code: str, day: date) -> Decimal | None:
-        """
-        读取指定基金在给定日期的官方单位净值。
-
-        Returns:
-            Decimal 净值；无数据返回 None。
-        """
-
-
 class NavRepo(Protocol):
     """净值存取（可选：只使用 provider 也可）。"""
 
@@ -127,8 +105,103 @@ class DcaPlanRepo(Protocol):
         """读取某基金的定投计划，未配置返回 None。"""
 
 
-class ReportSender(Protocol):
-    """报告发送（例如 Discord Webhook）。"""
+# ============================================================================
+# Service 接口（领域服务协议）
+# ============================================================================
+
+
+class NavProtocol(Protocol):
+    """
+    NAV 查询协议（运行时本地查询）。
+
+    用于确认用例、日报、再平衡等需要读取本地已存储的净值数据的场景。
+    """
+
+    def get_nav(self, fund_code: str, day: date) -> Decimal | None:
+        """
+        读取指定基金在给定日期的官方单位净值。
+
+        Returns:
+            Decimal 净值；无数据返回 None。
+        """
+
+
+class NavSourceProtocol(Protocol):
+    """
+    NAV 数据源协议（外部抓取）。
+
+    用于从 HTTP、CSV 等外部来源拉取净值数据。
+    实现者负责从数据源获取 NAV，但不负责持久化（持久化由 UseCase 调用 NavRepo 完成）。
+    """
+
+    def get_nav(self, fund_code: str, day: date) -> Decimal | None:
+        """
+        从外部数据源获取指定基金在给定日期的官方单位净值。
+
+        Returns:
+            Decimal 净值；无数据或失败返回 None。
+        """
+
+
+class ReportProtocol(Protocol):
+    """报告发送协议（例如 Discord Webhook、邮件等）。"""
 
     def send(self, text: str) -> bool:
         """发送文本报告，返回是否成功。"""
+
+
+class CalendarProtocol(Protocol):
+    """
+    交易日历协议：判断开市日 + T+N 偏移计算。
+
+    使用 calendar_key（如 "CN_A"、"US_NYSE"）标识不同市场的交易日历。
+    """
+
+    def is_open(self, calendar_key: str, day: date) -> bool:
+        """
+        判断指定日期是否为交易日。
+
+        Args:
+            calendar_key: 日历标识（如 "CN_A"、"US_NYSE"）。
+            day: 待判断的日期。
+
+        Returns:
+            True 表示交易日，False 表示休市日。
+        """
+
+    def next_open(self, calendar_key: str, day: date) -> date:
+        """
+        返回 >= day 的首个交易日（含当日）。
+
+        or_self 语义：如果 day 本身是交易日，返回 day；否则向后找最近的交易日。
+
+        Args:
+            calendar_key: 日历标识。
+            day: 参考日期。
+
+        Returns:
+            首个交易日。
+
+        Raises:
+            RuntimeError: 若在合理范围内（如 365 天）未找到交易日。
+        """
+
+    def shift(self, calendar_key: str, day: date, n: int) -> date:
+        """
+        从 day 向后偏移 n 个交易日（T+N）。
+
+        无论 day 是否开市，都从 day 往后数 n 个"交易日"。
+        用于计算确认日等场景：confirm_date = calendar.shift(key, pricing_date, settle_lag)。
+
+        Args:
+            calendar_key: 日历标识。
+            day: 起始日期。
+            n: 偏移量（必须 >= 1）。
+
+        Returns:
+            偏移后的交易日。
+
+        Raises:
+            ValueError: 若 n < 1。
+            RuntimeError: 若在合理范围内未能完成偏移。
+        """

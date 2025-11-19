@@ -7,8 +7,8 @@ from typing import Literal
 
 from src.core.asset_class import AssetClass
 from src.core.portfolio.rebalance import calc_weight_difference
+from src.core.protocols import AllocConfigRepo, FundRepo, NavProtocol, ReportProtocol, TradeRepo
 from src.core.trade import Trade
-from src.usecases.ports import AllocConfigRepo, FundRepo, NavProvider, ReportSender, TradeRepo
 
 ReportMode = Literal["market", "shares"]
 
@@ -62,8 +62,8 @@ class GenerateDailyReport:
         alloc_repo: AllocConfigRepo,
         trade_repo: TradeRepo,
         fund_repo: FundRepo,
-        nav_provider: NavProvider,
-        sender: ReportSender,
+        nav_provider: NavProtocol,
+        sender: ReportProtocol,
     ) -> None:
         self.alloc_repo = alloc_repo
         self.trade_repo = trade_repo

@@ -10,7 +10,7 @@ from src.core.portfolio.rebalance import (
     RebalanceAdvice,
     build_rebalance_advice,
 )
-from src.usecases.ports import AllocConfigRepo, FundRepo, NavProvider, TradeRepo
+from src.core.protocols import AllocConfigRepo, FundRepo, NavProtocol, TradeRepo
 
 
 @dataclass(slots=True)
@@ -46,7 +46,7 @@ class GenerateRebalanceSuggestion:
         alloc_repo: AllocConfigRepo,
         trade_repo: TradeRepo,
         fund_repo: FundRepo,
-        nav_provider: NavProvider,
+        nav_provider: NavProtocol,
     ) -> None:
         self.alloc_repo = alloc_repo
         self.trade_repo = trade_repo

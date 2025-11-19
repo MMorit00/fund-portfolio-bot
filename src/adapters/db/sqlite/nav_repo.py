@@ -4,7 +4,7 @@ import sqlite3
 from datetime import date
 from decimal import Decimal
 
-from src.usecases.ports import NavRepo
+from src.core.protocols import NavRepo
 
 
 class SqliteNavRepo(NavRepo):

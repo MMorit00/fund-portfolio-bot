@@ -3,7 +3,8 @@ from __future__ import annotations
 import sqlite3
 
 from src.core.asset_class import AssetClass
-from src.usecases.ports import FundInfo, FundRepo
+from src.core.fund import FundInfo
+from src.core.protocols import FundRepo
 
 
 class SqliteFundRepo(FundRepo):

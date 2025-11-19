@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from src.usecases.ports import NavProvider, NavRepo
+from src.core.protocols import NavProtocol, NavRepo
 
 
-class LocalNavProvider(NavProvider):
+class LocalNavProvider(NavProtocol):
     """
     本地 NavProvider 实现：从 NavRepo 读取官方单位净值。
 

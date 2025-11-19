@@ -4,11 +4,11 @@ import sqlite3
 from datetime import date
 from decimal import Decimal
 
+from src.core.protocols import TradeRepo
 from src.core.trade import Trade
 from src.core.trading.date_math import DateMath
 from src.core.trading.policy import default_policy
 from src.core.trading.settlement import get_settlement_dates
-from src.usecases.ports import TradeRepo
 
 
 class SqliteTradeRepo(TradeRepo):

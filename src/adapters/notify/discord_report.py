@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import os
 
-from src.usecases.ports import ReportSender
+from src.core.protocols import ReportProtocol
 
 
-class DiscordReportSender(ReportSender):
+class DiscordReportSender(ReportProtocol):
     """
     Discord Webhook 发送器（占位）。
     MVP 阶段可使用 requests/httpx 发送文本消息。

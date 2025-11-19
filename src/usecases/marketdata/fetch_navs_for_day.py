@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal
 from typing import List
 
-from src.usecases.ports import FundRepo, NavProvider, NavRepo
+from src.core.protocols import FundRepo, NavRepo, NavSourceProtocol
 
 
 @dataclass(slots=True)
@@ -35,7 +35,7 @@ class FetchNavsForDay:
     - 落库：调用 NavRepo.upsert(fund_code, day, nav)，按 (fund_code, day) 幂等。
     """
 
-    def __init__(self, fund_repo: FundRepo, nav_repo: NavRepo, provider: NavProvider) -> None:
+    def __init__(self, fund_repo: FundRepo, nav_repo: NavRepo, provider: NavSourceProtocol) -> None:
         self.fund_repo = fund_repo
         self.nav_repo = nav_repo
         self.provider = provider

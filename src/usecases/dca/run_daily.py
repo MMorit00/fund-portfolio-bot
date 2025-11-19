@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from src.core.dca_plan import DcaPlan
-from src.usecases.ports import DcaPlanRepo
+from src.core.protocols import DcaPlanRepo
 from src.usecases.trading.create_trade import CreateTrade
 
 
