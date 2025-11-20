@@ -9,16 +9,21 @@
 - 净值：4 位小数
 - 份额：4 位小数
 
-## 架构与错误处理
+## 架构与错误处理（编码相关约束）
 
-- 目录职责：
+> 分层结构与目录职责见 `docs/architecture.md`，本节只补充与编码直接相关的约束：
+
+- 分层约束：
   - `core` 仅含纯领域逻辑，不依赖外部库实现
-  - `usecases` 仅依赖 `core` 与 `ports`（Protocol）
-  - `adapters` 实现具体技术，供 `app/wiring` 装配
-  - `jobs` 仅做参数解析与调用 usecase，不写业务
-- 错误处理：核心抛异常；入口捕获并 `print`
-- 日志：使用 `app/log.py` 的 `log()`；不引 logging 框架
-- SQL 打印：通过 SQLite trace 回调；可用 `ENABLE_SQL_DEBUG` 控制
+  - `usecases` 仅依赖 `core` 与 Protocol，不直接访问 DB/HTTP
+  - `adapters` 实现具体技术细节（DB / HTTP / 通知），由 `app/wiring` 装配
+  - `jobs` 仅做参数解析与调用 UseCase，不写业务逻辑
+
+- 错误处理模式：
+  - 核心/UseCase 层在异常情况下抛出明确的业务异常
+  - 入口层（CLI/Job）负责捕获异常并输出简短错误信息
+
+> 日志前缀和 SQL trace 等运行时规范见 `docs/operations-log.md`。
 
 ## 类型约束补充
 

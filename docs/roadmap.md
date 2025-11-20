@@ -61,25 +61,34 @@
   - 引入 `TradingCalendar` 与"定价日+lag"口径，统一 ConfirmPendingTrades 规则。
 - [x] NAV 策略 v0.2（严格版）
   - 确认用定价日 NAV，日报/status 仅用当日 NAV，不做回退并提示低估风险。
+
+  > NAV 策略详细规则见 `docs/settlement-rules.md`。
+
 - [x] 再平衡建议（文字提示 + 建议金额）
   - UseCase `GenerateRebalanceSuggestion` 已落地，CLI `status --show-rebalance` 可查看建议。
+
+  > 再平衡触发条件与计算规则见 `docs/settlement-rules.md`。
+
 - [x] 确认延迟追踪（v0.2.1）
   - 显式标记超期但 NAV 缺失的交易为 `delayed`，在日报中展示延迟原因和建议。
   - 支持自动恢复：补充 NAV 后自动确认并清除延迟标记。
 
+  > 确认延迟处理规则见 `docs/settlement-rules.md`。
+
 - [x] 日报展示日策略 v0.2（严格）
-  - 日报/状态默认展示日改为“上一交易日 as_of”（以工作日推断，暂不含节假日表）。
-  - 仅使用展示日 NAV；缺失或 `<=0` 的基金不计入市值与权重，并在文末提示“总市值可能低估”。
-  - CLI/Job 提供 `--as-of` 参数覆盖展示日；保持“严格不回退”。
+  - 日报/状态默认展示日改为"上一交易日 as_of"。
+  - 仅使用展示日 NAV；缺失或 `<=0` 的基金不计入市值与权重，并在文末提示"总市值可能低估"。
+  - CLI/Job 提供 `--as-of` 参数覆盖展示日；保持"严格不回退"。
+
+  > 展示日策略与 NAV 严格口径见 `docs/settlement-rules.md`。
 
 - [x] 状态视图开关（兜底）
   - CLI `status` 增加 `--mode {market,shares}`，默认 `market`。
   - 当展示日 NAV 覆盖不足时，使用 `shares` 视图快速查看配置偏离（不依赖 NAV）。
 
 - [x] 历史 NAV 区间抓取（补数闭环）
-  - 新增 Job：`python -m src.jobs.fetch_navs_range --from YYYY-MM-DD --to YYYY-MM-DD`（闭区间逐日，幂等写库）。
-  - 与确认任务配合：回填完成后执行 `python -m src.jobs.confirm_trades --day <to>` 补确认。
-  - 每日推荐调度：`fetch_navs(T)` → `confirm_trades(T+1)` → `daily_report --as-of T`。
+  - 新增 Job：`fetch_navs_range --from YYYY-MM-DD --to YYYY-MM-DD`。
+  - 与确认任务配合：回填完成后执行 `confirm_trades --day <to>` 补确认。
 
 - [ ] T+N & NAV 地基收尾（数字大体可信）
   - 引入/完善交易日历表，至少覆盖工作日 + 法定节假日的简单规则。
@@ -180,27 +189,13 @@
 
 ## 当前功能一览表（v0.1 / 现状）
 
-- 市场数据抓取（按日官方 NAV） — UseCase: `FetchNavsForDay`
-  - Job：`python -m src.jobs.fetch_navs`
+| 功能类别 | UseCase | Job/CLI |
+|---------|---------|---------|
+| 市场数据抓取 | `FetchNavsForDay` | `jobs.fetch_navs` / `jobs.fetch_navs_range` |
+| 录入交易（买卖） | `CreateTrade` | `app.main buy/sell` |
+| 定投计划 | `RunDailyDca` / `SkipDcaForDate` | `jobs.run_dca` / `app.main skip-dca` |
+| 交易确认（T+N） | `ConfirmPendingTrades` | `jobs.confirm_trades` |
+| 日报+再平衡 | `GenerateDailyReport` / `GenerateRebalanceSuggestion` | `jobs.daily_report` / `app.main status` |
 
-- 录入交易（买/卖） — UseCase: `CreateTrade`
-  - CLI：`python -m src.app.main buy|sell ...`
-
-- 定投计划 — UseCase: `RunDailyDca`
-  - Job：`python -m src.jobs.run_dca`
-  - 子功能：定投跳过 — UseCase: `SkipDcaForDate`
-    - CLI：`python -m src.app.main skip-dca --fund-code ... --date ...`
-
-- 交易确认（T+N） — UseCase: `ConfirmPendingTrades`
-  - Job：`python -m src.jobs.confirm_trades`
-
-- 日报生成（市值/份额视图） — UseCase: `GenerateDailyReport`
-  - Job：`python -m src.jobs.daily_report`（支持 `--mode {market,shares}` 与 `--as-of`）
-  - CLI：`python -m src.app.main status`（支持 `--mode {market,shares}` 与 `--as-of`）
-  - 子功能：再平衡建议（基础版） — UseCase: `GenerateRebalanceSuggestion`
-    - CLI：`python -m src.app.main status --show-rebalance`
-  - 展示日策略（v0.2 严格）：默认上一交易日；仅统计展示日 NAV>0 的基金；缺失时提示“可能低估”
-
-- 历史 NAV 区间抓取（v0.2）
-  - Job：`python -m src.jobs.fetch_navs_range --from YYYY-MM-DD --to YYYY-MM-DD`
-  - 行为：闭区间逐日抓取（严格：只抓指定日，不回退），幂等落库，失败清单汇总
+> 具体命令示例与参数说明见 `docs/operations-log.md`。
+> 业务规则（NAV 策略、确认规则、再平衡触发条件等）见 `docs/settlement-rules.md`。

@@ -19,6 +19,8 @@ src/
 docs/           # 文档（架构、规范、日志、路线图、归档）
 data/           # SQLite 数据文件（默认 data/portfolio.db）
 scripts/        # 辅助脚本（如备份）
+
+> 各层的详细职责说明与分层图见 `docs/architecture/architecture-ascii.md`。
 ```
 
 不做/延后（MVP）：
@@ -30,25 +32,31 @@ scripts/        # 辅助脚本（如备份）
 - Protocol 命名：`TradeRepo`、`NavProvider`、`ReportSender`（可后缀 `Protocol`）
 - UseCase 类动宾命名：`CreateTrade`、`ConfirmPendingTrades`、`GenerateDailyReport`
 
-错误与日志：
-- 核心逻辑抛出异常；入口层捕获并 print 简短错误
-- MVP 不引 logging 框架，仅提供 `app/log.py` 的 `log()` 薄封装
-- SQL 打印通过 SQLite `set_trace_callback` 实现，受 `ENABLE_SQL_DEBUG` 控制
+错误与日志（摘要）：
+- 核心层抛异常；入口层捕获并以简短日志输出
+- 不引入 logging 框架，统一通过 `app/log.py` 的 `log()` 封装
+- SQL trace 统一由 SQLite `set_trace_callback` 控制
+
+> 具体日志格式、前缀约定与 SQL 调试策略见 `docs/operations-log.md`。
 
 时间与精度：
 - 时区统一 `Asia/Shanghai`; 日期格式 `YYYY-MM-DD`
 - 金额、净值、份额使用 `decimal.Decimal`；统一保留位数与舍入策略
 
 数据库（SQLite）：
-- 表：`funds`、`trades`、`navs`、`dca_plans`、`alloc_config` 等
+- 表：`funds`、`trades`、`navs`、`dca_plans`、`alloc_config`、`trading_calendar` 等
 - 版本：`meta(schema_version)`；变更记录在 `docs/sql-migrations-*.md`
 - 外键在 MVP 可不启用，应用层保证一致性
+
+> v0.1 的完整表结构见 `docs/sql-schema-v0.1.md`，后续版本的迁移 SQL 见 `docs/sql-migrations-v0.2.md` / `docs/sql-migrations-v0.3.md`。
 
 定时任务：
 - `jobs/fetch_navs.py` 抓取每日官方净值
 - `jobs/run_dca.py` 生成当日定投 pending 交易
 - `jobs/confirm_trades.py` 按 T+N 规则确认份额
 - `jobs/daily_report.py` 生成并发送日报（Discord Webhook）
+
+> 各 Job 的使用方法与调度示例见 `docs/operations-log.md`，其业务规则遵守 `docs/settlement-rules.md`。
 
 ## NAV 数据流（v0.3 草案）
 
@@ -78,9 +86,11 @@ scripts/        # 辅助脚本（如备份）
 
 ## 日历与确认（v0.3 核心补充）
 
-- 策略对象：`src/core/trading/policy.py` 定义 `SettlementPolicy`，结合 `DateMath`（`src/core/trading/date_math.py`）实现“卫兵+定价+计数”的组合策略。
+- 策略对象：`src/core/trading/policy.py` 定义 `SettlementPolicy`，结合 `DateMath`（`src/core/trading/date_math.py`）实现"卫兵+定价+计数"的组合策略。
 - 日历存取：`src/adapters/db/sqlite/calendar_store.py` 从 `trading_calendar` 表读取，采用严格模式（缺失即报错）。
 - 注油与修补：
-  - 注油：`src/jobs/sync_calendar.py`（exchange_calendars），仅写到“日历最大已知日期”。
-  - 修补：`src/jobs/patch_calendar.py`（Akshare/新浪），仅写到“数据源最大已知日期”。
+  - 注油：`src/jobs/sync_calendar.py`（exchange_calendars），仅写到"日历最大已知日期"。
+  - 修补：`src/jobs/patch_calendar.py`（Akshare/新浪），仅写到"数据源最大已知日期"。
 - 交易表持久化：`trades.pricing_date` 入库，确认严格按定价日 NAV；`SCHEMA_VERSION=3`。
+
+> 交易日历与确认规则（包括 SettlementPolicy、定价日/确认日、延迟处理）以 `docs/settlement-rules.md` 为权威来源。
