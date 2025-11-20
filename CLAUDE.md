@@ -13,6 +13,12 @@
 
 > ⚠️ **重要**：当前阶段（参见 `docs/roadmap.md` v0.2/v0.3）**不做任何 AI 产品功能**，你只作为写代码/改代码的助手，但可以按 roadmap 要求为未来 AI 预留数据结构（标签、视图、快照）。
 
+> 🔧 **开发阶段说明**：
+> - 本项目处于**纯开发阶段**，无生产环境，无真实用户数据
+> - 数据库是**测试数据库**，可随时通过 `SEED_RESET=1 python -m scripts.dev_seed_db` 重建
+> - Schema 变更**无需迁移文档**，直接修改 `db_helper.py` 后重建即可
+> - 历史决策记录在 `docs/coding-log.md`，无需维护详细的迁移步骤
+
 ---
 
 ## 1. 代码结构概要
@@ -101,6 +107,83 @@ scripts/
 **文档同步**：
 - 架构/行为决定 → 更新 `docs/coding-log.md`
 - 必要时更新 `docs/architecture.md` 或 `docs/roadmap.md`
+
+
+**文档清理原则**（开发阶段简化版）：
+- **主动提醒时机**（我会在发现时提醒你）：
+  - ❌ 文档中出现"设计草稿""临时方案"超过 3 个月
+  - ❌ 与当前代码实现不一致的说明
+  - ❌ 引用已删除的代码/模块/配置
+- **清理优先级**：
+  - 🔴 高：过时的操作步骤（已被新方法替代）
+  - 🟡 中：重复内容（已被其他文档覆盖）
+  - 🟢 低：历史决策记录（保留在 coding-log）
+
+**文档图表化原则**：
+- 当修改或新增文档时，如遇到适合用图表表达的内容，**优先使用 ASCII 图 / Text 图**来增强可读性
+- **修改代码后做总结时，也要主动思考是否需要用图表**来让变更更清晰（见下方"代码总结图表化"）
+- 适合场景举例：
+  - **数据流图**：用箭头和方框展示数据在模块间的流动（如 NAV 数据流）
+  - **状态机**：展示交易确认的状态转换（pending → confirmed/delayed）
+  - **时序图**：说明多步骤流程的执行顺序（如每日调度顺序）
+  - **树形结构**：展示目录层级、依赖关系、决策树
+  - **表格对比**：用 Markdown 表格展示字段含义、命名规范、版本差异
+  - **调用链路**：展示函数/模块之间的调用关系与依赖方向
+- 工具选择：
+  - 简单流程：用 `→` `├─` `└─` 等 ASCII 字符绘制
+  - 复杂架构：用 Markdown 代码块 + 缩进表达层次关系
+  - 对比说明：用 Markdown 表格（`|`分隔）
+- 示例参考：`docs/architecture/architecture-ascii.md`（已有的架构图）
+
+**代码总结图表化**（完成代码修改后）：
+- 在总结代码变更时，**优先用图表展示关键变化**，而非纯文字罗列
+- 典型场景：
+  - **文件修改树**：展示修改了哪些文件及其层级关系
+    ```
+    src/
+    ├── core/
+    │   ├── protocols.py          [新增] 集中定义所有 Protocol
+    │   └── trading/
+    │       └── settlement.py     [修改] 确认规则升级为 v0.2
+    └── usecases/
+        └── trading/
+            └── confirm_pending.py [修改] 使用定价日 NAV
+    ```
+  - **调用链路变化**：展示重构前后的调用关系
+    ```
+    # 重构前
+    Job → UseCase → SqliteTradeRepo (直接依赖具体实现)
+
+    # 重构后
+    Job → UseCase → TradeRepo (Protocol) ← SqliteTradeRepo (注入)
+    ```
+  - **数据流变化**：展示新增或修改的数据处理路径
+    ```
+    HTTP (Eastmoney)
+      ↓
+    EastmoneyNavService.get_nav()
+      ↓
+    NavRepo.upsert() → navs 表
+      ↓
+    LocalNavService.get_nav() ← ConfirmPendingTrades
+    ```
+  - **影响范围矩阵**：用表格总结改动的影响面
+    | 层级 | 修改文件数 | 新增/删除 | 影响的 UseCase |
+    |------|-----------|----------|----------------|
+    | core | 2 修改, 1 新增 | +120 / -0 | 所有交易确认相关 |
+    | usecases | 3 修改 | +45 / -30 | ConfirmPendingTrades, CreateTrade |
+    | adapters | 1 修改 | +10 / -5 | SqliteTradeRepo |
+  - **版本对比**：展示 schema/API/行为的版本差异
+    ```
+    v0.1: confirm_date = trade_date + lag (简单顺延周末)
+    v0.2: pricing_date = next_trading_day(trade_date)
+          confirm_date = next_trading_day(pricing_date, offset=lag)
+    ```
+- **何时使用**：
+  - 修改超过 3 个文件时，用文件树展示影响范围
+  - 重构模块依赖时，用调用链路图对比变化
+  - 修改数据流时，用箭头图展示新的处理路径
+  - 功能升级时，用版本对比说明行为变化
 
 ---
 

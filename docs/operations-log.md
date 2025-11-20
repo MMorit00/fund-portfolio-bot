@@ -151,9 +151,11 @@ python -m src.jobs.fetch_navs --date 2025-11-20
 ```
 # 假设上一交易日为 T
 python -m src.jobs.fetch_navs --date T      # 抓取 T 日 NAV（严格：只抓指定日，不回退）
-python -m src.jobs.confirm_trades --day T+1 # 确认到期 pending（用“定价日 NAV”，缺失标记 delayed）
+python -m src.jobs.confirm_trades --day T+1 # 确认到期 pending（用"定价日 NAV"，缺失标记 delayed）
 python -m src.jobs.daily_report --as-of T   # 生成并推送日报（展示日=T，仅用当日 NAV）
 ```
+
+> 抓取结果写入的 NAV，在确认与日报中遵守 `docs/settlement-rules.md` 中的"NAV 策略 v0.2（严格版）"。
 
 如需对历史日期补 NAV 与确认，可先对指定日期运行：
 
@@ -164,9 +166,11 @@ python -m src.jobs.confirm_trades  # （未来可扩展 --day 参数）
 
 ## 2025-11-22 日报展示日与状态视图（v0.2 严格）
 
-- 展示日默认：上一交易日（当前用“上一工作日”近似，节假日表在 v0.3 引入）
-- 市值视图：仅统计展示日 NAV>0 的基金，不足部分剔除，并在文末提示“总市值可能低估”
+- 展示日默认：上一交易日（当前用"上一工作日"近似，节假日表在 v0.3 引入）
+- 市值视图：仅统计展示日 NAV>0 的基金，不足部分剔除，并在文末提示"总市值可能低估"
 - 份额视图：不依赖 NAV，作为 NAV 不全时的兜底
+
+> 日报展示日、NAV 严格口径与再平衡触发条件的完整规则见 `docs/settlement-rules.md`。
 
 常用命令：
 
@@ -219,6 +223,8 @@ python -m src.jobs.confirm_trades
 ```
 
 注意：当 `TRADING_CALENDAR_BACKEND=db` 且未找到 `trading_calendar` 表时，会报错退出。
+
+> 交易日历的使用方式（含 SettlementPolicy、CalendarStore 严格模式）见 `docs/settlement-rules.md` 的"v0.3 增强"章节。
 
 ### 补录 NAV 后补确认
 

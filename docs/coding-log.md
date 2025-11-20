@@ -177,20 +177,24 @@
 - v0.2 范围仅支持 `A` 与 `QDII`，不做基金级 lag；不引入节假日表，仅处理周末。
 - 继续在创建交易时预写 `confirm_date`，历史记录不回溯更改。
 
+> 注：交易确认规则的完整定义见 `docs/settlement-rules.md`。
+
 ## 2025-11-19 NAV 策略 v0.2（严格版）
 
 ### 完成内容
 - 统一 NAV 使用口径：
-  - 确认用例：仅使用“定价日 NAV”，缺失/<=0 直接跳过待重试（不做回退）。
-  - 日报/状态视图：仅使用“当日 NAV”，缺失/<=0 的基金不计入市值与权重并列入缺失列表。
+  - 确认用例：仅使用"定价日 NAV"，缺失/<=0 直接跳过待重试（不做回退）。
+  - 日报/状态视图：仅使用"当日 NAV"，缺失/<=0 的基金不计入市值与权重并列入缺失列表。
 - 日报数据结构扩展：
   - `ReportData` 新增统计字段 `total_funds_in_position`、`funds_with_nav`（仅市值模式有意义）。
   - 渲染在缺失 NAV 时输出提示：`今日 X/Y 只基金有有效 NAV，总市值可能低估`。
-- 文档：在 `docs/settlement-rules.md` 增加“小节：NAV 策略 v0.2（严格版）”。
+- 文档：在 `docs/settlement-rules.md` 增加"小节：NAV 策略 v0.2（严格版）"。
 
 ### 决策
-- v0.2 不做“最近交易日 NAV”回退，避免灰色估值；当日缺失 NAV 的基金完全排除并提示可能低估。
+- v0.2 不做"最近交易日 NAV"回退，避免灰色估值；当日缺失 NAV 的基金完全排除并提示可能低估。
 - 外部数据源适配器与抓取 Job 保持占位状态，等待后续接入时再落地重试/缓存策略。
+
+> 注：NAV 策略 v0.2 的完整规则定义见 `docs/settlement-rules.md`。
 
 ## 2025-11-19 再平衡建议 v0.2（基础版）设计完成
 
@@ -202,10 +206,12 @@
 ### 决策
 - 阈值来源优先 `alloc_config.max_deviation`，默认阈值 5%；
 - 建议金额算法：总市值 × |偏离| × 50%（渐进式，仅提示用）；
-- 输出顺序按偏离绝对值降序显示，阈值内标注“观察”。
+- 输出顺序按偏离绝对值降序显示，阈值内标注"观察"。
 
 ### 补充
-- 当日 total_value == 0（例如当日 NAV 全部缺失）时，UseCase 返回 `no_market_data=True` 与提示文案，CLI 展示“当日 NAV 缺失，无法给出金额建议”。
+- 当日 total_value == 0（例如当日 NAV 全部缺失）时，UseCase 返回 `no_market_data=True` 与提示文案，CLI 展示"当日 NAV 缺失，无法给出金额建议"。
+
+> 注：再平衡触发条件与计算规则的完整定义见 `docs/settlement-rules.md`。
 
 ## 2025-11-20 外部 NAV 接入与 UseCase 抽取
 
@@ -230,13 +236,15 @@
 - 修复 `FetchNavsForDay` 使用 `FundInfo` 属性访问（`f.fund_code`）
 
 ### 决策
-- 保持“严格不回退”口径：展示日选定后，仅用该日 NAV，缺失即剔除并提示“可能低估”
-- 日报/状态默认展示日设为“上一交易日”（当前以上一工作日近似）
+- 保持"严格不回退"口径：展示日选定后，仅用该日 NAV，缺失即剔除并提示"可能低估"
+- 日报/状态默认展示日设为"上一交易日"（当前以上一工作日近似）
 - 抓取 HTTP 与报表/确认读本地分离，确保可复现与稳定
 
 ### 验证
 - 本地 seed → status（market/shares）输出正确；daily_report 参数生效
 - 区间抓取在网络受限环境下稳定汇总失败；在可联网环境对交易日日期可成功入库
+
+> 注：展示日策略与 NAV 严格口径的完整规则见 `docs/settlement-rules.md`。
 
 ## 2025-11-19 交易日历架构升级（策略化）与 Schema v3
 
@@ -245,14 +253,16 @@
 - 新增 `CalendarStore`（SQLite）读取 `trading_calendar`，启用严格模式（缺失即报错）。
 - `SqliteTradeRepo` 写入 `pricing_date` 与 `confirm_date`（策略版）；`ConfirmPendingTrades` 优先使用入库的 `pricing_date` 确认份额。
 - `SCHEMA_VERSION=3`，`trades` 新增列 `pricing_date TEXT NOT NULL`（历史库需迁移或重建）。
-- 新 Job：`src/jobs/sync_calendar.py`（exchange_calendars 注油，限制到“日历最大已知日期”）。
-- 新 Job：`src/jobs/patch_calendar.py`（Akshare 修补，仅覆盖到“数据源最大已知日期”）。
+- 新 Job：`src/jobs/sync_calendar.py`（exchange_calendars 注油，限制到"日历最大已知日期"）。
+- 新 Job：`src/jobs/patch_calendar.py`（Akshare 修补，仅覆盖到"数据源最大已知日期"）。
 
 ### 决策
 - QDII 默认策略：guard=`CN_A`，pricing/计数=`US_NYSE`，lag=2。
-- `CalendarStore` 严格口径：杜绝工作日近似导致的误判；缺失通过“注油/修补”解决。
+- `CalendarStore` 严格口径：杜绝工作日近似导致的误判；缺失通过"注油/修补"解决。
 - 移除 TuShare 占位与入口；修补数据统一走 Akshare。
 
 ### 兼容与迁移
 - 旧库处理：备份后重建，或执行 `ALTER TABLE trades ADD COLUMN pricing_date TEXT;` 并为历史记录回填（建议按策略重算）。
 - 2026 错误数据修复：重新注油（XC）→ 删除 2026 CN_A → Akshare 修补（自动仅到 2025-12-31）。
+
+> 注：交易日历策略化与 SettlementPolicy 的完整规则见 `docs/settlement-rules.md` 的"v0.3 增强"章节。

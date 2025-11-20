@@ -1,5 +1,8 @@
 # 交易日历与确认规则（v0.2）
 
+> **本文档是交易日历、确认规则、NAV 策略与再平衡规则的权威来源。**
+> 若其他文档（architecture/roadmap/log 等）与本文件描述存在不一致，以本文件为准。
+
 ## 现状（v0.1 实现）
 - 函数：`src/core/trading/settlement.get_confirm_date`
 - 规则：
@@ -74,8 +77,11 @@
 - 支持在确认流程中：优先用定价日 NAV，缺失时回退策略（上一/下一交易日）与重试机制（或标记异常）。
 
 ## 设计草稿
-1) 交易日历表（建议新增表，可在 `docs/sql-schema-*` 后续版本里收录）
-   - 字段示例：`day` (DATE, PK), `is_trading_day` (BOOLEAN), `market` (TEXT，如 A/QDII)，可扩展 `note`。
+1) 交易日历表
+
+   > 该表的具体字段与 DDL 见 `docs/sql-migrations-v0.2.md` 中的 `CREATE TABLE trading_calendar(...)`。
+
+   - 字段概念：`day` (DATE, PK), `is_trading_day` (BOOLEAN), `market` (TEXT，如 A/QDII)，可扩展 `note`。
    - 数据来源：手工维护或从公开节假日接口导入。
 
 2) 确认规则配置
@@ -103,7 +109,31 @@
    - `confirmation_status` 设为 `delayed`
    - `delayed_reason` 记录延迟原因（`nav_missing` / `unknown`）
    - `delayed_since` 记录首次检测到延迟的日期
+
+   > `trades` 表中与确认延迟相关的字段（confirmation_status/delayed_reason/delayed_since）具体定义与迁移 SQL 见 `docs/sql-migrations-v0.2.md`。
+
 3. **每日重试**：`ConfirmPendingTrades` job 每天会重新检查，一旦 NAV 数据可用立即确认
+
+### 状态转换图
+
+```
+pending (normal)
+    │
+    │  today >= confirm_date?
+    ├─── NO ──────────────────────────→ 保持 pending (normal)
+    │
+    └─── YES
+         │
+         │  pricing_date NAV 可用？
+         ├─── YES ─────────────────────→ confirmed (normal)
+         │                                 ✓ 份额入库
+         │                                 ✓ status 清空
+         │
+         └─── NO ──────────────────────→ pending (delayed)
+                                          ├─ delayed_reason = nav_missing
+                                          ├─ delayed_since = today
+                                          └─ 每日重试，NAV 可用后自动确认
+```
 
 ### 延迟原因分类（v0.2）
 - `nav_missing`：本地 `navs` 表中无对应 `pricing_date` 的 NAV 数据
@@ -134,6 +164,8 @@
 - 日期运算：`DateMath` 基于命名日历键工作（`CN_A`/`US_NYSE`），而非单纯按市场。
 - 定价日持久化：`trades.pricing_date` 入库，确认严格按该日 NAV；便于可追溯与幂等。
 - 日历数据源：
-  - 注油：`exchange_calendars`（仅到“日历最大已知日期”）。
-  - 修补：`Akshare`（新浪，在线“以真覆假”，仅到“数据源最大已知日期”）。
-- 严格模式：`CalendarStore` 查缺即报错，杜绝“工作日近似”误判。
+  - 注油：`exchange_calendars`（仅到"日历最大已知日期"）。
+  - 修补：`Akshare`（新浪，在线"以真覆假"，仅到"数据源最大已知日期"）。
+- 严格模式：`CalendarStore` 查缺即报错，杜绝"工作日近似"误判。
+
+> `pricing_date` 列的增加以及 CalendarStore 的严格模式对应的 schema 迁移见 `docs/sql-migrations-v0.3.md`。
