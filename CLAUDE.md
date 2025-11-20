@@ -53,59 +53,16 @@ scripts/
 
 ## 2. Python 编码规范（摘要）
 
-> 详细规则以 `docs/python-style.md` 为准，这里只放你必须记住的关键点。
+> 基础编码规范详见 `.claude/skills/code-style/SKILL.md` 和 `docs/python-style.md`。
+> 这里只列出最关键的提醒。
 
-1. **类型注解必须写全**
-   - 所有公开函数/方法都要写参数和返回值类型
-   - 使用现代语法：`list[int]` / `dict[str, Any]` / `X | None`（不用 `List/Dict/Optional`）
+**核心要点**：
+- 类型注解必须全；金额/净值用 `Decimal`；Docstring 用中文
+- 代码组织：入口在上、工具在下；公开在上、私有在下
+- 编码完成后运行 `ruff check --fix .`
 
-2. **数值使用 Decimal（涉及金额与净值）**
-   - 禁止在业务层里用 float 做金额/净值计算
-   - 在核心模型中统一用 `Decimal`，在边界（比如 SQLite / JSON）再做转换
-
-3. **命名与文件布局**
-   - 常量允许使用小写命名（项目内部约定），不用全大写
-   - 文件名用小写+下划线，如 `trade.py`, `create_trade.py`
-   - 目录负责表达语义：`core/trading/`, `usecases/portfolio/`，文件名尽量简短
-
-4. **注释与 docstring**
-   - **所有 docstring 一律使用中文**，说明"这个类/函数是干嘛的"和关键注意点
-   - 行内注释只在必要时使用，用来解释"为什么这么做"，而不是"这行代码做什么"
-
-5. **日志与 SQL 打印**
-   - MVP 阶段不引入 logging 框架，只使用：
-     - `app/log.py` 中的 `log()`（内部即 `print`）
-     - SQLite 连接的 `set_trace_callback` 打印 SQL（可由配置开关控制）
-   - **日志前缀规范**（见 `docs/operations-log.md`）：
-     - `[EastmoneyNav]`、`[LocalNav]`、`[Discord]`、`[Job:xxx]` 等
-   - 不要引入新的日志依赖库
-
-6. **代码组织原则（重要）**
-   - **入口在上，工具在下**：模块级别的入口函数/类放在文件最上方
-   - **公开在上，私有在下**：
-     - 类中：`__init__` → 公开方法 → 私有方法（`_method`）
-     - 模块中：公开类/函数 → 模块私有函数（`_function`）
-   - **示例（正确）**：
-     ```python
-     # ✅ 正确的组织方式
-     class SqliteTradeRepo(TradeRepo):
-         def __init__(self, conn): ...      # 构造函数
-         def add(self, trade): ...           # 公开方法
-         def list_pending(self): ...         # 公开方法
-         def _internal_helper(self): ...     # 私有方法在后
-
-     # 模块私有工具函数在类之后
-     def _decimal_to_str(value): ...
-     def _row_to_trade(row): ...
-     ```
-   - **反例（错误）**：
-     ```python
-     # ❌ 错误：工具函数在类之前
-     def _decimal_to_str(value): ...  # 工具函数不应在前
-
-     class SqliteTradeRepo(TradeRepo):
-         def add(self, trade): ...
-     ```
+**日志前缀规范**（见 `docs/operations-log.md`）：
+- `[EastmoneyNav]`、`[LocalNav]`、`[Discord]`、`[Job:xxx]` 等
 
 ---
 
@@ -131,55 +88,19 @@ scripts/
 
 ## 4. 工作流程（非常重要）
 
-每次任务，你必须遵守以下步骤：
+> 详细流程见 `.claude/skills/dev-workflow/SKILL.md`。
+> 每次任务必须遵守：先读项目 → 给设计 → 限制改动（1-3 文件）→ 编码 → 文档同步。
 
-1. **先读项目，不要直接写代码**
-   - 快速浏览相关目录和文档（architecture / python-style / roadmap / coding-log）
-   - 用中文总结当前任务涉及的模块与边界（不超过 10 条）
+**核心原则**：
+1. 不要直接写代码，先读文档和代码
+2. 先给计划，等确认后再编码
+3. 默认只改 1-3 个文件
+4. 遵守分层：`core` 不依赖 `adapters`
+5. 编码后运行 `ruff check --fix .`
 
-2. **先给设计与计划**
-   - 用列表说明：
-     - 需要修改/新增哪些文件
-     - 每个文件中要新增哪些类/函数
-   - 标明：哪些是 MVP 内的功能，哪些只是 TODO 占位
-
-3. **限制改动范围**
-   - 默认情况下：一次任务**只修改 1~3 个文件**
-   - 需要大范围重构时：
-     - 先给我一份分步骤计划
-     - 每一步都是一个"可单独完成的小任务"
-
-4. **编码时的要求**
-   - 遵守分层：
-     - `core/` 不依赖 `usecases/` 或 `adapters/`
-     - `usecases/` 只通过 `ports.py` 依赖外部
-   - 业务逻辑写在 `core` / `usecases`，`adapters` 只做 IO/持久化
-   - 为新增的公开类/函数写中文 docstring
-   - **编码完成后运行 `ruff check --fix .` 自动修复格式问题**
-
-5. **错误与日志策略（MVP）**
-   - 不设计复杂错误体系，除入口脚本外一般不 try/except
-   - 入口层（jobs 与 main）可以：
-     - 捕获异常，输出 `log("任务失败：...")`，然后退出
-   - 不要引入 logging/监控/审计相关第三方库
-
-6. **文档同步**
-   - 在做出"架构/行为上的决定"时，应该适当更新：
-     - `docs/coding-log.md`（简要记录做了什么）
-     - 必要时更新 `docs/architecture.md` 或 `docs/roadmap.md`
-
-7. **文档管理原则**
-   - **保持文档精简**：删除过时、重复或价值不大的文档
-   - **单一权威来源**：同一信息只在一处维护（如配置在 `pyproject.toml`，不在文档中重复）
-   - **定期审查**：完成阶段性任务后，检查是否有文档可以删除或合并
-   - **文档分类**：
-     - 规范类（`python-style.md`、`architecture.md`）：长期保留
-     - 操作手册（`operations-log.md`）：记录运维操作
-     - 草案/参考类（`tooling.md`）：仅保留有长期价值的部分
-   - **删除标准**：
-    - 内容已过时且无历史参考价值
-    - 与其他文档高度重复
-    - 仅为临时讨论/决策记录，已落地到代码
+**文档同步**：
+- 架构/行为决定 → 更新 `docs/coding-log.md`
+- 必要时更新 `docs/architecture.md` 或 `docs/roadmap.md`
 
 ---
 
@@ -302,5 +223,27 @@ scripts/
 **指令触发方式：**
 - **主动指令**："用 exa 搜索 Python Decimal 最佳实践"
 - **建议使用**：需要最新技术信息或代码示例时我会询问是否使用专业搜索
+
+---
+
+### Explore Subagent 与 MCP 协作规范
+
+**Explore subagent 职责：**
+- 只用于**探索和理解代码库**，产出结构化上下文（模块划分、调用链等）
+- **不直接进行具体实现级改动**
+- 典型任务："错误处理在哪一层？" "模块划分是怎样的？"
+- 不适合：精确定位某个函数、修改具体文件（用 Grep/Edit）
+
+**Explore 与 Code-Index MCP 关系：**
+- 策略层 vs 搜索引擎层，两者**可组合而非强耦合**
+- Explore 优先使用 Grep/Glob 进行局部搜索
+- 跨项目/多目录/复杂模式时，才在明确提出后调用 Code-Index MCP
+
+**工具调用优先级：**
+1. 简单查询/修改 → Grep/Glob/Read/Edit
+2. 代码探索 → Explore subagent（内部按需用基础工具）
+3. 大规模搜索 → Explore + Code-Index MCP
+4. 复杂推演 → Sequential-Thinking MCP
+5. 外部调研 → Exa MCP
 
 感谢配合！

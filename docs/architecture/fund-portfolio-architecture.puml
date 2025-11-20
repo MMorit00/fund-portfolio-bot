@@ -1,9 +1,8 @@
 @startuml FundPortfolioArchitecture
 skinparam backgroundColor white
 skinparam defaultFontName "PingFang SC,Microsoft YaHei,SimHei,Arial Unicode MS"
-skinparam linetype ortho
 
-title Fund Portfolio Bot - 分层与依赖（MVP）
+title Fund Portfolio Bot - 分层与依赖（v0.3）
 
 skinparam package {
   FontSize 12
@@ -13,114 +12,95 @@ skinparam component {
 }
 
 ' ============================
-' 按目录划分为 5 层
+' 配色方案
 ' ============================
-
-package "src/jobs\n（驱动适配器）" {
-  component "Jobs\n- run_dca.py\n- confirm_trades.py\n- fetch_navs.py\n- daily_report.py" as Jobs
+skinparam package {
+  BackgroundColor<<jobs>> #E3F2FD
+  BackgroundColor<<app>> #FFF3E0
+  BackgroundColor<<usecases>> #F3E5F5
+  BackgroundColor<<core>> #E8F5E9
+  BackgroundColor<<adapters>> #FBE9E7
 }
 
-package "src/app\n（启动与装配）" {
-  component "App\n- main.py (CLI: buy/sell/skip-dca/status)\n- wiring.py\n- config.py\n- log.py" as App
-}
-
-package "src/usecases\n（用例 + 端口）" {
-  component "Usecases\n- trading/create_trade.py\n- trading/confirm_pending.py\n- dca/run_daily.py\n- dca/skip_date.py\n- portfolio/daily_report.py" as Usecases
-  component "Ports (Protocol)\n- TradeRepo\n- FundRepo\n- NavProvider\n- NavRepo\n- DcaPlanRepo\n- AllocConfigRepo\n- ReportSender\n(定义于 ports.py)" as Ports
-}
-
-package "src/core\n（领域模型与规则）" {
-  component "Core Domain\n- trade.py (Trade)\n- dca_plan.py (DcaPlan)\n- asset_class.py (AssetClass)\n- trading/settlement.py\n- portfolio/rebalance.py" as Core
-}
-
-package "src/adapters\n（被驱动适配器）" {
-  component "DB (SQLite)\n- db/sqlite/trade_repo.py\n- db/sqlite/fund_repo.py\n- db/sqlite/nav_repo.py\n- db/sqlite/dca_plan_repo.py\n- db/sqlite/alloc_config_repo.py" as AdpDB
-  component "DataSources\n- datasources/local_nav.py (本地 NAV)\n- datasources/eastmoney_nav.py (外部 NAV)" as AdpData
-  component "Notify\n- notify/discord_report.py" as AdpNotify
+skinparam component {
+  BackgroundColor #FFFFFF
+  BorderColor #666666
 }
 
 ' ============================
-' 依赖方向：一律向内
+' 纵向分层布局
 ' ============================
 
-' 驱动适配器发起流程
-Jobs --> App : 定时/命令入口
+' --- 第1层：驱动层 ---
+package "src/jobs（驱动层）" <<jobs>> as PKG_Jobs {
+  component "Jobs" as Jobs
+}
 
-' app 装配并调用用例
-App --> Usecases : 注入依赖后调用 execute()
+' --- 第2层：启动与装配 ---
+package "src/app（启动与装配）" <<app>> as PKG_App {
+  component "CLI & Wiring" as App
+}
 
-' usecases 依赖端口与领域模型
-Usecases ..> Ports : 通过 Protocol 抽象访问外部能力
-Usecases ..> Core : 使用领域模型与业务规则
+' --- 第3层：用例编排 ---
+package "src/usecases（用例编排）" <<usecases>> as PKG_Usecases {
+  component "TradingUsecases" as UCTrading
+  component "DcaUsecases" as UCDca
+  component "PortfolioUsecases" as UCPortfolio
+  component "MarketdataUsecases" as UCMarketdata
+}
 
-' 适配器实现端口
-AdpDB ..> Ports : 实现 TradeRepo/FundRepo/NavRepo/AllocConfigRepo
-AdpData ..> Ports : 实现/提供 NavProvider（Local/Eastmoney）
-AdpNotify ..> Ports : 实现 ReportSender
+' --- 第4层：核心（领域模型 + 接口） ---
+package "src/core（领域模型 + 接口）" <<core>> as PKG_Core {
+  component "Protocols" as CoreProtocols
+  component "DomainModel" as CoreDomain
+}
 
-' app 在装配时依赖具体适配器实现
-App ..> AdpDB : wiring 中创建具体仓储
-App ..> AdpData : wiring 中创建本地 Provider（LocalNavProvider）
-App ..> AdpNotify : wiring 中创建通知适配器
+' --- 第5层：适配器 ---
+package "src/adapters（被驱动适配器）" <<adapters>> as PKG_Adapters {
+  component "SqliteRepos" as AdpSqlite
+  component "SqliteCalendar" as AdpCalendar
+  component "NavServices" as AdpNav
+  component "ReportService" as AdpReport
+}
 
-note right of AdpData
-  NavProvider 实现：\n
-  - LocalNavProvider：从 NavRepo 读取本地 NAV（运行时 Provider）\n
-  - EastmoneyNavProvider：外部数据源抓取（仅在 Job 中使用）
-end note
-
-' ============================
-' 文字说明
-' ============================
-
-note bottom of Core
-  依赖方向：Jobs/App → Usecases → Ports → Core，\n
-  Adapters 也依赖 Ports 与 Core，\n
-  核心领域（core）不依赖任何外层。
-end note
-
-note as Flow
-  每日典型流程（简化）：\n
-  1) jobs/fetch_navs → （未来）Usecase → Adapters(抓/存净值)\n
-  2) jobs/run_dca → RunDailyDca → TradeRepo(新增 pending)\n
-  3) jobs/confirm_trades → ConfirmPendingTrades → TradeRepo 确认份额\n
-  4) jobs/daily_report → GenerateDailyReport(mode=market) → ReportSender(Discord)\n
-  5) app/main.py status → GenerateDailyReport(mode=market)（终端查看）
-end note
-
-Flow -[hidden]- Jobs
-
-' ============================
-' 外部系统与基础设施
-' ============================
-
-cloud "Eastmoney API" as Eastmoney
+' --- 外部系统 ---
 database "SQLite DB" as Sqlite
+cloud "Eastmoney API" as Eastmoney
 cloud "Discord Webhook" as Discord
 
-AdpData --> Eastmoney : HTTP GET (eastmoney_nav)
-AdpDB --> Sqlite : sqlite3 (navs/funds/trades/...)
-AdpNotify --> Discord : HTTP POST
-
-note bottom of Usecases
-  GenerateDailyReport：\n
-  - 市值视图：份额×当日 NAV；缺失/NAV<=0 列入缺失并跳过\n
-  - 份额视图：保留兼容模式\n
-  ConfirmPendingTrades：\n
-  - 使用定价日 NAV；缺失/<=0 直接跳过待重试（不回退确认日）
-end note
-
 ' ============================
-' 关键依赖与数据流（补充）
+' 依赖方向（纵向向下）
 ' ============================
 
-note as NavFlow
-  NAV 数据流：\n
-  1) jobs/fetch_navs（驱动层）→ EastmoneyNavProvider（AdpData）→ upsert 到 NavRepo（AdpDB→SQLite）\n
-  2) 用例运行时：LocalNavProvider（AdpData）→ 读取 NavRepo（AdpDB）→ 用于 Confirm/DailyReport/Rebalance\n
-  依赖方向：Jobs/App → Usecases → Ports → Core；Adapters 实现 Ports；Core 不依赖外层。
-end note
+' 第1层 → 第2层
+Jobs --> App
 
-NavFlow -[hidden]- Sqlite
+' 第2层 → 第3层
+App --> PKG_Usecases
+
+' 第2层 → 第5层（装配时依赖具体适配器）
+App ..> PKG_Adapters : 装配依赖
+
+' 第3层 → 第4层
+PKG_Usecases --> PKG_Core
+
+' 第5层 → 第4层（适配器实现接口）
+PKG_Adapters ..> PKG_Core : 实现 Protocol
+
+' 适配器 → 外部系统
+AdpSqlite --> Sqlite
+AdpCalendar --> Sqlite
+AdpNav --> Eastmoney
+AdpReport --> Discord
+
+' ============================
+' 简要说明
+' ============================
+
+note bottom of PKG_Core
+  依赖方向：Jobs → App → Usecases → Core
+  Adapters 实现 Core 中的 Protocol
+  Core 不依赖外层
+end note
 
 @enduml

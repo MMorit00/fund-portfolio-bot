@@ -1,6 +1,13 @@
 # 架构说明（MVP）
 
-本项目定位为个人基金投资的命令式 MVP，引擎以 Python 为主，采用“路径表达语义，文件名简短”的分层结构：
+> 基础分层规则（core/usecases/adapters/app 依赖方向）详见 `.claude/skills/architecture/SKILL.md`。
+> 本文档记录项目定位、技术选型、数据流设计等具体实现细节。
+
+## 项目定位
+
+本项目定位为个人基金投资的命令式 MVP，引擎以 Python 为主，采用"路径表达语义，文件名简短"的分层结构。
+
+## 目录结构
 
 ```
 src/
@@ -13,11 +20,6 @@ docs/           # 文档（架构、规范、日志、路线图、归档）
 data/           # SQLite 数据文件（默认 data/portfolio.db）
 scripts/        # 辅助脚本（如备份）
 ```
-
-依赖方向：向内依赖
-- adapters -> usecases.ports（Protocol）
-- usecases -> core
-- app 负责装配 Protocol 到具体适配器实现
 
 不做/延后（MVP）：
 - 不做 AI/NLU；不做历史导入；不做盘中估值；不做复杂前端

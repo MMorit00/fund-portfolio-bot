@@ -23,7 +23,7 @@ from decimal import Decimal
 
 from src.adapters.datasources.local_nav import LocalNavService
 from src.adapters.db.sqlite.alloc_config_repo import SqliteAllocConfigRepo
-from src.adapters.db.sqlite.calendar import SqliteCalendarService
+from src.adapters.db.sqlite.calendar import DbCalendarService
 from src.adapters.db.sqlite.db_helper import SqliteDbHelper
 from src.adapters.db.sqlite.dca_plan_repo import SqliteDcaPlanRepo
 from src.adapters.db.sqlite.fund_repo import SqliteFundRepo
@@ -31,8 +31,7 @@ from src.adapters.db.sqlite.nav_repo import SqliteNavRepo
 from src.adapters.db.sqlite.trade_repo import SqliteTradeRepo
 from src.core.asset_class import AssetClass
 from src.core.trade import Trade
-from src.core.trading.policy import default_policy
-from src.core.trading.settlement import calc_settlement_dates
+from src.core.trading.settlement import calc_settlement_dates, default_policy
 from src.usecases.trading.confirm_pending import ConfirmTrades
 
 
@@ -75,7 +74,7 @@ def _seed_basic_calendar(conn, today: date, days_back: int = 30) -> None:
     print(f"[DevSeed] 已填充 {len(rows)} 天的 CN_A 交易日历（工作日=交易日）")
 
 
-def _prev_business_day(d: date, calendar: SqliteCalendarService, n: int = 1) -> date:
+def _prev_business_day(d: date, calendar: DbCalendarService, n: int = 1) -> date:
     """
     返回 d 之前的第 n 个交易日。
 
@@ -124,7 +123,7 @@ def main() -> None:
 
     # 初始化仓储和服务
     fund_repo = SqliteFundRepo(conn)
-    calendar = SqliteCalendarService(conn)
+    calendar = DbCalendarService(conn)
     trade_repo = SqliteTradeRepo(conn, calendar)
     nav_repo = SqliteNavRepo(conn)
     _ = SqliteDcaPlanRepo(conn)  # dca_repo 用于初始化表结构，不在脚本中直接使用

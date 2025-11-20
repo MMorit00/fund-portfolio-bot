@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Optional
 
 from src.adapters.datasources.eastmoney_nav import EastmoneyNavService
 from src.adapters.datasources.local_nav import LocalNavService
 from src.adapters.db.sqlite.alloc_config_repo import SqliteAllocConfigRepo
-from src.adapters.db.sqlite.calendar import SqliteCalendarService
+from src.adapters.db.sqlite.calendar import DbCalendarService
 from src.adapters.db.sqlite.db_helper import SqliteDbHelper
 from src.adapters.db.sqlite.dca_plan_repo import SqliteDcaPlanRepo
 from src.adapters.db.sqlite.fund_repo import SqliteFundRepo
@@ -14,7 +13,6 @@ from src.adapters.db.sqlite.nav_repo import SqliteNavRepo
 from src.adapters.db.sqlite.trade_repo import SqliteTradeRepo
 from src.adapters.notify.discord_report import DiscordReportService
 from src.app import config
-from src.core.protocols import CalendarProtocol
 from src.usecases.dca.run_daily import RunDailyDca
 from src.usecases.dca.skip_date import SkipDca
 from src.usecases.marketdata.fetch_navs_for_day import FetchNavs
@@ -30,22 +28,23 @@ class DependencyContainer:
     使用上下文管理器确保 DB 连接正确关闭。
     """
 
-    def __init__(self, db_path: Optional[str] = None) -> None:
+    def __init__(self, db_path: str | None = None) -> None:
         self.db_path = db_path or config.get_db_path()
-        self.helper: Optional[SqliteDbHelper] = None
-        self.conn: Optional[sqlite3.Connection] = None
+        self.helper: SqliteDbHelper | None = None
+        self.conn: sqlite3.Connection | None = None
 
         # 仓储实例
-        self.fund_repo: Optional[SqliteFundRepo] = None
-        self.trade_repo: Optional[SqliteTradeRepo] = None
-        self.nav_repo: Optional[SqliteNavRepo] = None
-        self.dca_repo: Optional[SqliteDcaPlanRepo] = None
-        self.alloc_repo: Optional[SqliteAllocConfigRepo] = None
+        self.fund_repo: SqliteFundRepo | None = None
+        self.trade_repo: SqliteTradeRepo | None = None
+        self.nav_repo: SqliteNavRepo | None = None
+        self.dca_repo: SqliteDcaPlanRepo | None = None
+        self.alloc_repo: SqliteAllocConfigRepo | None = None
 
         # 适配器实例
-        self.nav_provider: Optional[LocalNavService] = None
-        self.discord_sender: Optional[DiscordReportService] = None
-        self.calendar: Optional[CalendarProtocol] = None
+        self.nav_provider: LocalNavService | None = None
+        self.nav_source: EastmoneyNavService | None = None
+        self.discord_sender: DiscordReportService | None = None
+        self.calendar: DbCalendarService | None = None
 
     def __enter__(self) -> "DependencyContainer":
         """初始化数据库连接与仓储。"""
@@ -56,28 +55,8 @@ class DependencyContainer:
         # 初始化仓储
         self.fund_repo = SqliteFundRepo(self.conn)
 
-        # 初始化交易日历服务（v0.3：严格要求 DB 日历）
-        backend = config.get_trading_calendar_backend()
-        if backend != "db":
-            raise RuntimeError(
-                "v0.3 要求使用 DB 交易日历，请设置 TRADING_CALENDAR_BACKEND=db "
-                "并运行 sync_calendar/patch_calendar 任务"
-            )
-
-        # 确认 trading_calendar 表存在
-        exists = (
-            self.conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='trading_calendar'"
-            ).fetchone()
-            is not None
-        )
-        if not exists:
-            raise RuntimeError(
-                "TRADING_CALENDAR_BACKEND=db，但未发现 trading_calendar 表，请先执行迁移/导入"
-            )
-
-        # 使用统一的 CalendarService
-        self.calendar = SqliteCalendarService(self.conn)
+        # 初始化交易日历服务（v0.3：使用 DB 日历）
+        self.calendar = DbCalendarService(self.conn)
 
         # 初始化适配器与仓储
         self.trade_repo = SqliteTradeRepo(self.conn, self.calendar)
@@ -86,6 +65,7 @@ class DependencyContainer:
         self.alloc_repo = SqliteAllocConfigRepo(self.conn)
 
         self.nav_provider = LocalNavService(self.nav_repo)
+        self.nav_source = EastmoneyNavService()
         self.discord_sender = DiscordReportService()
 
         return self
@@ -159,8 +139,7 @@ class DependencyContainer:
     # === 其他 UseCase ===
 
     def get_fetch_navs_usecase(self) -> FetchNavs:
-        """获取 FetchNavs UseCase（Eastmoney Provider）。"""
-        if not self.fund_repo or not self.nav_repo:
+        """获取 FetchNavs UseCase（使用配置的 NavSource）。"""
+        if not self.fund_repo or not self.nav_repo or not self.nav_source:
             raise RuntimeError("容器未初始化，请在 with 块中使用")
-        provider = EastmoneyNavService()
-        return FetchNavs(self.fund_repo, self.nav_repo, provider)
+        return FetchNavs(self.fund_repo, self.nav_repo, self.nav_source)

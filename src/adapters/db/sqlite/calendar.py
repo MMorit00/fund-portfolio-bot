@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from src.core.protocols import CalendarProtocol
 
 
-class SqliteCalendarService(CalendarProtocol):
+class DbCalendarService(CalendarProtocol):
     """
     基于 SQLite 的交易日历服务实现。
 
@@ -27,6 +27,7 @@ class SqliteCalendarService(CalendarProtocol):
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
+        self._validate_table_exists()
 
     def is_open(self, calendar_key: str, day: date) -> bool:
         """
@@ -122,3 +123,24 @@ class SqliteCalendarService(CalendarProtocol):
                 remaining -= 1
 
         return d
+
+    def _validate_table_exists(self) -> None:
+        """
+        验证 trading_calendar 表是否存在。
+
+        Raises:
+            RuntimeError: 若 trading_calendar 表不存在，提示用户执行初始化任务
+        """
+        exists = (
+            self.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='trading_calendar'"
+            ).fetchone()
+            is not None
+        )
+        if not exists:
+            raise RuntimeError(
+                "v0.3 要求使用 DB 交易日历，但未发现 trading_calendar 表。\n"
+                "请先执行以下任务之一来初始化交易日历：\n"
+                "- sync_calendar: 同步完整日历数据\n"
+                "- patch_calendar: 修补缺失的日历数据"
+            )

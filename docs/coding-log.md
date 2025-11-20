@@ -14,7 +14,7 @@
 
 - **日历子系统收敛**：
   - 统一日历协议：`CalendarProtocol` 提供 `is_open` / `next_open` / `shift` 三个方法
-  - 合并实现：`SqliteCalendarService` 整合了原 `SqliteTradingCalendar` + `DateMathService` + `SqliteCalendarStore` 的所有逻辑
+  - 合并实现：`DbCalendarService` 整合了原 `SqliteTradingCalendar` + `DateMathService` + `SqliteCalendarStore` 的所有逻辑
   - 删除冗余文件：
     - `src/core/trading/calendar.py`（SimpleTradingCalendar + TradingCalendar 协议）
     - `src/core/trading/date_math.py`（DateMath + DateMathService）

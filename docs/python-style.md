@@ -1,31 +1,31 @@
 # Python 代码规范（MVP）
 
-目标：简洁、可读、稳定，便于后续扩展。
+> 基础编码规范（类型注解、Decimal 使用、Docstring、模块组织等）详见 `.claude/skills/code-style/SKILL.md`。
+> 本文档仅记录项目特有的命名规范、精度规则与架构约束。
 
-- 类型注解：全部启用（函数参数/返回值/主要字段）。
-- Docstring：中文，说明职责/输入/输出/注意事项。
-- 金额/净值/份额：使用 `decimal.Decimal`，禁止 float 参与金融计算。
-- 舍入与保留：金额 2 位、净值 4 位、份额 4 位（可配置，保持一致）。
-- 文件命名：snake_case；路径表达语义，文件名尽量简短。
-- 导入顺序：`__future__` → 标准库 → 第三方 → 项目内部（由 ruff 自动维护）。
+## 精度与舍入规则
+
+- 金额：2 位小数
+- 净值：4 位小数
+- 份额：4 位小数
+
+## 架构与错误处理
+
 - 目录职责：
   - `core` 仅含纯领域逻辑，不依赖外部库实现
   - `usecases` 仅依赖 `core` 与 `ports`（Protocol）
   - `adapters` 实现具体技术，供 `app/wiring` 装配
   - `jobs` 仅做参数解析与调用 usecase，不写业务
-- 错误处理：核心抛异常；入口捕获并 `print`。
-- 日志：使用 `app/log.py` 的 `log()`；不引 logging 框架。
-- SQL 打印：通过 SQLite trace 回调；可用 `ENABLE_SQL_DEBUG` 控制。
+- 错误处理：核心抛异常；入口捕获并 `print`
+- 日志：使用 `app/log.py` 的 `log()`；不引 logging 框架
+- SQL 打印：通过 SQLite trace 回调；可用 `ENABLE_SQL_DEBUG` 控制
 
-## 类型与注解规范
+## 类型约束补充
 
-- 新代码统一使用内置泛型与现代语法：`list[...]` / `dict[...]` / `X | None` 等。
-- 核心层（`src/core`、`src/usecases`）禁止使用 `Any`；适配层仅允许在外部边界短暂出现 `Any`。
-- 公共函数/方法必须显式标注返回类型。
-- 固定结构优先使用 `@dataclass(slots=True)` 或 `TypedDict`，避免 `dict[str, Any]` 黑箱容器。
-- 封闭取值域使用 `Literal[...]` 或枚举（如 `AssetClass`/`TradeStatus`）。
-- **状态标记值使用小写**：如 `"normal"` / `"delayed"` / `"nav_missing"`。
-- 对外依赖统一走 `Protocol`，UseCase 仅依赖端口与领域模型。
+- 核心层（`src/core`、`src/usecases`）**禁止使用 `Any`**；适配层仅允许在外部边界短暂出现 `Any`
+- 固定结构优先使用 `@dataclass(slots=True)` 或 `TypedDict`，避免 `dict[str, Any]` 黑箱容器
+- 封闭取值域使用 `Literal[...]` 或枚举（如 `AssetClass`/`TradeStatus`）
+- 对外依赖统一走 `Protocol`，UseCase 仅依赖端口与领域模型
 
 ## 接口与实现命名规范（v0.3）
 
@@ -51,7 +51,7 @@ src/core/fund.py                         → FundInfo 数据类
 src/core/policy.py                       → SettlementPolicy 数据类
 src/adapters/db/sqlite/trade_repo.py     → SqliteTradeRepo
 src/adapters/datasources/local_nav.py    → LocalNavService
-src/adapters/db/sqlite/calendar.py       → SqliteCalendarService
+src/adapters/db/sqlite/calendar.py       → DbCalendarService
 ```
 
 ### 职责分离示例
@@ -121,20 +121,11 @@ src/adapters/db/sqlite/calendar.py       → SqliteCalendarService
    - `FetchNavs` → `FetchNavsResult`
    - `ConfirmTrades` → `ConfirmResult`
 
-## Docstring 与注释风格
+## Docstring 补充说明
 
-- 统一使用三引号中文 docstring，说明"做什么"和关键业务规则。
-- 类/UseCase/Protocol 必须写 docstring；公开方法建议写，简单工具函数可省略。
-- 复杂参数或有副作用时使用 `Args:` / `Returns:` 块说明业务语义。
-- Docstring 不重复写类型信息（以注解为准）。
+- 类/UseCase/Protocol 必须写 docstring；公开方法建议写，简单工具函数可省略
+- 复杂参数或有副作用时使用 `Args:` / `Returns:` 块说明业务语义
 
-## Import 顺序规范
+## Import 顺序
 
-项目使用 ruff 自动维护 import 顺序：
-
-1. `from __future__ import annotations`
-2. 标准库
-3. 第三方库
-4. 本项目模块（`src.*`）
-
-使用 `ruff check --fix .` 自动修复顺序。
+使用 `ruff check --fix .` 自动维护。
