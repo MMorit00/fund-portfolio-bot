@@ -39,7 +39,8 @@
 - ✅ **v0.1（MVP）**：基础功能完成（交易录入、定投、NAV 抓取、T+N 确认、日报）
 - ✅ **v0.2（支付宝闭环）**：核心功能完成（严格 NAV 策略、确认延迟追踪、再平衡建议、区间抓取）
 - ✅ **v0.3（日历策略化）**：核心架构完成（交易日历、SettlementPolicy、接口统一、Schema v3）
-- 🔄 **v0.4+（待规划）**：周报/月报、历史导入、用户动作日志等增强功能
+- 🔄 **v0.3.1（架构简化）**：进行中——渐进式架构重构，为 AI 阶段做准备
+- 🔜 **v0.4+（待规划）**：周报/月报、历史导入、用户动作日志等增强功能
 - 🔮 **v1.x+（远期）**：AI 辅助决策、多市场/多币种
 ---
 
@@ -142,6 +143,43 @@
 
 ---
 
+## v0.3.1（架构简化重构，进行中）
+
+> **目标**：采用"渐进式架构"策略，在不新增功能的前提下简化代码结构，为 v1.x AI 阶段铺平道路。
+
+**核心变化**：
+- [x] 删除 `src/app/wiring.py` 和 `DependencyContainer`（不再使用依赖注入容器）
+- [ ] 删除 `src/core/protocols.py`（不再使用 Protocol 抽象层）
+- [ ] 简化 `src/jobs/` 层：直接构造具体 repo 类，用**函数**封装业务流程
+- [ ] UseCase 层函数化：将 UseCase 类逐步改造为纯函数（保留 Result dataclass）
+- [ ] Repo 类去除 Protocol 继承：直接定义具体类，保留方法签名
+- [ ] 更新架构文档：记录"三层架构"（jobs + domain + infra）
+
+**不变部分**（保持稳定）：
+- Schema 保持 v3 不变（不新增表/字段）
+- `src/core/` 领域模型（Trade, Fund 等 dataclass）不变
+- `src/adapters/db/sqlite/` Repo 实现逻辑不变（只删除 Protocol 继承）
+- 业务规则（settlement/rebalance 等）不变
+
+**架构演进策略**：
+- **当前阶段（v0.3.1）**：流程逻辑在 `jobs/` 里用函数封装，但物理上还在 `jobs/` 目录
+- **未来阶段（v1.0 AI）**：将这些函数移到 `app/flows/`，供 AI 工具层调用
+
+**重构范围**：
+- 删除：`src/core/protocols.py`（约 200 行）
+- 修改：所有 Repo 类（删除 `: Protocol` 继承和类型注解中的 Protocol）
+- 修改：所有 UseCase（参数类型从 Protocol 改为具体类）
+- 修改：Jobs: `confirm_trades`, `run_dca`, `daily_report`, `fetch_navs` 等
+- 保留 `src/usecases/` 但逐步简化为函数式风格
+
+**删除 Protocol 的理由**：
+- 单 DB 实现（只有 SQLite），不需要多实现抽象
+- Protocol 主要服务于依赖注入和测试 mock，当前不做单元测试
+- 减少类型系统复杂度，降低"找定义"的跳转次数
+- 具体类的方法签名已经是"接口约定"，不需要额外的 Protocol 层
+
+---
+
 ## AI 阶段（v1.x 以后，暂不实现）
 
 - [ ] 自然语言 AI 接口（基于现有 UseCases）
@@ -160,10 +198,6 @@
 
 ## 技术债 / 重构
 
-- [ ] 评估在 `adapters/db/sqlite` 层替换手写 SQL
-  - 保持 `core` / `usecases` 只依赖领域模型，不直接依赖 ORM。
-  - 方案备选：在适配层引入 SQLAlchemy Core 或轻量 Query Builder。
-  - 目标：减少硬编码 SQL 和重复 `_row_to_xxx`，提升可维护性与类型安全。
 
 - [ ] **[重要] 修复 T+1/T+2 确认规则的不确定性（v0.2 完成基础版后继续增强）**
   - **当前进展（v0.2）**：已引入 `TradingCalendar` 协议与“定价日+lag”规则，支持按市场区分 T+1/T+2，并处理周末顺延。
