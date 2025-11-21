@@ -15,11 +15,14 @@
 
 ```
 src/
-  core/          # 领域模型与规则（不依赖 adapters）
-  usecases/      # 用例（业务流程），依赖 core + ports
-  adapters/      # 具体实现（SQLite、HTTP、Discord）
-  app/           # 配置、日志、依赖装配、入口
-  jobs/          # 定时任务入口
+  cli/           # 命令行入口（原 jobs/）
+  flows/         # 业务流程（原 usecases/）
+  core/          # 核心逻辑
+    ├─ models/   #   领域数据类（Trade, Fund 等）
+    └─ rules/    #   纯业务规则（settlement, rebalance 等）
+  data/          # 数据访问层（原 adapters/）
+    ├─ db/       #   数据库 Repo
+    └─ client/   #   外部客户端（HTTP、Discord 等）
 docs/
   architecture.md      # 架构与分层（含 ASCII 图）
   settlement-rules.md  # 业务规则权威
@@ -67,16 +70,16 @@ docs/
 - Docstring 用中文
 
 **分层约束**：
-- `core`：纯领域逻辑，不依赖外部库实现
-- `usecases`：仅依赖 `core` 与 Protocol
-- `adapters`：实现具体技术（DB/HTTP/通知）
-- `jobs`：只做参数解析与调用，不写业务逻辑
+- `core`：纯核心逻辑，无外部依赖（models + rules + config/log）
+- `flows`：业务流程类，依赖 core 和 data
+- `data`：数据访问，依赖 core（DB Repo + 外部客户端）
+- `cli`：只做参数解析与流程调用，不写业务逻辑
 
 **命名规范**：
-- Repository 接口：`{Domain}Repo`（如 `TradeRepo`）
-- Service 接口：`{Domain}Protocol`（如 `NavProtocol`）
-- UseCase 类：动宾结构（`CreateTrade`、`MakeDailyReport`）
-- UseCase 结果：`{名词}Result`（如 `ReportResult`、`ConfirmResult`）
+- Repo 类：`TradeRepo`、`NavRepo`（直接具体类名）
+- Service 类：`CalendarService`、`EastmoneyNavService`
+- Flow 类：动宾结构（`CreateTrade`、`ConfirmTrades`、`MakeDailyReport`）
+- Result 类：`{名词}Result`（如 `ReportResult`、`ConfirmResult`）
 
 **日志前缀**：`[EastmoneyNav]` `[LocalNav]` `[Discord]` `[Job:xxx]`（详见 `operations-log.md`）
 

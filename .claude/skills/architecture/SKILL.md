@@ -1,74 +1,137 @@
 ---
 name: architecture
-description: Enforces the domain-driven layering and dependency rules for the fund-portfolio-bot project, keeping core, usecases, adapters, and app correctly separated. Use when designing new components, changing imports, or reviewing architecture decisions in this repository.
+description: Enforces the simplified layering and dependency rules for the fund-portfolio-bot project (v0.3.1), keeping cli, flows, core, and data correctly separated. Use when designing new components, changing imports, or reviewing architecture decisions.
 ---
 
-# Architecture and layering for fund-portfolio-bot
+# Architecture and layering for fund-portfolio-bot (v0.3.1)
 
 本 Skill 关注分层职责与依赖方向。详细说明参见 `docs/architecture.md`。
 
-## 层次结构概览
+## 层次结构概览（v0.3.1 简化版）
 
-项目采用自外向内依赖的分层架构：
+项目采用自外向内依赖的 3 层架构：
 
-- `core/`：领域模型、实体、值对象、领域服务、业务规则
-- `usecases/`：应用服务与用例，编排领域逻辑
-- `adapters/`：对外适配层，例如数据库、CLI、HTTP、调度器等
-- `app/`：组装根（composition root），负责配置与依赖注入
+- `cli/`：命令行入口，参数解析 + 流程函数
+- `flows/`：业务流程类，编排领域逻辑
+- `core/`：纯核心逻辑
+  - `models/`：领域数据类（Trade, Fund, DcaPlan 等）
+  - `rules/`：纯业务规则函数（settlement, rebalance 等）
+  - `config.py`, `log.py`：配置和日志
+- `data/`：数据访问层
+  - `db/`：数据库 Repo（TradeRepo, NavRepo 等）
+  - `client/`：外部客户端（Eastmoney, Discord 等）
 
 ## 依赖规则（必须遵守）
 
 依赖方向：**只能向内依赖**：
 
+```
+cli → flows → data
+        ↓       ↓
+      core ← ← ←
+```
+
 - `core/`
-  - 只能依赖 `core/` 内部其他模块
-  - 不得导入 `usecases/`、`adapters/`、`app/`
-- `usecases/`
-  - 可以依赖 `core/`
-  - 可以依赖抽象端口 / 协议（Protocol）
-- `adapters/`
-  - 可以依赖 `core/` 与 `usecases/`
-  - 可以依赖需要实现的端口 / 协议接口
-- `app/`
-  - 可以依赖上述所有层，用来完成具体装配
+  - 只能依赖 `core/` 内部模块
+  - **不得**导入 `cli/`、`flows/`、`data/`
 
-额外约束：
+- `flows/`
+  - 可以依赖 `core/`（models + rules）
+  - 可以依赖 `data/`（具体 Repo 和 Service 类）
+  - **不得**导入 `cli/`
 
-- 共享的端口 / 协议接口应集中定义在统一位置，例如
-  `src/core/protocols.py`（或项目中约定的 protocols 模块）。
-- 避免任何形式的循环导入，如发现，优先通过抽象接口或拆分模块解决。
+- `data/`
+  - 可以依赖 `core/`（models + rules）
+  - **不得**导入 `cli/`、`flows/`
+
+- `cli/`
+  - 可以依赖所有层（flows + data + core）
+  - 只做参数解析和流程调用
+
+## 关键约束
+
+1. **无 Protocol 抽象层**：
+   - v0.3.1 删除了 `protocols.py`
+   - 直接使用具体类：`TradeRepo`、`NavRepo` 等
+   - 类的方法签名即为"接口约定"
+
+2. **无依赖注入容器**：
+   - v0.3.1 删除了 `wiring.py`
+   - CLI 中直接实例化 Repo 类
+   - 使用 flow 函数封装业务逻辑
+
+3. **避免循环导入**：
+   - 如需 TYPE_CHECKING，使用 `from typing import TYPE_CHECKING`
+   - 类型注解使用字符串形式：`"TradeRepo"`
 
 ## 设计或修改代码时的步骤
 
 1. **识别所在层级**
-
-   - 判断当前文件属于 `core` / `usecases` / `adapters` / `app` 中的哪一层。
+   - 判断文件属于 `cli` / `flows` / `core` / `data` 中的哪一层
    - 确保其职责与该层定位一致：
-     - 业务规则 → `core`
-     - 用例编排 → `usecases`
-     - IO / 持久化 / 接口适配 → `adapters`
-     - 组合与配置 → `app`
+     - 命令行入口 + 流程函数 → `cli`
+     - 业务流程编排 → `flows`
+     - 数据模型 + 纯规则 → `core`
+     - 数据库访问 + 外部客户端 → `data`
 
-2. **检查 import 是否合规**
+2. **检查依赖方向**
+   - 确保 import 语句符合依赖规则
+   - `core` 不能 import `flows` 或 `data`
+   - `flows` 不能 import `cli`
 
-   在添加或修改 import 之前：
+3. **命名约定**
+   - Repo 类：`TradeRepo`、`NavRepo`（不带 Sqlite 前缀）
+   - Service 类：`CalendarService`、`EastmoneyNavService`
+   - Flow 类：动宾结构（`CreateTrade`、`ConfirmTrades`）
+   - Flow 文件：`trade.py`、`dca.py`、`market.py`、`report.py`
 
-   - 确认引用目标所在层级是"允许依赖的内层"。
-   - 在需要依赖外层实现时，优先依赖抽象 Protocol，而不是具体适配器类。
+4. **类型注解**
+   - 使用具体类型：`TradeRepo`、`FundRepo`
+   - 避免循环导入时使用 TYPE_CHECKING
+   - 字符串类型注解：`def __init__(self, repo: "TradeRepo")`
 
-3. **扩展新功能时的推荐路径**
+## 违反规则示例（禁止）
 
-   - 先在 `core/` 中补充必要的领域概念（实体、值对象、领域服务）。
-   - 再在 `usecases/` 中编排业务流程。
-   - 在 `adapters/` 中实现持久化、消息队列、CLI、HTTP 等具体适配。
-   - 最后在 `app/` 中完成具体装配与配置注册。
+```python
+# ❌ core/ 中导入 data/
+from src.data.db.trade_repo import TradeRepo  # 禁止
 
-## Review checklist
+# ❌ flows/ 中导入 cli/
+from src.cli.confirm import confirm_trades_flow  # 禁止
 
-在做架构 / 分层相关 Review 时，可以逐条检查：
+# ❌ data/ 中导入 flows/
+from src.flows.trade import CreateTrade  # 禁止
+```
 
-- [ ] `core/` 内没有从 `adapters/` 或 `app/` 导入。
-- [ ] 用例层依赖的是领域模型和端口接口，而不是具体适配器实现。
-- [ ] 新增的 Protocol 放在统一的协议模块中，而不是分散在各个层。
-- [ ] 没有引入新的循环依赖链。
-- [ ] 代码的控制流与数据流仍然符合 `docs/architecture.md` 中描述的结构。
+## 正确示例
+
+```python
+# ✅ cli/ 调用 flows/ 和 data/
+from src.flows.trade import ConfirmTrades
+from src.data.db.trade_repo import TradeRepo
+from src.data.db.calendar import CalendarService
+
+def confirm_trades_flow(day: date):
+    db = DbHelper()
+    conn = db.get_connection()
+    calendar = CalendarService(conn)
+    trade_repo = TradeRepo(conn, calendar)
+    usecase = ConfirmTrades(trade_repo, nav_service)
+    return usecase.execute(today=day)
+
+# ✅ flows/ 使用 TYPE_CHECKING
+from typing import TYPE_CHECKING
+from src.core.models.trade import Trade
+
+if TYPE_CHECKING:
+    from src.data.db.trade_repo import TradeRepo
+
+class ConfirmTrades:
+    def __init__(self, repo: "TradeRepo"):
+        self.repo = repo
+```
+
+## 重构历史
+
+- **v0.1-v0.3**：4 层架构（jobs → wiring → usecases(Protocol) → adapters）
+- **v0.3.1**：3 层架构（cli → flows → data，删除 Protocol 和 wiring）
