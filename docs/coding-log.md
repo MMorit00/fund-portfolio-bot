@@ -1,39 +1,40 @@
-# Coding Log（功能/架构决策）
+# 开发决策记录
 
+> 本文档记录关键架构与业务决策。
+> 完整规则见 `docs/settlement-rules.md` / `docs/architecture.md`。
+
+---
 
 ## 2025-11-19 v0.3 日历与接口重构
 
 ### 完成内容
-- **核心接口统一到 `src/core/protocols.py`**：
-  - 新建 `src/core/fund.py`，将 `FundInfo` 数据类从 ports 迁移到核心层
-  - 新建 `src/core/protocols.py`，集中定义所有接口（Protocol）
-  - 删除 `src/usecases/ports.py`，完成接口层从 usecases 到 core 的迁移
-  - 接口命名规范化：
-    - Repository 接口：保持 `*Repo`（如 `TradeRepo`）
-    - Service 接口：使用 `*Protocol` 后缀（如 `NavProtocol` / `NavSourceProtocol` / `ReportProtocol` / `CalendarProtocol`）
 
-- **日历子系统收敛**：
-  - 统一日历协议：`CalendarProtocol` 提供 `is_open` / `next_open` / `shift` 三个方法
-  - 合并实现：`DbCalendarService` 整合了原 `SqliteTradingCalendar` + `DateMathService` + `SqliteCalendarStore` 的所有逻辑
-  - 删除冗余文件：
-    - `src/core/trading/calendar.py`（SimpleTradingCalendar + TradingCalendar 协议）
-    - `src/core/trading/date_math.py`（DateMath + DateMathService）
-    - `src/adapters/db/sqlite/calendar_store.py`（SqliteCalendarStore）
-    - `src/adapters/db/sqlite/trading_calendar.py`（SqliteTradingCalendar）
-  - **严格模式**：v0.3 起强制要求使用 DB 交易日历，删除工作日近似 fallback，缺失数据时直接抛错
+**核心接口统一到 `src/core/protocols.py`**：
+- 新建 `src/core/fund.py`，将 `FundInfo` 数据类从 ports 迁移到核心层
+- 新建 `src/core/protocols.py`，集中定义所有接口（Protocol）
+- 删除 `src/usecases/ports.py`，完成接口层从 usecases 到 core 的迁移
+- 接口命名规范化：
+  - Repository 接口：保持 `*Repo`（如 `TradeRepo`）
+  - Service 接口：使用 `*Protocol` 后缀（如 `NavProtocol` / `NavSourceProtocol` / `ReportProtocol` / `CalendarProtocol`）
 
-- **Service/Repo 实现命名统一**：
-  - `LocalNavProvider` → `LocalNavService`（实现 `NavProtocol`）
-  - `EastmoneyNavProvider` → `EastmoneyNavService`（实现 `NavSourceProtocol`）
-  - `DiscordReportSender` → `DiscordReportService`（实现 `ReportProtocol`）
-  - 文件名保持不变（按你的裁决，只在必要时重命名）
+**日历子系统收敛**：
+- 统一日历协议：`CalendarProtocol` 提供 `is_open` / `next_open` / `shift` 三个方法
+- 合并实现：`DbCalendarService` 整合了原 `SqliteTradingCalendar` + `DateMathService` + `SqliteCalendarStore` 的所有逻辑
+- 删除冗余文件 4 个：`calendar.py` / `date_math.py` / `calendar_store.py` / `trading_calendar.py`
+- **严格模式**：v0.3 起强制要求使用 DB 交易日历，删除工作日近似 fallback，缺失数据时直接抛错
 
-- **依赖注入简化**：
-  - `DependencyContainer` 删除 `calendar_store` / `date_math` 字段
-  - 统一使用 `self.calendar: CalendarProtocol` 作为唯一日历服务
-  - `SqliteTradeRepo` 构造函数简化为 `__init__(conn, calendar)`
+**Service/Repo 实现命名统一**：
+- `LocalNavProvider` → `LocalNavService`（实现 `NavProtocol`）
+- `EastmoneyNavProvider` → `EastmoneyNavService`（实现 `NavSourceProtocol`）
+- `DiscordReportSender` → `DiscordReportService`（实现 `ReportProtocol`）
+
+**依赖注入简化**：
+- `DependencyContainer` 删除 `calendar_store` / `date_math` 字段
+- 统一使用 `self.calendar: CalendarProtocol` 作为唯一日历服务
+- `SqliteTradeRepo` 构造函数简化为 `__init__(conn, calendar)`
 
 ### 决策
+
 - **接口分层明确**：核心接口在 `core/protocols.py`，领域数据类在 `core/`，杜绝 usecases 层定义接口
 - **NAV 接口拆分**：
   - `NavProtocol`：运行时本地查询（确认、日报、再平衡）
@@ -43,226 +44,189 @@
 - **calendar_key 设计**：使用灵活的字符串标识（如 "CN_A" / "US_NYSE"），不绑定到 `MarketType` 枚举，保持扩展性
 
 ### 影响范围
+
 - 更新文件：17 个 UseCase / 6 个 Adapter / 3 个核心模块 / wiring.py / settlement.py
 - 删除文件：4 个旧日历实现 + 1 个 ports.py
 - 新增文件：2 个（core/fund.py + core/protocols.py）+ 1 个（adapters/db/sqlite/calendar.py）
 
 ---
 
-## 2025-11-14 项目骨架
+## 2025-11-19 交易日历架构升级（策略化）与 Schema v3
 
 ### 完成内容
-- 生成文档骨架与目录结构（core/usecases/adapters/app/jobs）
-- 确认命名与分层约定：路径表达领域，文件名简短；依赖通过 Protocol 注入
-- 放弃：AI/NLU、历史导入、盘中估值（均不在 MVP 范围）
+
+**SettlementPolicy 引入**：
+- 新增 `src/core/trading/policy.py`，定义 `SettlementPolicy` 数据类：
+  - `guard_calendar`：卫兵日历（如 QDII 用 CN_A 作为门户日历，过滤国内节假日）
+  - `pricing_calendar`：定价日历（决定 pricing_date，A 股用 CN_A，QDII 用 US_NYSE）
+  - `count_calendar`：计数日历（决定 T+N 如何数，QDII 用 US_NYSE）
+  - `settle_lag`：确认偏移量（A=1，QDII=2）
+- 替代原 `src/core/trading/settlement.py` 中的简单 lag 规则
+
+**DateMath 日历键灵活化**：
+- `src/core/trading/date_math.py` 中的 `DateMath` 改为基于命名日历键（"CN_A" / "US_NYSE"）工作
+- 支持单市场策略（A 股）与组合策略（QDII 卫兵 + 定价 + 计数）
+
+**pricing_date 持久化（Schema v3）**：
+- `trades` 表增加 `pricing_date` 字段（NOT NULL）
+- 创建交易时调用 SettlementPolicy 计算并持久化 pricing_date
+- 确认时严格按 `trades.pricing_date` 读取 NAV，不再运行时重算
+- schema_version 升级到 3
+
+**CalendarStore 严格模式**：
+- `src/adapters/db/sqlite/calendar_store.py` 中的 `SqliteCalendarStore` 查缺即报错
+- 杜绝"工作日近似"误判（v0.2 的 SimpleTradingCalendar fallback 已删除）
+
+**日历数据源**：
+- 注油：`exchange_calendars`（仅到"日历最大已知日期"）
+- 修补：`Akshare`（新浪，在线"以真覆假"，仅到"数据源最大已知日期"）
 
 ### 决策
-- 使用每日官方净值作为唯一口径；报告/再平衡基于日级数据
-- 错误处理：核心抛异常；入口捕获并打印
-- 日志：MVP 不引 logging；使用 `app/log.py` 封装 `print`
 
+- **卫兵 + 定价 + 计数分离**：QDII 场景下，国内节假日、美股开市日、T+N 计数规则三者解耦，避免"简单 T+2"的认知误区
+- **定价日入库**：`pricing_date` 持久化，确认严格按该日 NAV；便于可追溯与幂等
+- **严格模式**：日历查缺即报错，强制完整数据；配合 `sync_calendar` / `patch_calendar` 维护
 
-## 2025-11-15 SQLite Schema v0.1
+> 交易日历与确认规则的完整定义见 `docs/settlement-rules.md`。
+
+---
+
+## 2025-11-22 日报展示日与区间抓取（v0.2 严格）
 
 ### 完成内容
-- 梳理 v0.1 需要的表（funds/trades/navs/dca_plans/alloc_config/meta），统一 Decimal → TEXT 持久化。
-- trades 表新增 confirm_date 字段，创建时直接写入 `get_confirm_date` 的结果，方便 SQL 过滤。
-- 新建 `docs/sql-schema-v0.1.md` 记录表结构，作为 DB helper 的权威来源。
+
+**展示日逻辑**：
+- 日报/状态视图默认展示日 = 上一交易日（当前按"上一工作日"近似）
+- CLI 支持 `--as-of YYYY-MM-DD` 指定任意展示日
+- 严格口径：只用指定展示日的 NAV，缺失则剔除该基金，文末提示"总市值可能低估"
+
+**区间抓取 Job**：
+- 新增 `src/jobs/fetch_navs_range.py`，支持 `--from` / `--to` 参数
+- 闭区间逐日抓取（严格只抓指定日，不做回退）
+- 幂等 upsert，失败清单在任务末尾汇总打印
+
+**视图切换**：
+- `status` / `daily_report` 支持 `--mode market|shares` 切换
+- 市值视图：依赖 NAV，严格不回退
+- 份额视图：不依赖 NAV，作为兜底
 
 ### 决策
-- schema_version 写入 meta 表，便于未来迁移；当前仅记录 `schema_version=1`。
-- Decimal 值全部以字符串写入，读取时再转 Decimal，避免浮点误差。
 
-## 2025-11-15 SQLite Helper & 仓储实现
+- **展示日与抓取分离**：抓取是 HTTP 职责，报表是只读本地数据
+- **严格不回退**：对选定展示日，仅使用该日 NAV；缺失即剔除，不用"最近交易日 NAV"回退
+- **兜底视图**：NAV 不全时用份额视图，明确告知用户"非市值口径"
 
-### 完成内容
-- 编写 `SqliteDbHelper`，集中管理连接、trace、schema 初始化，首版 schema_version=1。
-- 实现 `SqliteTradeRepo/NavRepo/FundRepo/DcaPlanRepo/AllocConfigRepo`，全部按 Protocol 定义落地。
-- 新增 `scripts/dev_seed_db.py`，通过设置 `DB_PATH` 可快速初始化/自测仓储行为。
+> 日报展示日、NAV 严格口径与再平衡触发条件的完整规则见 `docs/settlement-rules.md`。
 
-### 决策
-- 交易表确认日持久化，`list_pending_to_confirm` 纯 SQL 过滤，避免 Python 额外遍历。
-- `position_shares` 逻辑在 Python 侧聚合，保证 Decimal 精度，不依赖 SQLite 浮点聚合。
-
-- 决策：短期（v0.1）继续使用 sqlite3 + 手写 SQL；后续在 adapters 层集中评估引入 SQLAlchemy Core/Query Builder 的可行性。
-
-## 2025-11-15 依赖装配 & Job 入口完成
-
-### 完成内容
-- 实现 `app/wiring.py` 的 `DependencyContainer` 上下文管理器，统一管理 DB 连接、仓储、适配器、UseCase 的生命周期。
-- 实现 `LocalNavProvider`（方案 A）：从 NavRepo 读取本地 NAV，不做 HTTP 抓取，满足 v0.1 基于 seed/手工数据的需求。
-- 完成 3 个 Job 装配：
-  - `jobs/run_dca.py`：调用 `RunDailyDca`，生成当日定投交易
-  - `jobs/confirm_trades.py`：调用 `ConfirmPendingTrades`，确认到期交易份额
-  - `jobs/daily_report.py`：调用 `GenerateDailyReport`，生成并推送日报
-- 使用 `dev_seed_db.py` 验证完整流程：创建交易 → 模拟确认 → 查看结果（1000 ÷ 1.5 = 666.67 份）✅
-
-### 决策
-- NAV 策略采用方案 A（本地读取）：LocalNavProvider 仅从 NavRepo 读取，不做实时抓取，适合 MVP 阶段快速验证。
-- 所有 Job 统一使用 `with DependencyContainer() as container:` 模式，确保 DB 连接正确关闭。
-- Job 日志格式：开始/结束标记 + emoji 状态（✅/⚠️/❌），便于 cron/Actions 输出查看。
-
-### 代码规范优化
-- 修正 `LocalNavProvider.get_nav()` 类型注解：参数 `day: date`，返回值 `Optional[Decimal]`，移除所有 `# type: ignore`。
-- 移除不必要的向后兼容代码，保持 wiring 层简洁单一。
-
-## 2025-11-15 交易 CLI（buy/sell）
-
-### 完成内容
-- 实现 `app/main.py` CLI 入口，支持 buy/sell 子命令：
-  - 参数：`--fund-code`（必需）、`--amount`（必需）、`--date`（可选，ISO 格式 YYYY-MM-DD，默认今天）
-  - 参数验证：金额必须为正 Decimal，日期必须为 ISO 格式
-  - 错误处理：友好的中文提示 + 退出码（4=参数/业务错误，5=未知错误）
-  - 成功输出：完整摘要（ID、fund、type、amount、date、confirm_date）
-- 接入 `DependencyContainer` 和 `CreateTrade` UseCase，完成端到端的交易录入流程。
-
-### 决策
-- CLI 风格采用简洁设计：`python -m src.app.main buy --fund-code 110022 --amount 1000`。
-- 日期参数固定 ISO 格式（YYYY-MM-DD），不支持相对日期（yesterday/-1d），保持简单。
-- 错误输出包含详细提示：如基金代码不存在时提示运行 dev_seed_db。
-- 成功输出包含 confirm_date，方便用户预期交易确认时间。
-
-## 2025-11-15 代码组织规范化
-### 决策
-- 确立代码组织原则："入口在上，工具在下；公开在上，私有在下"。
-  - 类中：`__init__` → 公开方法 → 私有方法
-  - 模块中：公开类/函数 → 模块私有工具函数
-- 将此原则写入 `CLAUDE.md`，作为项目编码规范的一部分。
-- 验证修改后所有 Job 和 CLI 均正常运行。
-
-## 2025-11-16 SkipDcaForDate CLI
-
-### 完成内容
-- 在 `TradeRepo` 补充 `skip_dca_for_date(fund_code, day)`，SQLite 实现按 fund_code + trade_date + type='buy' + status='pending' 更新为 `skipped`，返回影响行数。
-- 在 UseCase `SkipDcaForDate` 中调用仓储，不再是占位。
-- `DependencyContainer` 暴露 `get_skip_dca_usecase()`，供入口调用。
-- CLI 增加 `skip-dca` 子命令：`python -m src.app.main skip-dca --fund-code 110022 --date 2025-11-15`（date 默认今天），输出影响的 pending 数量。
-
-### 决策
-- v0.1 仅更新状态为 `skipped`，不记录原因/操作人；未来需要原因时可复用 trades.remark。
-- 跳过范围明确：仅当日 pending 买入；不影响卖出、其他日期或已确认记录。
-
-## 2025-11-17 日报市值版 & 状态 CLI
-
-### 完成内容
-- 日报升级为市值视图优先：在 `GenerateDailyReport` 中集成 `NavProvider`，市值=份额×NAV，缺失 NAV 的基金会被跳过并提示；保留份额模式兼容。
-- `daily_report` Job 默认发送市值版（mode="market"）。
-- 新增终端 `status` 子命令：`python -m src.app.main status`，直接输出当前市值视图。
-- 添加确认规则设计草稿文档：`docs/settlement-rules.md`，记录现状与未来交易日历/确认策略规划。
-
-### 决策
-- NAV 来源继续使用本地 NavRepo（方案 A），缺失 NAV 时不估算，提示缺失列表。
-- 确认规则后续演进：引入交易日历表与 per-market 配置，当前保持周末顺延的 T+1/T+2 简化逻辑。
-
-## 2025-11-17 确认份额口径修订
-
-### 完成内容
-- `ConfirmPendingTrades` 调整为：首选“交易日 NAV”计算份额；若缺失或<=0，回退到“确认日 NAV”；均无效则跳过。
-- 同步文档：`docs/sql-schema-v0.1.md` 将 `trades.nav` 描述改为“用于确认的净值（首选交易日 NAV；可回退确认日）”。
-
-### 原因
-- 公募申购定价以交易日净值为准；之前实现按确认日 NAV 会与数据写口径/业务口径不一致。
-
-## 2025-11-18 交易确认规则 v0.2（TradingCalendar + 定价日）
-
-### 完成内容
-- 引入 `TradingCalendar` 协议与 `SimpleTradingCalendar`（仅周末非交易日）。
-- 重写 `get_confirm_date(market, trade_date, calendar)`：确认日=定价日+lag（A=1，QDII=2）。
-- `SqliteTradeRepo.add(...)` 写 confirm_date 时使用日历；
-- `ConfirmPendingTrades` 取 NAV：仅使用定价日（`<=0` 视为缺失，不回退确认日）。
-- CLI 计算展示的 confirm_date 改为基于 v0.2 规则。
-- 文档同步：`docs/settlement-rules.md`、新增 `docs/sql-migrations-v0.2.md` 草案。
-
-### 决策
-- v0.2 范围仅支持 `A` 与 `QDII`，不做基金级 lag；不引入节假日表，仅处理周末。
-- 继续在创建交易时预写 `confirm_date`，历史记录不回溯更改。
-
-> 注：交易确认规则的完整定义见 `docs/settlement-rules.md`。
+---
 
 ## 2025-11-19 NAV 策略 v0.2（严格版）
 
 ### 完成内容
-- 统一 NAV 使用口径：
-  - 确认用例：仅使用"定价日 NAV"，缺失/<=0 直接跳过待重试（不做回退）。
-  - 日报/状态视图：仅使用"当日 NAV"，缺失/<=0 的基金不计入市值与权重并列入缺失列表。
-- 日报数据结构扩展：
-  - `ReportData` 新增统计字段 `total_funds_in_position`、`funds_with_nav`（仅市值模式有意义）。
-  - 渲染在缺失 NAV 时输出提示：`今日 X/Y 只基金有有效 NAV，总市值可能低估`。
-- 文档：在 `docs/settlement-rules.md` 增加"小节：NAV 策略 v0.2（严格版）"。
+
+**确认用 NAV**：
+- 仅使用"定价日 NAV"（`pricing_date = next_trading_day_or_self(trade_date)`）
+- `ConfirmPendingTrades` 在定价日 NAV 缺失或 `<= 0` 时直接跳过，保留为 pending，后续可重试
+- 不做任何回退（不用"上一交易日 NAV"或"下一交易日 NAV"）
+
+**报表/状态视图用 NAV**：
+- 仅使用"当日 NAV"（`day = date.today()` 或 `--as-of` 指定日）
+- 当日 NAV 缺失或 `<= 0` 的基金不计入当日市值与权重
+- 在"NAV 缺失"区块列出基金代码
+- 不做"最近交易日 NAV"回退；报告文案提示"总市值可能低估"
 
 ### 决策
-- v0.2 不做"最近交易日 NAV"回退，避免灰色估值；当日缺失 NAV 的基金完全排除并提示可能低估。
-- 外部数据源适配器与抓取 Job 保持占位状态，等待后续接入时再落地重试/缓存策略。
 
-> 注：NAV 策略 v0.2 的完整规则定义见 `docs/settlement-rules.md`。
+- **严格口径最大程度贴合官方净值时间口径**，避免引入灰色估值与难以解释的回退规则
+- 未来若引入"柔性回退视图"，将以新版本（v0.3+）提供独立开关与清晰标注，不影响 v0.2 的严格口径
 
-## 2025-11-19 再平衡建议 v0.2（基础版）设计完成
+> NAV 策略 v0.2 的完整规则定义见 `docs/settlement-rules.md`。
+
+---
+
+## 2025-11-18 交易确认规则 v0.2（TradingCalendar + 定价日）
 
 ### 完成内容
-- 设计 `RebalanceAdvice` 数据结构与 `build_rebalance_advice` 纯函数；
-- 新建 UseCase `GenerateRebalanceSuggestion` 的接口与执行口径（与市值版日报一致，严格 NAV）；
-- 规划 CLI `status --show-rebalance` 的输出形式（仅文字建议，不自动下单）。
+
+**确认规则切换为"定价日 + lag"**：
+- 接口：`get_confirm_date(market, trade_date, calendar)`（纯函数），`TradingCalendar`（协议）
+- 定价日：`pricing_date = calendar.next_trading_day_or_self(trade_date)`
+- 确认日：`confirm_date = calendar.next_trading_day(pricing_date, offset=lag)`
+- 确认 lag：`A=1`、`QDII=2`（不做基金级覆盖）
+
+**交易日历实现**：
+- `SimpleTradingCalendar`（仅周末为非交易日，不含节假日表）
+- 引入 `trading_calendar` 表结构，为 v0.3 的 DB 日历做准备
+
+**NAV 使用（确认用例）**：
+- 仅取 `pricing_date` 的官方净值
+- 若缺失或 `<=0`，则跳过待重试
+
+### 差异说明
+
+相比 v0.1（基于 `trade_date + lag` 再周末顺延），当"下单日在周末"时：
+- A 基金确认日落在下周二（更符合"定价日=T+1"的实务口径）
+- QDII 基金确认日随之后移（定价日+2）
 
 ### 决策
-- 阈值来源优先 `alloc_config.max_deviation`，默认阈值 5%；
-- 建议金额算法：总市值 × |偏离| × 50%（渐进式，仅提示用）；
-- 输出顺序按偏离绝对值降序显示，阈值内标注"观察"。
 
-### 补充
-- 当日 total_value == 0（例如当日 NAV 全部缺失）时，UseCase 返回 `no_market_data=True` 与提示文案，CLI 展示"当日 NAV 缺失，无法给出金额建议"。
+- **定价日优先**：先确定定价日，再计算 T+N
+- **日历可替换**：通过 Protocol 注入，v0.3 可切换为 DB 日历
+- **严格 NAV 口径**：缺失不做回退，保留待重试
 
-> 注：再平衡触发条件与计算规则的完整定义见 `docs/settlement-rules.md`。
+> 交易确认规则的完整定义见 `docs/settlement-rules.md`。
+
+---
 
 ## 2025-11-20 外部 NAV 接入与 UseCase 抽取
 
 ### 完成内容
-- EastmoneyNavProvider 接入东方财富历史净值 REST（f10/lsjz）：
-  - URL：按日查询 `startDate=endDate=day&pageSize=1`；
-  - Header：固定 `Referer` 与 `Accept`，保持自定义 `User-Agent`；
-  - 重试：429/5xx 抛异常交由外层指数退避重试，其它非 200 返回 None。
-- 抽取 UseCase `FetchNavsForDay`：遍历基金 → 调 Provider → `NavRepo.upsert` → 汇总统计；
-- 调整 `jobs/fetch_navs.py`：入口仅解析参数并调用 UseCase。
+
+**NAV 数据流分离**：
+- `EastmoneyNavProvider`：从东方财富 API 抓取官方净值（HTTP）
+- `SqliteNavRepo`：本地 `navs` 表存储（upsert 幂等）
+- `LocalNavProvider`：仅从本地 `navs` 表读取 NAV（供确认/日报/再平衡使用）
+
+**UseCase 抽取**：
+- 新增 `FetchNavsForDay`：遍历 `funds` 表，调用 `EastmoneyNavProvider` 抓取指定日 NAV，写入本地
+- 新增 `src/jobs/fetch_navs.py`：对外 Job 入口
+
+**请求头优化**：
+- 固定 `User-Agent`、`Referer: https://fundf10.eastmoney.com/`、`Accept: application/json`，减少 403 风险
 
 ### 决策
-- 抓取范围采用“严格版”：仅抓指定日，不做回退；失败列表由 Job 输出；
-- UseCase 与 Job 分层明确：Job 负责入参与日志，UseCase 负责业务循环与统计。
-## 2025-11-22 日报展示日与区间抓取（v0.2 严格）
+
+- **抓取与报表职责分离**：HTTP 抓取在 Job 层，确认/日报只读本地
+- **幂等 upsert**：NAV 数据按 `(fund_code, day)` 幂等写入，支持重跑
+- **失败汇总**：获取失败或 NAV 无效时记录清单，Job 结束时统一打印
+
+---
+
+## 2025-11-19 再平衡建议 v0.2（基础版）
 
 ### 完成内容
-- `status` 新增参数：`--mode {market,shares}` 与 `--as-of YYYY-MM-DD`（默认上一交易日，按工作日近似）
-- `daily_report` Job 新增参数：`--mode`、`--as-of`
-- UseCase `GenerateDailyReport.build/send` 支持传入 `as_of`
-- 新增 Job `fetch_navs_range`：按闭区间逐日抓取 NAV（严格：只抓指定日），幂等落库并汇总失败清单
-- 修复 `FetchNavsForDay` 使用 `FundInfo` 属性访问（`f.fund_code`）
+
+**阈值来源**：
+- 优先使用 `alloc_config.max_deviation`（按资产类别）
+- 未配置时使用默认 5% 阈值（0.05）
+
+**触发条件**：
+- 当 `|实际权重 - 目标权重| > 阈值` 时，给出"增持/减持"建议
+- 否则标注为"观察（hold）"
+
+**建议金额算法**：
+- `建议金额 = 总市值 × |偏离| × 50%`（渐进式，保守），仅用于提示
+- 正偏离（超配）→ 减持；负偏离（低配）→ 增持
+
+**口径与限制**：
+- 权重与总市值与"市值版日报"一致：仅使用当日 NAV、已确认份额、不回退
+- 不考虑交易成本、最小申赎份额与税费
+- 不拆分到具体基金层面（只到资产类别）
 
 ### 决策
-- 保持"严格不回退"口径：展示日选定后，仅用该日 NAV，缺失即剔除并提示"可能低估"
-- 日报/状态默认展示日设为"上一交易日"（当前以上一工作日近似）
-- 抓取 HTTP 与报表/确认读本地分离，确保可复现与稳定
 
-### 验证
-- 本地 seed → status（market/shares）输出正确；daily_report 参数生效
-- 区间抓取在网络受限环境下稳定汇总失败；在可联网环境对交易日日期可成功入库
+- **基础版粒度**：只到资产类别，不拆具体基金
+- **保守建议**：50% 偏离修正，避免过度交易
+- **与日报一致**：严格 NAV 口径，缺失即剔除
 
-> 注：展示日策略与 NAV 严格口径的完整规则见 `docs/settlement-rules.md`。
-
-## 2025-11-19 交易日历架构升级（策略化）与 Schema v3
-
-### 完成内容
-- 引入策略对象 `SettlementPolicy`（定价日历/计数日历/卫兵日历/settle_lag），并接入 `DateMath`（按命名日历键 `CN_A`/`US_NYSE`）。
-- 新增 `CalendarStore`（SQLite）读取 `trading_calendar`，启用严格模式（缺失即报错）。
-- `SqliteTradeRepo` 写入 `pricing_date` 与 `confirm_date`（策略版）；`ConfirmPendingTrades` 优先使用入库的 `pricing_date` 确认份额。
-- `SCHEMA_VERSION=3`，`trades` 新增列 `pricing_date TEXT NOT NULL`（历史库需迁移或重建）。
-- 新 Job：`src/jobs/sync_calendar.py`（exchange_calendars 注油，限制到"日历最大已知日期"）。
-- 新 Job：`src/jobs/patch_calendar.py`（Akshare 修补，仅覆盖到"数据源最大已知日期"）。
-
-### 决策
-- QDII 默认策略：guard=`CN_A`，pricing/计数=`US_NYSE`，lag=2。
-- `CalendarStore` 严格口径：杜绝工作日近似导致的误判；缺失通过"注油/修补"解决。
-- 移除 TuShare 占位与入口；修补数据统一走 Akshare。
-
-### 兼容与迁移
-- 旧库处理：备份后重建，或执行 `ALTER TABLE trades ADD COLUMN pricing_date TEXT;` 并为历史记录回填（建议按策略重算）。
-- 2026 错误数据修复：重新注油（XC）→ 删除 2026 CN_A → Akshare 修补（自动仅到 2025-12-31）。
-
-> 注：交易日历策略化与 SettlementPolicy 的完整规则见 `docs/settlement-rules.md` 的"v0.3 增强"章节。
+> 再平衡规则的完整定义见 `docs/settlement-rules.md`。

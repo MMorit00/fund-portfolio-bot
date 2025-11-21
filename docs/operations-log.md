@@ -1,385 +1,157 @@
-# Operations Log（环境/工具/运维）
+# 运维手册（当前操作）
 
-## 2025-11-14 初始化
+> 本文档记录当前版本的操作命令与配置方式。
+> 历史决策与演进见 `docs/coding-log.md`。
 
-- 创建基础目录结构：`src/core`, `src/usecases`, `src/adapters`, `src/app`, `src/jobs`, `docs`, `scripts`, `data`
-- 约定：敏感信息走环境变量（`.env` 不入库）；CI 使用 Secrets；配置入口 `src/app/config.py`
-- SQL 打印策略：SQLite `set_trace_callback`（受 `ENABLE_SQL_DEBUG` 控制）
-- 备份策略：`scripts/backup_db.sh` 手动快照（重大变更前执行）
+## 环境配置
 
-## 2025-11-15 手动录入交易（CLI）
+敏感信息通过环境变量 / `.env` 提供：
+- `DISCORD_WEBHOOK_URL`：日报推送地址
+- `DB_PATH`：SQLite 路径（默认 `data/portfolio.db`）
+- `ENABLE_SQL_DEBUG`：是否启用 SQL trace 打印
+- `TRADING_CALENDAR_BACKEND`：交易日历后端（`db` 或默认 `simple`）
 
-### 使用方法
+配置统一在 `src/app/config.py` 读取。
 
-**买入基金**：
+## 数据库初始化
+
 ```bash
+# 重建测试数据库（开发阶段）
+SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
+
+# 备份数据库（重大变更前）
+./scripts/backup_db.sh
+```
+
+## 日常 Job 调度（推荐顺序）
+
+```bash
+# 假设上一交易日为 T
+python -m src.jobs.fetch_navs --date T      # 抓取 T 日 NAV
+python -m src.jobs.confirm_trades --day T+1 # 确认到期交易
+python -m src.jobs.daily_report --as-of T   # 生成日报（展示日=T）
+```
+
+> NAV 策略、确认规则、再平衡触发条件见 `docs/settlement-rules.md`。
+
+## CLI 常用命令
+
+### 手动录入交易
+
+```bash
+# 买入
 python -m src.app.main buy --fund-code 110022 --amount 1000
 python -m src.app.main buy --fund-code 110022 --amount 1000.50 --date 2025-11-15
+
+# 卖出
+python -m src.app.main sell --fund-code 000001 --amount 500 --date 2025-11-16
 ```
 
-**卖出基金**：
+参数：
+- `--fund-code`（必需）：基金代码（必须已在 `funds` 表中）
+- `--amount`（必需）：交易金额
+- `--date`（可选）：交易日期，默认今天
+
+### 查看持仓状态
+
 ```bash
-python -m src.app.main sell --fund-code 000001 --amount 500
-python -m src.app.main sell --fund-code 000001 --amount 500.50 --date 2025-11-16
-```
-
-### 参数说明
-- `--fund-code`（必需）：基金代码，必须已在 funds 表中配置
-- `--amount`（必需）：交易金额，支持整数或小数（如 1000 或 1000.50）
-- `--date`（可选）：交易日期，格式为 YYYY-MM-DD，默认今天
-
-### 输出示例
-
-**成功**：
-```
-✅ 交易已创建：ID=2 fund=110022 type=buy amount=1000 date=2025-11-15 confirm_date=2025-11-17
-```
-
-**错误（基金不存在）**：
-```
-❌ 错误：未知基金代码：999999
-提示：请检查是否已在 funds 表中配置，或先运行 dev_seed_db
-```
-
-**错误（金额格式无效）**：
-```
-❌ 错误：金额格式无效：abc（期望 Decimal，例如 1000 或 1000.50）
-```
-
-
-## 2025-11-15 开发自测流程
-
-### v0.1 完整流程验证
-
-以下是本地开发环境的自测步骤，用于验证从交易录入到日报生成的完整闭环：
-
-**步骤 1：初始化数据库**
-```bash
-# 运行 seed 脚本，创建测试数据
-PYTHONPATH=. python scripts/dev_seed_db.py
-```
-
-**步骤 2：手动录入交易（可选）**
-```bash
-# 使用 CLI 录入新交易
-python -m src.app.main buy --fund-code 110022 --amount 1000
-python -m src.app.main sell --fund-code 000001 --amount 500.50 --date 2025-11-16
-```
-
-**步骤 3：模拟定投生成**
-```bash
-# 运行定投 job（如果今天符合定投规则）
-python -m src.jobs.run_dca
-```
-
-**步骤 4：确认交易份额**
-```bash
-# 确认到期的 pending 交易
-python -m src.jobs.confirm_trades
-```
-
-**步骤 5：生成日报**
-```bash
-# 生成并查看日报内容
-python -m src.jobs.daily_report
-```
-
-### 日报输出示例
-
-```
-【持仓日报 2025-11-15】
-总份额：666.67
-
-资产配置：
-- CGB_3_5Y：0.0% (目标 20.0%，低配 -20.0%)
-- CSI300：100.0% (目标 50.0%，超配 +50.0%)
-- US_QDII：0.0% (目标 30.0%，低配 -30.0%)
-
-⚠️ 再平衡提示：
-- CSI300 超配，建议减持
-- US_QDII 低配，建议增持
-- CGB_3_5Y 低配，建议增持
-```
-
-### 注意事项
-
-1. **NAV 数据要求**：
-   - 当前版本使用本地 NAV（方案 A）
-   - `confirm_trades` 需要对应日期的 NAV 数据才能确认交易
-   - 可通过 `dev_seed_db.py` 或手动插入 NAV 数据
-
-2. **日报内容说明**：
-   - 当前版本显示"总份额"而非"总市值"
-   - 权重计算基于份额归一化，不依赖 NAV
-   - 适用于快速查看配置偏离情况
-
-3. **Discord 推送**：
-   - 需要配置 `DISCORD_WEBHOOK_URL` 环境变量
-   - 未配置时日报仍会生成，但不会推送
-
-## 2025-11-20 NAV 抓取 Job（v0.3 草案）
-
-### 使用方法
-
-抓取今天全部基金的 NAV：
-
-```
-python -m src.jobs.fetch_navs
-```
-
-抓取指定日期的 NAV：
-
-```
-python -m src.jobs.fetch_navs --date 2025-11-20
-```
-
-说明：
-- Job 会遍历 `funds` 表中已配置的所有基金；
-- 对每只基金调用 `EastmoneyNavProvider.get_nav(fund_code, day)` 获取官方单位净值；
-- 仅当返回值存在且 > 0 时，才会写入 `navs` 表（`upsert`，幂等）；
-- 获取失败或 NAV 无效时，记录基金代码到失败列表，并在 Job 结束时打印提示。
-
-依赖与请求说明：
-- 依赖 `httpx`；建议使用 UV 安装：`uv add httpx`（或 `pip install httpx`）。
-- Eastmoney 接口：`https://api.fund.eastmoney.com/f10/lsjz`（按日历史净值）。
-- 请求头：已在 Provider 固定 `User-Agent`、`Referer: https://fundf10.eastmoney.com/`、`Accept: application/json`，以减少 403 风险。
-
-### 推荐调度顺序（本地 cron / GitHub Actions）
-
-在每天交易日结束后按顺序执行：
-
-```
-# 假设上一交易日为 T
-python -m src.jobs.fetch_navs --date T      # 抓取 T 日 NAV（严格：只抓指定日，不回退）
-python -m src.jobs.confirm_trades --day T+1 # 确认到期 pending（用"定价日 NAV"，缺失标记 delayed）
-python -m src.jobs.daily_report --as-of T   # 生成并推送日报（展示日=T，仅用当日 NAV）
-```
-
-> 抓取结果写入的 NAV，在确认与日报中遵守 `docs/settlement-rules.md` 中的"NAV 策略 v0.2（严格版）"。
-
-如需对历史日期补 NAV 与确认，可先对指定日期运行：
-
-```
-python -m src.jobs.fetch_navs --date YYYY-MM-DD
-python -m src.jobs.confirm_trades  # （未来可扩展 --day 参数）
-```
-
-## 2025-11-22 日报展示日与状态视图（v0.2 严格）
-
-- 展示日默认：上一交易日（当前用"上一工作日"近似，节假日表在 v0.3 引入）
-- 市值视图：仅统计展示日 NAV>0 的基金，不足部分剔除，并在文末提示"总市值可能低估"
-- 份额视图：不依赖 NAV，作为 NAV 不全时的兜底
-
-> 日报展示日、NAV 严格口径与再平衡触发条件的完整规则见 `docs/settlement-rules.md`。
-
-常用命令：
-
-```
-# 状态（默认上一交易日市值视图）
+# 默认上一交易日市值视图
 python -m src.app.main status
 
 # 指定视图与展示日
 python -m src.app.main status --mode market --as-of 2025-11-12
 python -m src.app.main status --mode shares --as-of 2025-11-12
-
-# 发送日报（默认上一交易日）
-python -m src.jobs.daily_report --mode market
 ```
 
-## 2025-11-22 历史 NAV 区间抓取（v0.2）
+### 补录历史 NAV
 
-```
+```bash
+# 单日抓取
+python -m src.jobs.fetch_navs --date 2025-11-20
+
+# 区间抓取（闭区间，幂等）
 python -m src.jobs.fetch_navs_range --from 2025-01-01 --to 2025-03-31
 
-# 回填完成后，补确认到区间末日：
+# 补录后重跑确认
 python -m src.jobs.confirm_trades --day 2025-04-01
-
-# 查看状态/日报（必要时用 shares 兜底）：
-python -m src.app.main status --mode market --as-of 2025-03-31
 ```
 
-说明：区间抓取采用“严格口径”，只抓指定日，不做最近交易日回退。幂等 upsert，失败/缺失会汇总打印，便于后续定向重跑。
+## 日志前缀规范
 
-## 2025-11-21 交易日历导入与确认重跑（v0.3）
+为便于日志分析，各适配器使用统一前缀：
 
-### 导入交易日历（SQLite）
+| 前缀 | 含义 |
+|-----|------|
+| `[EastmoneyNav]` | 东方财富净值数据源 |
+| `[LocalNav]` | 本地 SQLite NAV 仓储 |
+| `[Discord]` | Discord Webhook 推送 |
+| `[Job:xxx]` | 定时任务脚本（如 `[Job:fetch_navs]`） |
 
-CSV 放置建议：`data/trading_calendar/a_shares.csv`，表头支持：
-- `market,day,is_trading_day`（更通用）或 `day,is_trading_day`（market 默认 A）
-
-示例命令：
-
+示例：
 ```
-DB_PATH=data/portfolio.db \
-python scripts/import_trading_calendar.py data/trading_calendar/a_shares.csv
-```
-
-启用 DB 版交易日历：
-
-```
-TRADING_CALENDAR_BACKEND=db \
-DB_PATH=data/portfolio.db \
-python -m src.jobs.confirm_trades
-```
-
-注意：当 `TRADING_CALENDAR_BACKEND=db` 且未找到 `trading_calendar` 表时，会报错退出。
-
-> 交易日历的使用方式（含 SettlementPolicy、CalendarStore 严格模式）见 `docs/settlement-rules.md` 的"v0.3 增强"章节。
-
-### 补录 NAV 后补确认
-
-```
-# 1) 补录当日官方 NAV
-python -m src.jobs.fetch_navs --date YYYY-MM-DD
-
-# 2) 对该日重跑确认
-python -m src.jobs.confirm_trades --day YYYY-MM-DD
-```
-
-确认任务输出会统计：成功确认数量、因定价日 NAV 缺失而跳过的数量与涉及基金代码。
-
-## 2025-11-21 日志规范约定
-
-### 日志前缀规范
-
-为便于后续日志分析与定位，各适配器的 print 日志应使用统一前缀：
-
-- **EastmoneyNavProvider**：`[EastmoneyNav]` - 东方财富净值数据源相关日志
-- **LocalNavProvider**：`[LocalNav]` - 本地 SQLite NAV 仓储日志
-- **DiscordReportSender**：`[Discord]` - Discord Webhook 推送日志
-- **通用 Job**：`[Job:xxx]` - 定时任务脚本日志，如 `[Job:fetch_navs]`、`[Job:confirm_trades]`
-
-### 日志内容约定
-
-1. **错误与异常**：包含足够上下文（fund_code、day、attempt 等）以便排查
-2. **状态提示**：成功/失败统计信息使用 `✅` / `⚠️` 前缀增强可读性
-3. **详细模式**：保留 `ENABLE_SQL_DEBUG` 环境变量控制 SQL trace 输出
-
-### 示例
-
-```
-[EastmoneyNav] 获取 NAV 失败：fund=110022 day=2025-11-20 attempt=2 err=ConnectTimeout
-[LocalNav] 成功写入 NAV：fund=110022 day=2025-11-20 nav=1.2345
-[Discord] Webhook 推送失败：status=400 msg="Invalid request"
+[EastmoneyNav] 获取 NAV 失败：fund=110022 day=2025-11-20 attempt=2
 [Job:fetch_navs] ✅ 抓取完成：成功 45/50，失败 5 只
-
-
-## 2025-11-19 日历基础设施与修补（Akshare 版）
-
-- 依赖安装（uv）：
-  - `uv add exchange-calendars`
-  - `uv add akshare`
-- 注油（exchange_calendars → 全量 0/1）：
-  - `TRADING_CALENDAR_BACKEND=db DB_PATH=data/portfolio.db \
-     uv run python -m src.jobs.sync_calendar --cal CN_A --from 2024-01-01 --to 2030-12-31`
-  - `TRADING_CALENDAR_BACKEND=db DB_PATH=data/portfolio.db \
-     uv run python -m src.jobs.sync_calendar --cal US_NYSE --from 2020-01-01 --to 2030-12-31`
-- 修补（Akshare → 仅覆盖“已发布最大日期”以内）：
-  - `DB_PATH=data/portfolio.db uv run python -m src.jobs.patch_calendar`
-  - 日志示例：`[Patch] 数据源最大已知日期: 2025-12-31`，修补范围自动限制为 `min(今天+365, 最大已知日期)`
-- 验证（SQL）：
-  - 月度统计：
-    - `sqlite3 data/portfolio.db "SELECT market, COUNT(*) AS total, SUM(is_trading_day) AS opens, COUNT(*)-SUM(is_trading_day) AS closes FROM trading_calendar GROUP BY market;"`
-  - 点查（国庆场景）：
-    - `sqlite3 data/portfolio.db "SELECT * FROM trading_calendar WHERE market='CN_A' AND day='2025-10-01';"  -- 预期 0`
-    - `sqlite3 data/portfolio.db "SELECT * FROM trading_calendar WHERE market='US_NYSE' AND day='2025-10-01';"  -- 预期 1`
-
-说明：
-- `sync_calendar` 现在具备“上限保护”：只写入到 exchange_calendars 已知的最大日期，防止越界写 0。
-- `patch_calendar` 改为 Akshare 方案，仅覆盖到数据源最大日期，避免未来未发布年份被错误覆盖为休市。
-
-
-## 2025-11-19 冒烟测试（QDII + 国庆节 + 卫兵日历）
-
-- 准备：
-  - `sqlite3 data/portfolio.db "INSERT INTO funds(fund_code,name,asset_class,market) VALUES('000xxx','Smoke QDII','US_QDII','QDII') ON CONFLICT(fund_code) DO UPDATE SET name=excluded.name, asset_class=excluded.asset_class, market=excluded.market;"`
-  - `export TRADING_CALENDAR_BACKEND=db; export DB_PATH=data/portfolio.db`
-- 运行：
-  - `uv run python -m src.app.main buy --fund-code 000xxx --amount 1000 --date 2025-10-01`
-- 结果（示例）：
-  - `pricing_date=2025-10-09`、`confirm_date=2025-10-13`
-  - 解释：`CN_A` 卫兵放行日为 10-09（10-01..10-08 休市），定价 `US_NYSE`，T+2 得到 10-13。
-
 ```
 
-## 2025-11-XX 处理确认延迟（v0.2.1）
+## 交易日历管理（v0.3）
 
-### 查看当前延迟交易
+### 导入交易日历
 
-查询所有处于延迟状态的交易：
+CSV 格式：`market,day,is_trading_day` 或 `day,is_trading_day`（market 默认 A）
+
+```bash
+# 注油（exchange_calendars）
+TRADING_CALENDAR_BACKEND=db DB_PATH=data/portfolio.db \
+  python -m src.jobs.sync_calendar --cal CN_A --from 2024-01-01 --to 2030-12-31
+
+# 修补（Akshare/新浪，在线覆盖）
+DB_PATH=data/portfolio.db python -m src.jobs.patch_calendar
+```
+
+### 验证日历数据
+
+```bash
+# 月度统计
+sqlite3 data/portfolio.db "SELECT market, COUNT(*) AS total, SUM(is_trading_day) AS opens FROM trading_calendar GROUP BY market;"
+
+# 点查（国庆场景）
+sqlite3 data/portfolio.db "SELECT * FROM trading_calendar WHERE market='CN_A' AND day='2025-10-01';"
+```
+
+## 确认延迟处理
+
+### 查看延迟交易
 
 ```sql
-SELECT
-    fund_code,
-    type,
-    amount,
-    trade_date,
-    confirm_date,
-    delayed_reason,
-    delayed_since,
-    julianday('now') - julianday(confirm_date) as days_delayed
+SELECT fund_code, type, amount, trade_date, confirm_date, delayed_reason, delayed_since,
+       julianday('now') - julianday(confirm_date) as days_delayed
 FROM trades
 WHERE confirmation_status = 'delayed'
 ORDER BY delayed_since;
 ```
 
-### 手动补充 NAV 后重新确认
-
-如果发现延迟是由于 NAV 数据缺失导致的，可以：
-
-**1. 导入缺失的 NAV 数据**
+### 补录 NAV 后重新确认
 
 ```bash
-# 方式 1：使用 fetch_navs job（推荐）
+# 1. 补录缺失 NAV
 python -m src.jobs.fetch_navs --date 2025-11-15
 
-# 方式 2：手动插入（临时）
-sqlite3 data/portfolio.db "INSERT INTO navs (fund_code, day, nav) VALUES ('110022', '2025-11-15', 1.2345)"
-```
-
-**2. 重新运行确认 job**
-
-```bash
+# 2. 重跑确认（自动处理延迟交易）
 python -m src.jobs.confirm_trades
 ```
 
-系统会自动：
-- 检测之前延迟的交易
-- 尝试获取 NAV
-- 如果 NAV 已可用，则确认交易并重置延迟标记
+### 手动标记已确认（异常场景）
 
-### 手动标记交易为已确认（异常场景）
-
-如果确认支付宝订单已成功，但系统 NAV 数据始终缺失，可以手动填入：
+如果支付宝订单已成功但系统 NAV 缺失，可手动更新：
 
 ```sql
--- 从支付宝复制确认信息后手动更新
 UPDATE trades
-SET
-    status = 'confirmed',
-    shares = 404.86,                -- 从支付宝复制
-    confirmation_status = 'normal',
-    delayed_reason = NULL,
-    delayed_since = NULL
+SET status = 'confirmed', shares = 404.86,  -- 从支付宝复制
+    confirmation_status = 'normal', delayed_reason = NULL, delayed_since = NULL
 WHERE id = 123;
 ```
 
-### 日报中的延迟提示
-
-每日报告的"交易确认情况"板块会自动显示延迟交易：
-
-```
-⚠️ 异常延迟（1笔）
-  - 11-14 买入 华宝油气 800元
-    理论确认日：2025-11-16（T+2）
-    当前状态：确认延迟（已超过 2 天）
-    延迟原因：NAV 数据缺失（未获取到定价日官方净值）
-    建议：请到支付宝查看订单状态，如显示「确认中」则正常等待；如显示「失败/撤单」请及时在系统中标记
-```
-
-### 注意事项
-
-1. **不要修改 `confirm_date`**：这是理论确认日，用于追踪延迟时长
-2. **优先使用 fetch_navs 补数据**：避免手动插入错误的 NAV 值
-3. **延迟超过 3 天**：建议到支付宝核实订单状态，可能存在交易失败或撤单
-4. **测试延迟场景**：可使用 `SEED_CREATE_DELAYED_TRADE=1` 运行 dev_seed_db.py
+**注意**：
+- 不要修改 `confirm_date`（用于追踪延迟时长）
+- 优先使用 `fetch_navs` 补数据
+- 延迟超过 3 天建议到支付宝核实订单状态

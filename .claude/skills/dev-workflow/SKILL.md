@@ -25,10 +25,10 @@ Use this Skill when the user asks to:
 1. **Read relevant context**
 
    - Skim these docs if they are relevant:
-     - `docs/architecture.md`
-     - `docs/python-style.md`
-     - `docs/roadmap.md`
-     - `docs/settlement-rules.md`（涉及结算逻辑时）
+     - `docs/architecture.md`（架构与分层，含 ASCII 图）
+     - `docs/roadmap.md`（版本范围）
+     - `docs/settlement-rules.md`（业务规则，涉及结算逻辑时）
+     - `CLAUDE.md` 第 3 节（编码规范核心约束）
    - 打开 `src/` 下相关代码，先理解当前实现，而不是直接改。
 
    **工具选择（MCP 使用决策）：**

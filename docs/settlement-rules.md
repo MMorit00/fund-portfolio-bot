@@ -1,117 +1,85 @@
-# 交易日历与确认规则（v0.2）
+# 交易日历与确认规则
 
 > **本文档是交易日历、确认规则、NAV 策略与再平衡规则的权威来源。**
 > 若其他文档（architecture/roadmap/log 等）与本文件描述存在不一致，以本文件为准。
 
-## 现状（v0.1 实现）
-- 函数：`src/core/trading/settlement.get_confirm_date`
-- 规则：
-  - A 股：T+1，若遇周末顺延到下一个周一。
-  - QDII：T+2，若遇周末顺延到下一个周一/周二。
-- 假设：
-  - 仅处理周末，不处理法定节假日。
-  - 不考虑基金类型差异、交易时间截点等复杂因素。
+---
 
-## v0.2 规则（已实现）
-- 接口：`get_confirm_date(market, trade_date, calendar)`（纯函数），`TradingCalendar`（协议）
-- 市场范围：仅 `A` 与 `QDII`
-- 确认 lag：`A=1`、`QDII=2`（不做基金级覆盖）
-- 定价日：`pricing_date = calendar.next_trading_day_or_self(trade_date)`
-- 确认日：`confirm_date = calendar.next_trading_day(pricing_date, offset=lag)`
-- 交易日历实现：`SimpleTradingCalendar`（仅周末为非交易日，不含节假日表）
-- NAV 使用（确认用例）：仅取 `pricing_date` 的官方净值；若缺失或 `<=0`，则跳过待重试
+## 1. 确认规则（Confirm 逻辑）
 
-差异说明：
-- 相比 v0.1（基于 `trade_date + lag` 再周末顺延），当“下单日在周末”时：
-  - `A` 基金确认日落在下周二（更符合“定价日=T+1”的实务口径）；
-  - `QDII` 基金确认日随之后移（定价日+2）。
+### 定价日计算（pricing_date）
 
-接口落点：
-- `src/core/trading/calendar.py` 定义 `TradingCalendar` 与 `SimpleTradingCalendar`
-- `src/core/trading/settlement.py` 定义新版 `get_confirm_date`
-- `SqliteTradeRepo.add(...)` 写入 `confirm_date` 时使用日历
-- `ConfirmPendingTrades` 确认时仅取 `pricing_date` 的 NAV；缺失/<=0 则跳过待重试
+- **定价日** = `calendar.next_trading_day_or_self(trade_date)`
+- 含义：交易提交日当天若是交易日，则当日定价；若是休市日，顺延到下一交易日定价
+- 入库：`trades.pricing_date` 字段持久化，确认时严格按该日 NAV
 
-## NAV 策略 v0.2（严格版）
+### 确认日计算（confirm_date）
 
-- 确认用 NAV：
-  - 仅使用“定价日 NAV”（`pricing_date = next_trading_day_or_self(trade_date)`）。
-  - `ConfirmPendingTrades` 在定价日 NAV 缺失或 `<= 0` 时直接跳过，保留为 pending，后续可重试；不做任何回退。
-- 报表/状态视图用 NAV：
-  - 仅使用“当日 NAV”（`day = date.today()`）。
-  - 当日 NAV 缺失或 `<= 0` 的基金不计入当日市值与权重；在“NAV 缺失”区块列出基金代码。
-  - 不做“最近交易日 NAV”回退；报告文案会提示“总市值可能低估”。
+- **确认日** = `calendar.next_trading_day(pricing_date, offset=settle_lag)`
+- `settle_lag` 按市场类型：
+  - A 股：1（T+1）
+  - QDII：2（T+2）
+- 不做基金级覆盖（未来可扩展）
 
-说明：
-- 该口径最大程度贴合官方净值的时间口径，避免引入灰色估值与难以解释的回退规则；
-- 未来若引入“柔性回退视图”，将以新版本（v0.3+）提供独立开关与清晰标注，不影响 v0.2 的严格口径。
+### 使用的日历
 
-## Rebalance Rules v0.2（基础版）
+- **CalendarProtocol**：统一日历接口，提供 `is_open` / `next_open` / `shift` 方法
+- **DbCalendarService**：从 `trading_calendar` 表读取，严格模式（缺失即报错）
+- **数据源**：
+  - 注油：`exchange_calendars`（基础日历，到"日历最大已知日期"）
+  - 修补：`Akshare`（新浪，在线覆盖，到"数据源最大已知日期"）
 
-- 阈值来源：
-  - 优先使用 `alloc_config.max_deviation`（按资产类别）；
-  - 未配置时使用默认 5% 阈值（0.05）。
-- 触发条件：
-  - 当 `|实际权重 - 目标权重| > 阈值` 时，给出“增持/减持”建议；
-  - 否则标注为“观察（hold）”。
-- 建议金额算法：
-  - `建议金额 = 总市值 × |偏离| × 50%`（渐进式，保守），仅用于提示；
-  - 正偏离（超配）→ 减持；负偏离（低配）→ 增持。
-- 口径与限制：
-  - 权重与总市值与“市值版日报”一致：仅使用当日 NAV、已确认份额、不回退；
-  - 不考虑交易成本、最小申赎份额与税费；
-  - 不拆分到具体基金层面（只到资产类别）。
-- 输出与集成：
-  - 可在 CLI `status --show-rebalance` 附加输出“再平衡建议（基础版）”；
-  - 日报可选集成：Job 中先构造日报，再追加建议文本一并发送（后续版本考虑）。
+### QDII 特殊规则（SettlementPolicy）
 
-## 期望的目标行为（后续版本）
-- 引入“交易日历表”，覆盖法定节假日与特殊交易日。
-- 支持按市场/基金类型的差异化确认规则：
-  - A 股普通基金：T+1，节假日顺延。
-  - QDII：T+2，跨市场节假日并集顺延。
-  - 未来可扩展其他市场/产品类型。
-- 明确“定价日（pricing_date）”与“确认日”的区别：
-  - 定价日用于份额计算（通常等于交易日；遇非交易日应取下一交易日）。
-  - 确认日用于份额/资金到账展示（T+N 顺延）。
-- 支持在确认流程中：优先用定价日 NAV，缺失时回退策略（上一/下一交易日）与重试机制（或标记异常）。
+QDII 基金使用三层日历组合：
+- **guard_calendar**：`CN_A`（卫兵日历，过滤国内节假日）
+- **pricing_calendar**：`US_NYSE`（定价日历，决定 pricing_date）
+- **count_calendar**：`US_NYSE`（计数日历，决定 T+N 如何数）
+- **settle_lag**：2
 
-## 设计草稿
-1) 交易日历表
+示例：国庆期间下单（2025-10-01）
+- `CN_A` 卫兵放行日：2025-10-09（10-01..10-08 休市）
+- `pricing_date`：2025-10-09（`US_NYSE` 下一交易日或当日）
+- `confirm_date`：2025-10-13（`US_NYSE` 交易日 +2）
 
-   > 该表的具体字段与 DDL 见 `docs/sql-migrations-v0.2.md` 中的 `CREATE TABLE trading_calendar(...)`。
+---
 
-   - 字段概念：`day` (DATE, PK), `is_trading_day` (BOOLEAN), `market` (TEXT，如 A/QDII)，可扩展 `note`。
-   - 数据来源：手工维护或从公开节假日接口导入。
+## 2. NAV 策略
 
-2) 确认规则配置
-   - 配置表（可放 `meta` 或独立表）：`market` -> `confirm_lag` (int)，`strategy` (如 `next_trading_day`)、`timezone`。
-   - 每个基金可从其 `market` 继承，也可单独覆盖。
+### 确认用 NAV（ConfirmPendingTrades）
 
-3) 计算逻辑（设计基线）
-   - 输入：`market`, `trade_date`
-   - 步骤：
-     1. `pricing_date = next_trading_day_or_self(trade_date)`
-     2. `confirm_date = next_trading_day(pricing_date, offset=lag(market))`
-     3. 确认时读取 `pricing_date` NAV；若缺失/无效则跳过（不做多级回退）
+- **仅使用定价日 NAV**：从 `navs` 表读取 `trades.pricing_date` 对应的 NAV
+- **缺失或 ≤ 0 时**：直接跳过，保留为 `pending`，标记延迟状态（见下节），后续可重试
+- **不做任何回退**：不用"上一交易日 NAV"或"下一交易日 NAV"
 
-4) NAV 缺失与确认交互
-   - 若确认日缺 NAV：标记该笔交易为“待确认NAV”状态，后续补齐 NAV 时再确认；或在日报/监控里提示缺失。
+### 报表/状态视图用 NAV（日报、status）
 
-## 确认延迟处理（v0.2.1）
+- **仅使用展示日 NAV**：`day = --as-of` 参数指定（默认上一交易日）
+- **缺失或 ≤ 0 时**：该基金不计入当日市值与权重，在"NAV 缺失"区块列出基金代码
+- **不做回退**：不用"最近交易日 NAV"；报告文案提示"总市值可能低估"
+- **兜底视图**：份额视图（`--mode shares`）不依赖 NAV，可在 NAV 不全时使用
+
+### NAV 抓取（fetch_navs / fetch_navs_range）
+
+- **严格口径**：只抓指定日，不做"最近交易日回退"
+- **幂等 upsert**：按 `(fund_code, day)` 幂等写入 `navs` 表
+- **失败汇总**：Job 结束时统一打印失败清单
+
+---
+
+## 3. 确认延迟处理
 
 ### 场景
+
 当交易按 T+N 规则已到理论确认日，但无法获取定价日 NAV 数据时，系统会标记为"延迟"。
 
 ### 处理策略
-1. **不修改 `confirm_date`**：理论确认日保持不变（由 TradingCalendar 根据 `pricing_date + settle_lag` 算出）
+
+1. **不修改 `confirm_date`**：理论确认日保持不变（用于追踪延迟时长）
 2. **显式标记延迟**：
    - `confirmation_status` 设为 `delayed`
    - `delayed_reason` 记录延迟原因（`nav_missing` / `unknown`）
    - `delayed_since` 记录首次检测到延迟的日期
-
-   > `trades` 表中与确认延迟相关的字段（confirmation_status/delayed_reason/delayed_since）具体定义与迁移 SQL 见 `docs/sql-migrations-v0.2.md`。
-
 3. **每日重试**：`ConfirmPendingTrades` job 每天会重新检查，一旦 NAV 数据可用立即确认
 
 ### 状态转换图
@@ -135,37 +103,72 @@ pending (normal)
                                           └─ 每日重试，NAV 可用后自动确认
 ```
 
-### 延迟原因分类（v0.2）
+### 延迟原因分类
+
 - `nav_missing`：本地 `navs` 表中无对应 `pricing_date` 的 NAV 数据
   - 可能原因：基金公司延后披露、数据源同步延迟、节假日调整
 - `unknown`：其他未分类原因
 
 ### 用户可见反馈
+
 在每日报告的"交易确认情况"板块中：
 - 显示延迟天数（`today - confirm_date`）
 - 显示延迟原因
 - 给出建议：
-  - ≤2天：等待 1-2 个工作日
-  - >2天：建议到支付宝核查订单状态
+  - ≤2 天：等待 1-2 个工作日
+  - >2 天：建议到支付宝核查订单状态
 
-### 未来扩展（v0.3+）
-- 引入 `FundEvent` 表，自动抓取基金公司公告
-- 新增 `delayed_reason = fund_event`，关联具体公告内容
-- 支持主动推送延迟通知（Discord/邮件）
+---
 
-## 迁移路径
-- v0.2 已切换为"定价日 + lag"的确认口径，并引入可替换日历实现；仍仅处理周末。
-- v0.2.1 增加延迟追踪机制，显式标记超期但 NAV 缺失的交易。
-- 未来：引入节假日表与更丰富的策略（多市场并集、基金级覆盖、回退最多 N 个交易日等）。
+## 4. 再平衡规则
 
-## v0.3 增强（策略化与持久化）
+### 阈值来源
 
-- 策略对象：引入 `SettlementPolicy`（定价日历/计数日历/卫兵日历/settle_lag），QDII 默认：guard=`CN_A`，pricing/计数=`US_NYSE`，lag=2。
-- 日期运算：`DateMath` 基于命名日历键工作（`CN_A`/`US_NYSE`），而非单纯按市场。
-- 定价日持久化：`trades.pricing_date` 入库，确认严格按该日 NAV；便于可追溯与幂等。
-- 日历数据源：
-  - 注油：`exchange_calendars`（仅到"日历最大已知日期"）。
-  - 修补：`Akshare`（新浪，在线"以真覆假"，仅到"数据源最大已知日期"）。
-- 严格模式：`CalendarStore` 查缺即报错，杜绝"工作日近似"误判。
+- 优先使用 `alloc_config.max_deviation`（按资产类别配置）
+- 未配置时使用默认 5% 阈值（0.05）
 
-> `pricing_date` 列的增加以及 CalendarStore 的严格模式对应的 schema 迁移见 `docs/sql-migrations-v0.3.md`。
+### 触发条件
+
+- 当 `|实际权重 - 目标权重| > 阈值` 时，给出"增持/减持"建议
+- 否则标注为"观察（hold）"
+
+### 建议金额算法
+
+- `建议金额 = 总市值 × |偏离| × 50%`（渐进式，保守），仅用于提示
+- 正偏离（超配）→ 减持；负偏离（低配）→ 增持
+
+### 口径与限制
+
+- **权重与总市值与"市值版日报"一致**：仅使用展示日 NAV、已确认份额、不回退
+- **不考虑**：交易成本、最小申赎份额、税费
+- **粒度**：只到资产类别，不拆分到具体基金层面
+
+---
+
+## 5. Schema 字段对应
+
+### trades 表关键字段
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `pricing_date` | TEXT | 定价日，用于确认份额计算（NOT NULL） |
+| `confirm_date` | TEXT | 理论确认日（T+N） |
+| `confirmation_status` | TEXT | 确认状态：`normal` / `delayed` |
+| `delayed_reason` | TEXT | 延迟原因：`nav_missing` / `unknown` |
+| `delayed_since` | DATE | 首次检测到延迟的日期 |
+
+### trading_calendar 表
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `market` | TEXT | 市场标识（如 `CN_A` / `US_NYSE`） |
+| `day` | DATE | 日期（YYYY-MM-DD） |
+| `is_trading_day` | INTEGER | 是否交易日（0/1） |
+
+> Schema 完整定义见 `docs/sql-schema.md`（开发阶段可随时重建）。
+
+---
+
+## 6. 运维操作示例
+
+见 `docs/operations-log.md`（日常 Job 调度、补录 NAV、处理延迟等）。

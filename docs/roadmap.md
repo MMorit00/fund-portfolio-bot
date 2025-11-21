@@ -34,28 +34,35 @@
   - 扩展标签：预留 `tags`（JSON）用于后续补充维度，如 `"reason": "stop_loss"`、`"emotion": "fear"`。
 - **文本备注友好**：每次动作允许记录简短备注，未来可以用 AI 从自然语言中提取情绪/动机/信息来源等。
 
-## 版本规划总览（优先级）
+## 版本规划总览（当前状态）
 
-- 近期（v0.2）：在现有 MVP 基础上，先把国内场景的“交易确认规则 + 支付宝伪同步闭环 + 基本标签”打牢，让数字大体可信。
-- 中期（v0.3）：增强报表、历史导入、用户动作/上下文视图，为 AI 做更完整的数据准备。
-- 远期（v1.x+）：在数据基础稳定后，再接自然语言接口与 AI 辅助决策，多市场/多币种扩展。
-
+- ✅ **v0.1（MVP）**：基础功能完成（交易录入、定投、NAV 抓取、T+N 确认、日报）
+- ✅ **v0.2（支付宝闭环）**：核心功能完成（严格 NAV 策略、确认延迟追踪、再平衡建议、区间抓取）
+- ✅ **v0.3（日历策略化）**：核心架构完成（交易日历、SettlementPolicy、接口统一、Schema v3）
+- 🔄 **v0.4+（待规划）**：周报/月报、历史导入、用户动作日志等增强功能
+- 🔮 **v1.x+（远期）**：AI 辅助决策、多市场/多币种
 ---
 
 ## v0.1（当前 MVP，已完成）
 
-- [x] 基金 & 资产类别管理（FundRepo / AllocConfig）
-- [x] 交易记录：`/buy` `/sell`（CreateTrade）—— CLI 已完成
-- [x] 定投计划：生成 pending 与跳过（RunDailyDca / SkipDcaForDate）—— RunDailyDca 已完成并装配
-- [x] 官方净值抓取（NavProvider + NavRepo）—— 本地 NavProvider 已完成（方案 A）
-- [x] T+1/T+2 确认（ConfirmPendingTrades）—— 已完成并装配
-- [x] 日报（GenerateDailyReport + Discord Webhook）—— 市值版（本地 NAV，缺失跳过并标注）已完成，保留份额模式用于兼容
+**当前可用功能**：
+- `CreateTrade`：手动录入买卖交易
+- `RunDailyDca` / `SkipDca`：定投计划执行与跳过
+- `FetchNavs`：抓取官方净值（支持单日与区间）
+- `ConfirmTrades`：T+N 自动确认（A 股 T+1、QDII T+2）
+- `MakeDailyReport`：生成日报并推送（Discord）
+- `MakeRebalance`：计算再平衡建议
+- `MakeStatusSummary`：生成持仓状态（市值/份额视图）
+
+> 命令见 `operations-log.md`；规则见 `settlement-rules.md`。
 
 ---
 
-## v0.2（进行中：可信 & 可用的支付宝闭环）
+## v0.2（已完成：可信 & 可用的支付宝闭环）
 
 > 目标：让一个只用支付宝的用户，真的可以用这套系统跑完一整套伪同步闭环，而且数字大体可信。
+
+**核心功能已完成**：
 
 - [x] 交易确认规则 v0.2（TradingCalendar + 定价日）
   - 引入 `TradingCalendar` 与"定价日+lag"口径，统一 ConfirmPendingTrades 规则。
@@ -90,56 +97,48 @@
   - 新增 Job：`fetch_navs_range --from YYYY-MM-DD --to YYYY-MM-DD`。
   - 与确认任务配合：回填完成后执行 `confirm_trades --day <to>` 补确认。
 
-- [ ] T+N & NAV 地基收尾（数字大体可信）
-  - 引入/完善交易日历表，至少覆盖工作日 + 法定节假日的简单规则。
-  - （推迟至 v0.3）NAV 缺失回退到最近交易日的策略作为“可选开关”，v0.2 保持严格不回退；缺失仅提示“可能低估”。
-  - 对补录 NAV / 回填历史 NAV 后的持仓/日报，提供重算路径（job 或命令）。
+- [x] T+N & NAV 地基收尾（v0.3 已完成）
+  - `trading_calendar` 表已建立，支持 DB 日历与严格模式
+  - `sync_calendar` / `patch_calendar` Jobs 完成（exchange_calendars + Akshare）
+  - `pricing_date` 字段持久化到 `trades` 表（Schema v3）
+  - `SettlementPolicy` 引入（卫兵/定价/计数日历组合）
 
+**v0.2 遗留待实现**（优先级低，推迟到后续版本）：
 - [ ] 支付宝伪同步闭环（建议 → 执行 → 确认）
-  - 明确三个状态：系统建议（pending/proposed）、用户已在平台执行但未录入、用户已在本系统中录入并等待确认。
-  - 在 CLI 中提供一条顺畅路径：从“看到建议” → “勾选/标记已在支付宝下单” → “录入实际成交信息（价格/份额/费用）” → “确认进持仓”。
-
-- [ ] 最小集交易意图 / 动作类型建模（为 AI 准备标签）
-  - 为每笔交易增加动作类型：`DCA_EXECUTION` / `DISCRETIONARY_BUY` / `DISCRETIONARY_SELL` / `REBALANCE_BUY` / `REBALANCE_SELL`。
-  - 记录 `who_decided`（`HUMAN` / `SYSTEM_SUGGESTED`）以及可选 `plan_id`，在入口层提供合理默认值（例如：DCA 生成的 trades 默认 `SYSTEM_SUGGESTED`）。
-  - 为每笔动作预留 `tags`（JSON）与可选 `note` 文本备注，用于后续 AI/规则补充更细致的意图标签。
-
-- [ ] Platform & Account 抽象（单用户、单平台实现）
-  - 抽象 `Platform` / `Account` 概念，底层 trades/funds 尽量保持平台无关。
-  - 当前功能上仅支持“一个用户 + 支付宝 + CNY”，但保证将来扩展多平台/多币种时 schema 不需推翻重来（例如字段提前预留 `currency`，但暂时固定为 CNY）。
-
-- [ ] 冷却期机制（简单版）
-  - 引入全局冷却期配置（例如：按资产或全局的 N 天），限制同一方向的频繁调仓。
-  - 再平衡建议在冷却期内不重复触发，只给出“处于冷却期”的说明。
+- [ ] 交易意图标签（为 AI 准备）
+- [ ] Platform & Account 抽象
+- [ ] 冷却期机制
 
 ---
 
-## v0.3（未来方向，继续为 AI 打基础）
+## v0.3（当前进行中：日历策略化与接口重构）
 
-> 重点：在 v0.2 “可信闭环”基础上，丰富视图和历史数据，让 AI 有“足够干净可分析的样本”。
+> 重点：完善交易日历基础设施，实现 QDII 复杂确认规则，统一核心接口。
 
-- [ ] 周报 / 月报（基础版）
-  - 在日报的基础上，增加周期汇总视图（收益、回撤、配置变化、行为统计）。
-  - 为后续 AI 分析“你在多长周期内如何执行计划”提供输入。
+**已完成**：
+- [x] 日历基础设施（v0.3）
+  - `CalendarProtocol` 统一接口：`is_open` / `next_open` / `shift`
+  - `DbCalendarService`：SQLite 实现，严格模式（缺失即报错）
+  - `sync_calendar` Job：从 exchange_calendars 注油基础日历
+  - `patch_calendar` Job：从 Akshare 在线修补节假日数据
 
-- [ ] 历史导入（严格 CSV 模板）
-  - 支持从支付宝/其它平台导出对账单 CSV，再通过统一模板导入。
-  - 确保导入路径与现有数据结构兼容，为 AI 后续训练提供足够历史样本。
-  - 支持“raw row + 解析后字段”双存储，以便未来重算或修正解析逻辑。
+- [x] SettlementPolicy 策略化（v0.3）
+  - 三层日历组合：`guard_calendar` / `pricing_calendar` / `count_calendar`
+  - 支持 QDII 场景：CN_A 卫兵 + US_NYSE 定价/计数
+  - `pricing_date` 持久化到 `trades` 表（Schema v3）
 
-- [ ] 盘中估值作为附加信息（不作为核心口径）
-  - 以附加字段形式记录盘中估值，报告中清晰区分“官方收盘净值 vs 盘中估值”。
-  - 在报表中标注数据来源和置信度，避免误用盘中估值。
+- [x] 核心接口统一（v0.3）
+  - 所有 Protocol 集中到 `src/core/protocols.py`
+  - 领域数据类迁移到 `src/core/`（如 `FundInfo`）
+  - 删除 `src/usecases/ports.py`（接口层不再在 usecases）
+  - Service 命名统一：`NavProtocol` / `NavSourceProtocol` / `ReportProtocol`
 
-- [ ] 用户动作日志 & ContextSnapshot 视图（逻辑层）
-  - 基于现有表结构构建逻辑视图：`UserActionLog`、`ContextSnapshot`。
-  - 保证每次操作都能关联到一个“当时组合状态”的快照，避免事后回填穿越。
-  - 先实现简化版快照字段（总资产、现金比例、主要资产类占比、单基金集中度等），为未来扩展保留空间。
-
-- [ ] 操作结果 Outcome 标注（事后效果分析）
-  - 定义 `Outcome` 视图/表：评估某次操作在 T+30/T+90/T+180 的表现。
-  - 与 `UserActionLog` 建立关联，支持“有此操作 vs 无此操作”的对比（至少先做一个近似版本）。
-  - 为未来 AI 学习“在什么环境下做什么动作更好”提供标签数据。
+**v0.3 遗留待实现**（推迟到 v0.4+）：
+- [ ] 周报 / 月报
+- [ ] 历史导入（CSV 模板）
+- [ ] 盘中估值（附加信息）
+- [ ] 用户动作日志 & ContextSnapshot
+- [ ] 操作结果 Outcome 标注
 
 ---
 
@@ -186,16 +185,6 @@
     - 保留份额视图作为兜底对照，允许在 NAV 缺失时自动切换或同时输出。
 
 ---
-
-## 当前功能一览表（v0.1 / 现状）
-
-| 功能类别 | UseCase | Job/CLI |
-|---------|---------|---------|
-| 市场数据抓取 | `FetchNavsForDay` | `jobs.fetch_navs` / `jobs.fetch_navs_range` |
-| 录入交易（买卖） | `CreateTrade` | `app.main buy/sell` |
-| 定投计划 | `RunDailyDca` / `SkipDcaForDate` | `jobs.run_dca` / `app.main skip-dca` |
-| 交易确认（T+N） | `ConfirmPendingTrades` | `jobs.confirm_trades` |
-| 日报+再平衡 | `GenerateDailyReport` / `GenerateRebalanceSuggestion` | `jobs.daily_report` / `app.main status` |
 
 > 具体命令示例与参数说明见 `docs/operations-log.md`。
 > 业务规则（NAV 策略、确认规则、再平衡触发条件等）见 `docs/settlement-rules.md`。

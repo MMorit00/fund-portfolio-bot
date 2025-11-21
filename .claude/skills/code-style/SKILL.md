@@ -5,7 +5,10 @@ description: Applies the fund-portfolio-bot Python coding conventions, including
 
 # Python code style for fund-portfolio-bot
 
-本 Skill 强调 `docs/python-style.md` 中最关键、最容易被忽略的规则。
+本 Skill 强调编码规范中最关键、最容易被忽略的规则。
+
+> 完整编码规范见 `CLAUDE.md` 第 3 节（核心约束）。
+> 分层架构约束见 `.claude/skills/architecture/SKILL.md`。
 
 ## When to use
 
