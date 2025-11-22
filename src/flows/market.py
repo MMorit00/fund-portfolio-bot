@@ -1,14 +1,15 @@
+"""市场数据相关业务流程（净值抓取等）。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING, List
 
-if TYPE_CHECKING:
-    from src.data.client.eastmoney import EastmoneyNavService
-    from src.data.db.fund_repo import FundRepo
-    from src.data.db.nav_repo import NavRepo
+from src.core.dependency import dependency
+from src.data.client.eastmoney import EastmoneyNavService
+from src.data.db.fund_repo import FundRepo
+from src.data.db.nav_repo import NavRepo
 
 
 @dataclass(slots=True)
@@ -25,10 +26,17 @@ class FetchNavsResult:
     day: date
     total: int
     success: int
-    failed_codes: List[str]
+    failed_codes: list[str]
 
 
-class FetchNavs:
+@dependency
+def fetch_navs(
+    *,
+    day: date,
+    fund_repo: FundRepo | None = None,
+    nav_repo: NavRepo | None = None,
+    eastmoney_service: EastmoneyNavService | None = None,
+) -> FetchNavsResult:
     """
     遍历当前已配置基金，按指定日期调用外部 NavProvider 获取单位净值并落库。
 
@@ -36,31 +44,29 @@ class FetchNavs:
     - 仅抓取"指定日"的官方单位净值（严格版，不做回退）；
     - 成功条件：provider 返回 Decimal 且 > 0；否则视为失败；
     - 落库：调用 NavRepo.upsert(fund_code, day, nav)，按 (fund_code, day) 幂等。
+
+    Args:
+        day: 目标日期。
+        fund_repo: 基金仓储（可选，自动注入）。
+        nav_repo: 净值仓储（可选，自动注入）。
+        eastmoney_service: 东方财富服务（可选，自动注入）。
+
+    Returns:
+        抓取结果统计（day / total / success / failed_codes）。
     """
+    # 所有依赖已通过装饰器自动注入
+    funds = fund_repo.list_funds()
+    total = len(funds)
+    success = 0
+    failed_codes: list[str] = []
 
-    def __init__(
-        self,
-        fund_repo: "FundRepo",
-        nav_repo: "NavRepo",
-        provider: "EastmoneyNavService",
-    ) -> None:
-        self.fund_repo = fund_repo
-        self.nav_repo = nav_repo
-        self.provider = provider
+    for f in funds:
+        code = f.fund_code
+        nav = eastmoney_service.get_nav(code, day)
+        if nav is None or nav <= Decimal("0"):
+            failed_codes.append(code)
+            continue
+        nav_repo.upsert(code, day, nav)
+        success += 1
 
-    def execute(self, *, day: date) -> FetchNavsResult:
-        funds = self.fund_repo.list_funds()
-        total = len(funds)
-        success = 0
-        failed_codes: List[str] = []
-
-        for f in funds:
-            code = f.fund_code
-            nav = self.provider.get_nav(code, day)
-            if nav is None or nav <= Decimal("0"):
-                failed_codes.append(code)
-                continue
-            self.nav_repo.upsert(code, day, nav)
-            success += 1
-
-        return FetchNavsResult(day=day, total=total, success=success, failed_codes=failed_codes)
+    return FetchNavsResult(day=day, total=total, success=success, failed_codes=failed_codes)

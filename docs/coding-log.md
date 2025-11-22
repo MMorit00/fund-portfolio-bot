@@ -5,7 +5,99 @@
 
 ---
 
-## 2025-11-22 v0.3.1 架构简化与目录重构
+## 2025-11-22 v0.3.1 依赖注入重构（阶段 2）
+
+### 完成内容
+
+**Flow 层函数化**：
+- 将所有 Flow 业务类改为纯函数：
+  - `CreateTrade` → `create_trade()`
+  - `ConfirmTrades` → `confirm_trades()`
+  - `RunDailyDca` → `run_daily_dca()`
+  - `MakeDailyReport` → `make_daily_report()`
+  - `FetchNavs` → `fetch_navs()`
+  - 等 8 个函数（分布在 4 个文件）
+
+**依赖注入装饰器**：
+- 新建 `src/core/dependency.py`（170 行）：
+  - `@register(name)`：注册工厂函数到容器
+  - `@dependency`：自动注入函数参数（类似 FastAPI `Depends()`）
+  - `get_registered_deps()`：查看已注册依赖（调试用）
+- 新建 `src/core/container.py`（200 行，原 `deps.py`）：
+  - 集中管理 9 个依赖工厂函数
+  - 单例数据库连接：`get_db_connection()`
+  - Repo 工厂：`get_trade_repo()`, `get_nav_repo()` 等
+  - Service 工厂：`get_local_nav_service()`, `get_discord_report_service()` 等
+
+**CLI 层简化**：
+- 移除所有手动依赖实例化代码
+- 从 `xxx_flow()` 函数改为直接调用 Flow 函数
+- 示例：
+  ```python
+  # 重构前（>100 行）
+  def confirm_trades_flow(day: date):
+      db = DbHelper()
+      conn = db.get_connection()
+      calendar = CalendarService(conn)
+      trade_repo = TradeRepo(conn, calendar)
+      nav_service = LocalNavService(NavRepo(conn))
+      usecase = ConfirmTrades(trade_repo, nav_service)
+      return usecase.execute(today=day)
+
+  # 重构后（~60 行）
+  result = confirm_trades(today=day)  # 一行调用
+  ```
+
+**模块重命名**：
+- `src/core/injector.py` → `src/core/dependency.py`
+- `src/core/deps.py` → `src/core/container.py`
+
+### 决策
+
+**采用装饰器依赖注入的理由**：
+- **代码简洁**：移除 ~40% 的 CLI 样板代码
+- **类型安全**：保持完整的类型注解和 IDE 支持
+- **测试友好**：可以轻松传入 Mock 对象覆盖依赖
+- **可维护性**：集中管理依赖创建逻辑
+- **Pythonic**：函数式 + 装饰器优于 Java 风格的类
+
+**依赖注入设计原则**：
+- **显式注册**：所有可注入依赖必须通过 `@register` 显式注册
+- **命名一致**：注册名必须与函数参数名完全一致
+- **可覆盖**：调用时传入的非 None 参数不会被覆盖
+
+**Flow 函数签名规范**：
+```python
+@dependency
+def confirm_trades(
+    *,
+    today: date,  # 业务参数（必填）
+    trade_repo: TradeRepo | None = None,  # 依赖参数（自动注入）
+    nav_service: LocalNavService | None = None,  # 依赖参数（自动注入）
+) -> ConfirmResult:
+    # trade_repo 和 nav_service 已自动注入，直接使用
+    to_confirm = trade_repo.list_pending_to_confirm(today)
+    ...
+```
+
+### 影响范围
+
+- 更新文件：13 个 Python 文件（8 个 Flow + 5 个 CLI）
+- 新增文件：2 个（`dependency.py` + `container.py`）
+- 重命名文件：2 个（`deps.py` → `container.py`, `injector.py` → `dependency.py`）
+- 代码减少：~200 行（移除样板代码）
+- 已注册依赖：9 个
+
+### 验证结果
+
+- ✅ Ruff 检查：全部通过
+- ✅ 运行时测试：9 个依赖成功注册
+- ✅ CLI 命令：`python -m src.cli.confirm` / `python -m src.cli.dca` 正常运行
+- ✅ 无遗留手动依赖注入代码
+
+---
+
+## 2025-11-22 v0.3.1 架构简化与目录重构（阶段 1）
 
 ### 完成内容
 

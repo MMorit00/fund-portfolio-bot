@@ -70,16 +70,17 @@ docs/
 - Docstring 用中文
 
 **分层约束**：
-- `core`：纯核心逻辑，无外部依赖（models + rules + config/log）
-- `flows`：业务流程类，依赖 core 和 data
+- `core`：核心逻辑 + 依赖注入（models + rules + dependency + container + config/log）
+- `flows`：业务流程函数（纯函数 + `@dependency` 装饰器），依赖 core
 - `data`：数据访问，依赖 core（DB Repo + 外部客户端）
-- `cli`：只做参数解析与流程调用，不写业务逻辑
+- `cli`：只做参数解析与 Flow 函数调用，不写业务逻辑
 
 **命名规范**：
 - Repo 类：`TradeRepo`、`NavRepo`（直接具体类名）
 - Service 类：`CalendarService`、`EastmoneyNavService`
-- Flow 类：动宾结构（`CreateTrade`、`ConfirmTrades`、`MakeDailyReport`）
+- Flow 函数：小写蛇形（`create_trade()`、`confirm_trades()`、`make_daily_report()`）
 - Result 类：`{名词}Result`（如 `ReportResult`、`ConfirmResult`）
+- 依赖注入：`@dependency`、`@register`
 
 **日志前缀**：`[EastmoneyNav]` `[LocalNav]` `[Discord]` `[Job:xxx]`（详见 `operations-log.md`）
 
@@ -91,10 +92,10 @@ docs/
 
 敏感信息和可变参数通过环境变量 / `.env` 提供，**禁止写死在代码中**。
 
-**典型配置**（由 `src/app/config.py` 读取，完整列表见该文件及 `docs/operations-log.md`）：
+**典型配置**（由 `src/core/config.py` 读取，完整列表见该文件及 `docs/operations-log.md`）：
 - `DISCORD_WEBHOOK_URL` / `DB_PATH` / `ENABLE_SQL_DEBUG`
 
-**新增配置项**：先在文档写明用途 → 再在 `app/config.py` 集中读取 → **不直接用** `os.getenv`
+**新增配置项**：先在文档写明用途 → 再在 `core/config.py` 集中读取 → **不直接用** `os.getenv`
 
 ---
 

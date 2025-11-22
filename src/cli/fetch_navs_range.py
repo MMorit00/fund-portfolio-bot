@@ -5,11 +5,7 @@ import sys
 from datetime import date, timedelta
 
 from src.core.log import log
-from src.data.client.eastmoney import EastmoneyNavService
-from src.data.db.db_helper import DbHelper
-from src.data.db.fund_repo import FundRepo
-from src.data.db.nav_repo import NavRepo
-from src.flows.market import FetchNavs, FetchNavsResult
+from src.flows.market import fetch_navs
 
 
 def _parse_date(value: str | None) -> date:
@@ -40,60 +36,6 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def fetch_navs_range_flow(start: date, end: date) -> tuple[int, int, int, dict[str, list[date]]]:
-    """
-    批量抓取区间内每日净值的业务流程函数。
-
-    该函数封装了批量抓取的完整流程：
-    1. 初始化数据库连接和依赖
-    2. 遍历日期区间调用 FetchNavs 用例
-    3. 汇总结果
-
-    Args:
-        start: 开始日期
-        end: 结束日期
-
-    Returns:
-        元组：(总天数, 最大基金数, 总成功数, 失败汇总字典)
-    """
-    # 初始化数据库
-    db_helper = DbHelper()
-    db_helper.init_schema_if_needed()
-    conn = db_helper.get_connection()
-
-    # 构造依赖
-    fund_repo = FundRepo(conn)
-    nav_repo = NavRepo(conn)
-    nav_service = EastmoneyNavService()
-
-    # 创建用例
-    usecase = FetchNavs(fund_repo, nav_repo, nav_service)
-
-    # 执行批量抓取
-    total_days = 0
-    total_funds = 0
-    total_success = 0
-    failed_aggregate: dict[str, list[date]] = {}
-
-    for day in _daterange(start, end):
-        total_days += 1
-        result: FetchNavsResult = usecase.execute(day=day)
-        total_funds = max(total_funds, result.total)
-        total_success += result.success
-
-        if result.failed_codes:
-            for code in result.failed_codes:
-                failed_aggregate.setdefault(code, []).append(day)
-
-        failed_count = len(result.failed_codes)
-        log(
-            f"[Job] fetch_navs_range 逐日：day={day} "
-            f"total={result.total} success={result.success} failed={failed_count}"
-        )
-
-    return total_days, total_funds, total_success, failed_aggregate
-
-
 def main() -> int:
     """
     批量抓取任务入口：按日期区间抓取每日官方净值。
@@ -108,9 +50,29 @@ def main() -> int:
         if end < start:
             start, end = end, start
 
-        log(f"[Job] fetch_navs_range 开始：from={start} to={end}")
+        log(f"[Job:fetch_navs_range] 开始：from={start} to={end}")
 
-        total_days, total_funds, total_success, failed_aggregate = fetch_navs_range_flow(start, end)
+        # 执行批量抓取（直接调用 Flow 函数）
+        total_days = 0
+        total_funds = 0
+        total_success = 0
+        failed_aggregate: dict[str, list[date]] = {}
+
+        for day in _daterange(start, end):
+            total_days += 1
+            result = fetch_navs(day=day)
+            total_funds = max(total_funds, result.total)
+            total_success += result.success
+
+            if result.failed_codes:
+                for code in result.failed_codes:
+                    failed_aggregate.setdefault(code, []).append(day)
+
+            failed_count = len(result.failed_codes)
+            log(
+                f"[Job:fetch_navs_range] 逐日：day={day} "
+                f"total={result.total} success={result.success} failed={failed_count}"
+            )
 
         # 汇总输出
         total_failed = len(failed_aggregate)
