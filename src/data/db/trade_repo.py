@@ -141,6 +141,22 @@ class TradeRepo:
         ).fetchall()
         return [_row_to_trade(r) for r in rows]
 
+    def list_by_status(self, status: str) -> list[Trade]:
+        """
+        按状态查询交易（v0.3.2 新增）。
+
+        Args:
+            status: 交易状态（pending/confirmed/skipped）。
+
+        Returns:
+            符合条件的交易列表，按 trade_date 降序、id 降序排列。
+        """
+        rows = self.conn.execute(
+            "SELECT * FROM trades WHERE status = ? ORDER BY trade_date DESC, id DESC",
+            (status,),
+        ).fetchall()
+        return [_row_to_trade(r) for r in rows]
+
     def position_shares(self) -> dict[str, Decimal]:  # type: ignore[override]
         """按基金代码聚合已确认交易，返回净持仓份额（买入为正，卖出为负）。"""
         rows = self.conn.execute(
@@ -182,15 +198,7 @@ def _row_to_trade(row: sqlite3.Row) -> Trade:
     """将 trades 表的 SQLite 行记录转换为 Trade 实体。"""
     shares = row["shares"]
     confirm_date_str = row["confirm_date"]
-    # v0.2.1: 使用 try-except 处理可能缺失的新字段（向后兼容）
-    try:
-        confirmation_status = row["confirmation_status"] or "normal"
-        delayed_reason = row["delayed_reason"]
-        delayed_since_str = row["delayed_since"]
-    except (KeyError, IndexError):
-        confirmation_status = "normal"
-        delayed_reason = None
-        delayed_since_str = None
+    delayed_since_str = row["delayed_since"]
 
     return Trade(
         id=int(row["id"]),
@@ -204,8 +212,7 @@ def _row_to_trade(row: sqlite3.Row) -> Trade:
         remark=row["remark"],
         pricing_date=date.fromisoformat(row["pricing_date"]) if row["pricing_date"] else None,
         confirm_date=date.fromisoformat(confirm_date_str) if confirm_date_str else None,
-        # v0.2.1: 确认延迟追踪字段
-        confirmation_status=confirmation_status,
-        delayed_reason=delayed_reason,
+        confirmation_status=row["confirmation_status"] or "normal",
+        delayed_reason=row["delayed_reason"],
         delayed_since=date.fromisoformat(delayed_since_str) if delayed_since_str else None,
     )

@@ -7,7 +7,7 @@ from typing import Literal
 
 TradeType = Literal["buy", "sell"]
 TradeStatus = Literal["pending", "confirmed", "skipped"]
-MarketType = Literal["A", "QDII"]
+MarketType = Literal["CN_A", "US_NYSE"]  # v0.3.2：统一使用标准市场标识
 
 
 @dataclass(slots=True)

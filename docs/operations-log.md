@@ -11,69 +11,106 @@
 - `ENABLE_SQL_DEBUG`：是否启用 SQL trace 打印
 - `TRADING_CALENDAR_BACKEND`：交易日历后端（`db` 或默认 `simple`）
 
-配置统一在 `src/app/config.py` 读取。
+配置统一在 `src/core/config.py` 读取。
 
 ## 数据库初始化
 
 ```bash
-# 重建测试数据库（开发阶段）
+# 重建测试数据库（开发阶段，推荐）
+rm data/portfolio.db  # 删除旧库
 SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 
 # 备份数据库（重大变更前）
 ./scripts/backup_db.sh
 ```
 
+**Schema 管理（v0.3.2）**：
+- 当前开发阶段：使用 `CREATE TABLE IF NOT EXISTS`，**无自动迁移**
+- `SCHEMA_VERSION = 4`（仅用于标识版本，不含迁移逻辑）
+- **开发建议**：测试数据库直接删除重建，无需迁移
+- **未来生产**：需要时可添加版本检测与 ALTER 迁移逻辑
+
 ## 日常 Job 调度（推荐顺序）
 
 ```bash
 # 假设上一交易日为 T
-python -m src.jobs.fetch_navs --date T      # 抓取 T 日 NAV
-python -m src.jobs.confirm_trades --day T+1 # 确认到期交易
-python -m src.jobs.daily_report --as-of T   # 生成日报（展示日=T）
+python -m src.cli.fetch_navs --date T      # 抓取 T 日 NAV
+python -m src.cli.confirm --day T+1        # 确认到期交易
+python -m src.cli.report --as-of T         # 生成日报（展示日=T）
 ```
 
 > NAV 策略、确认规则、再平衡触发条件见 `docs/settlement-rules.md`。
 
-## CLI 常用命令
+## v0.3.2 配置管理 CLI
 
-### 手动录入交易
+### 基金配置
+
+```bash
+# 添加基金
+python -m src.cli.fund add --code 000001 --name "华夏成长" --class CSI300 --market CN_A
+python -m src.cli.fund add --code 110022 --name "易方达中小盘混合" --class CSI300 --market CN_A
+python -m src.cli.fund add --code 161125 --name "标普500" --class US_QDII --market US_NYSE
+
+# 查看所有基金
+python -m src.cli.fund list
+```
+
+### 定投计划管理
+
+```bash
+# 添加定投计划
+python -m src.cli.dca_plan add --fund 000001 --amount 1000 --freq monthly --rule 1
+python -m src.cli.dca_plan add --fund 110022 --amount 500 --freq weekly --rule MON
+python -m src.cli.dca_plan add --fund 161125 --amount 200 --freq daily --rule ""
+
+# 查看定投计划
+python -m src.cli.dca_plan list              # 全部
+python -m src.cli.dca_plan list --active-only # 仅活跃
+
+# 禁用/启用定投计划
+python -m src.cli.dca_plan disable --fund 000001
+python -m src.cli.dca_plan enable --fund 000001
+```
+
+### 资产配置目标
+
+```bash
+# 设置配置（权重为小数，如 0.6 表示 60%）
+python -m src.cli.alloc set --class CSI300 --target 0.6 --deviation 0.05
+python -m src.cli.alloc set --class US_QDII --target 0.3 --deviation 0.05
+python -m src.cli.alloc set --class CGB_3_5Y --target 0.1 --deviation 0.03
+
+# 查看配置（会提示总权重是否为 100%）
+python -m src.cli.alloc show
+```
+
+### 手动交易
 
 ```bash
 # 买入
-python -m src.app.main buy --fund-code 110022 --amount 1000
-python -m src.app.main buy --fund-code 110022 --amount 1000.50 --date 2025-11-15
+python -m src.cli.trade buy --fund 110022 --amount 1000
+python -m src.cli.trade buy --fund 110022 --amount 1000.50 --date 2025-11-15
 
 # 卖出
-python -m src.app.main sell --fund-code 000001 --amount 500 --date 2025-11-16
-```
+python -m src.cli.trade sell --fund 000001 --amount 500 --date 2025-11-16
 
-参数：
-- `--fund-code`（必需）：基金代码（必须已在 `funds` 表中）
-- `--amount`（必需）：交易金额
-- `--date`（可选）：交易日期，默认今天
-
-### 查看持仓状态
-
-```bash
-# 默认上一交易日市值视图
-python -m src.app.main status
-
-# 指定视图与展示日
-python -m src.app.main status --mode market --as-of 2025-11-12
-python -m src.app.main status --mode shares --as-of 2025-11-12
+# 查询交易记录
+python -m src.cli.trade list                    # 全部交易
+python -m src.cli.trade list --status pending   # 待确认
+python -m src.cli.trade list --status confirmed # 已确认
 ```
 
 ### 补录历史 NAV
 
 ```bash
 # 单日抓取
-python -m src.jobs.fetch_navs --date 2025-11-20
+python -m src.cli.fetch_navs --date 2025-11-20
 
 # 区间抓取（闭区间，幂等）
-python -m src.jobs.fetch_navs_range --from 2025-01-01 --to 2025-03-31
+python -m src.cli.fetch_navs_range --from 2025-01-01 --to 2025-03-31
 
 # 补录后重跑确认
-python -m src.jobs.confirm_trades --day 2025-04-01
+python -m src.cli.confirm --day 2025-04-01
 ```
 
 ## 日志前缀规范
@@ -102,10 +139,10 @@ CSV 格式：`market,day,is_trading_day` 或 `day,is_trading_day`（market 默�
 ```bash
 # 注油（exchange_calendars）
 TRADING_CALENDAR_BACKEND=db DB_PATH=data/portfolio.db \
-  python -m src.jobs.sync_calendar --cal CN_A --from 2024-01-01 --to 2030-12-31
+  python -m src.cli.sync_calendar --cal CN_A --from 2024-01-01 --to 2030-12-31
 
 # 修补（Akshare/新浪，在线覆盖）
-DB_PATH=data/portfolio.db python -m src.jobs.patch_calendar
+DB_PATH=data/portfolio.db python -m src.cli.patch_calendar
 ```
 
 ### 验证日历数据
@@ -134,10 +171,10 @@ ORDER BY delayed_since;
 
 ```bash
 # 1. 补录缺失 NAV
-python -m src.jobs.fetch_navs --date 2025-11-15
+python -m src.cli.fetch_navs --date 2025-11-15
 
 # 2. 重跑确认（自动处理延迟交易）
-python -m src.jobs.confirm_trades
+python -m src.cli.confirm
 ```
 
 ### 手动标记已确认（异常场景）

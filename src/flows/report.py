@@ -68,7 +68,7 @@ def make_daily_report(
     *,
     mode: ReportMode = "market",
     as_of: date | None = None,
-    alloc_repo: AllocConfigRepo | None = None,
+    alloc_config_repo: AllocConfigRepo | None = None,
     trade_repo: TradeRepo | None = None,
     fund_repo: FundRepo | None = None,
     nav_service: LocalNavService | None = None,
@@ -86,7 +86,7 @@ def make_daily_report(
     Args:
         mode: 视图模式，`market`（市值）或 `shares`（份额），默认 `market`。
         as_of: 展示日（通常为上一交易日）。未提供时由调用方决定默认值。
-        alloc_repo: 配置仓储（可选，自动注入）。
+        alloc_config_repo: 配置仓储（可选，自动注入）。
         trade_repo: 交易仓储（可选，自动注入）。
         fund_repo: 基金仓储（可选，自动注入）。
         nav_service: 净值查询服务（可选，自动注入）。
@@ -95,7 +95,7 @@ def make_daily_report(
         文本格式的日报内容。
     """
     # 所有依赖已通过装饰器自动注入
-    target_weights = alloc_repo.get_target_weights()
+    target_weights = alloc_config_repo.get_target_weights()
     position_shares = trade_repo.position_shares()
 
     # 由调用方传入 as_of，未传入时使用今天（调用方通常会提供上一交易日）
@@ -140,7 +140,7 @@ def send_daily_report(
 def make_rebalance_suggestion(
     *,
     today: date,
-    alloc_repo: AllocConfigRepo | None = None,
+    alloc_config_repo: AllocConfigRepo | None = None,
     trade_repo: TradeRepo | None = None,
     fund_repo: FundRepo | None = None,
     nav_service: LocalNavService | None = None,
@@ -155,7 +155,7 @@ def make_rebalance_suggestion(
 
     Args:
         today: 建议生成日期。
-        alloc_repo: 配置仓储（可选，自动注入）。
+        alloc_config_repo: 配置仓储（可选，自动注入）。
         trade_repo: 交易仓储（可选，自动注入）。
         fund_repo: 基金仓储（可选，自动注入）。
         nav_service: 净值查询服务（可选，自动注入）。
@@ -164,8 +164,8 @@ def make_rebalance_suggestion(
         再平衡建议结果。
     """
     # 所有依赖已通过装饰器自动注入
-    target_weights = alloc_repo.get_target_weights()
-    thresholds = alloc_repo.get_max_deviation()
+    target_weights = alloc_config_repo.get_target_weights()
+    thresholds = alloc_config_repo.get_max_deviation()
 
     position_shares = trade_repo.position_shares()
 

@@ -15,10 +15,10 @@ from src.flows.trade import create_trade
 def run_daily_dca(
     *,
     today: date,
-    dca_repo: DcaPlanRepo | None = None,
+    dca_plan_repo: DcaPlanRepo | None = None,
 ) -> int:
     """
-    生成当天应执行的定投 pending 交易。
+    生成当天应执行的定投 pending 交易（v0.3.2：仅处理 active 计划）。
 
     规则：
     - daily: 每日生成
@@ -27,13 +27,14 @@ def run_daily_dca(
 
     Args:
         today: 当日日期；按计划频率/规则判断是否到期。
-        dca_repo: 定投计划仓储（可选，自动注入）。
+        dca_plan_repo: 定投计划仓储（可选，自动注入）。
 
     Returns:
         生成的交易数量。
     """
-    # dca_repo 已通过装饰器自动注入
-    plans = dca_repo.list_due_plans(today)
+    # dca_plan_repo 已通过装饰器自动注入
+    # v0.3.2：仅获取活跃计划（status='active'）
+    plans = dca_plan_repo.list_active()
     count = 0
     for p in plans:
         if not _is_plan_due(p, today):

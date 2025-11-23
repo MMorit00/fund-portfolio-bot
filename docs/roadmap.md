@@ -14,17 +14,17 @@
 - ✅ **v0.2**：支付宝闭环（严格 NAV 策略、延迟追踪、再平衡）
 - ✅ **v0.3**：日历策略化（SettlementPolicy、Schema v3）
 - ✅ **v0.3.1**：架构简化（目录重构、依赖注入）
-- 🚧 **v0.3.2**：配置管理 CLI（补齐用户闭环，当前）
-- 🔜 **v0.4+**：增强功能（周报/月报/历史导入）
+- ✅ **v0.3.2**：配置管理 CLI + 代码清理（补齐用户闭环）
+- 🔜 **v0.4+**：行为数据增强（ActionLog/Snapshot/Outcome）
 - 🔮 **v1.x+**：AI 辅助决策（远期）
 
 ---
 
-## v0.3.2（配置管理 CLI，🚧 进行中）
+## v0.3.2（配置管理 CLI + 代码清理，✅ 已完成）
 
 ### 目标
 
-补齐配置管理入口，让用户无需直接操作数据库即可完成初始化，形成完整的投资管理闭环。
+补齐配置管理入口，让用户无需直接操作数据库即可完成初始化，形成完整的投资管理闭环。同时清理向后兼容代码，优化依赖注入机制。
 
 ### 背景问题
 
@@ -47,32 +47,21 @@ python -m src.cli.confirm
 
 ### 完成内容
 
-**Schema 更新**：
-- `dca_plans` 表增加 `status` 字段（active/disabled）
-- 支持禁用定投计划而不删除记录
+**阶段 1：配置管理 CLI**
 
-**新增 Flow 函数**（`src/flows/config.py`）：
-- `add_or_update_fund()` - 基金配置管理
-- `list_funds()` - 查询基金列表
-- `upsert_dca_plan()` - 定投计划管理
-- `disable_dca_plan()` - 禁用定投计划
-- `set_alloc_config()` - 资产配置目标设置
-- `get_alloc_config()` - 查询配置目标
+- ✅ **Schema v4**：`dca_plans.status`、市场类型标准化（`CN_A`/`US_NYSE`）
+- ✅ **Flow 函数**（`flows/config.py`）：`add_fund`、`list_funds`、`add_dca_plan`、`list_dca_plans`、`enable/disable_dca_plan`、`set_allocation`、`list_allocations`
+- ✅ **Flow 函数**（`flows/trade.py`）：`list_trades`（支持状态筛选）
+- ✅ **CLI 命令**：`fund.py`、`dca_plan.py`、`alloc.py`、`trade.py`（buy/sell/list）
+- ✅ **仓储层**：`DcaPlanRepo`、`AllocConfigRepo`、`TradeRepo`、`FundRepo` 功能增强
 
-**新增 Flow 函数**（`src/flows/trade.py`）：
-- `list_trades()` - 查询交易记录
+**阶段 2：代码清理与优化**
 
-**新增 CLI 命令**（P0 优先级）：
-- `fund.py` - 基金配置（add/list/update）
-- `dca_plan.py` - 定投计划（add/list/disable）
-- `alloc.py` - 资产配置（set/show）
-- `trade.py` - 手动交易（buy/sell/list）
-
-**仓储层增强**：
-- `DcaPlanRepo`: 新增 status 管理方法
-- `AllocConfigRepo`: 新增 set/list 方法
-- `TradeRepo`: 新增 list_by_status 方法
-- `FundRepo`: 确保支持 upsert
+- ✅ **删除兼容代码**：`DcaPlanRepo`、`DbHelper`、`TradeRepo`、`settlement.py` 中的向后兼容逻辑
+- ✅ **依赖注入优化**：`flows/__init__.py` 单点触发，删除 5 个 flow 模块的重复导入
+- ✅ **脚本更新**：`scripts/dev_seed_db.py` 升级为 v0.3.2 架构
+- ✅ **文档更新**：`operations-log.md` 澄清 Schema 管理现状
+- ✅ **全面验证**：所有 CLI 命令测试通过、依赖注入正常、Ruff 检查通过
 
 ### 用户体验改进
 
@@ -442,5 +431,82 @@ v1.1+ (AI 进阶功能)
 - v0.5+：可靠性增强（锦上添花）
 - v1.0+：AI 能力（基于 v0.4 数据基建）
 
-> **当前阶段**：v0.3.2 配置管理 CLI 开发中，完成后将进入 v0.4 行为数据基建阶段。
+> **当前阶段**：v0.3.2 已完成，下一步进入 v0.4 行为数据基建阶段。
 > **核心目标**：v0.4 是关键转折点，从"能用"到"记得足够多"，为未来所有分析功能（AI 和非 AI）打好基础。
+
+---
+# 功能表与使用 
+
+## 配置管理
+- `添加基金`(`add_fund`)
+  - `src.cli.fund add --code 000001 --name "华夏成长" --class CSI300 --market CN_A`
+- `查看基金`(`list_funds`)
+  - `src.cli.fund list`
+- `添加定投`(`add_dca_plan`)
+  - `src.cli.dca_plan add --fund 000001 --amount 1000 --freq weekly --rule MON`
+- `查看定投`(`list_dca_plans`)
+  - `src.cli.dca_plan list [--active-only]`
+- `启用/禁用定投`(`enable_dca_plan` / `disable_dca_plan`)
+  - `src.cli.dca_plan enable/disable --fund 000001`
+- `设置配置目标`(`set_allocation`)
+  - `src.cli.alloc set --class CSI300 --target 0.6 --deviation 0.05`
+- `查看配置目标`(`list_allocations`)
+  - `src.cli.alloc show`
+
+## 交易与确认
+- `手动交易`(`create_trade`)
+  - `src.cli.trade buy/sell --fund 000001 --amount 5000`
+- `查询交易`(`list_trades`)
+  - `src.cli.trade list [--status pending/confirmed/skipped]`
+- `确认交易`(`confirm_trades`)
+  - `src.cli.confirm`
+- `执行定投`(`run_daily_dca`)
+  - `src.cli.dca`
+
+## 数据与报告
+- `抓取净值`(`fetch_navs`)
+  - `src.cli.fetch_navs [--date 2025-01-15]`
+- `生成日报`(`make_daily_report`)
+  - `src.cli.report [--mode market/shares] [--as-of 2025-01-15]`
+- `再平衡建议`(`make_rebalance_suggestion`)
+  - `src.cli.rebalance`
+
+---
+
+## 典型工作流
+
+### 首次使用
+```bash
+# 1. 初始化数据库
+SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
+
+# 2. 配置基金
+python -m src.cli.fund add --code 000001 --name "华夏成长" --class CSI300 --market CN_A
+
+# 3. 设置定投计划
+python -m src.cli.dca_plan add --fund 000001 --amount 1000 --freq monthly --rule 1
+
+# 4. 设置资产配置
+python -m src.cli.alloc set --class CSI300 --target 0.6 --deviation 0.05
+```
+
+### 日常运维
+```bash
+# 每日执行（按顺序）
+python -m src.cli.dca              # 1. 执行定投
+python -m src.cli.fetch_navs       # 2. 抓取净值
+python -m src.cli.confirm          # 3. 确认交易
+python -m src.cli.report           # 4. 生成日报
+```
+
+### 手动调仓
+```bash
+# 1. 查看再平衡建议
+python -m src.cli.rebalance
+
+# 2. 执行交易
+python -m src.cli.trade buy --fund 000001 --amount 5000
+
+# 3. 查看交易状态
+python -m src.cli.trade list --status pending
+```

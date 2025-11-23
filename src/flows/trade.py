@@ -149,3 +149,32 @@ def confirm_trades(
         skipped_funds=sorted(skipped_funds_set),
         delayed_count=delayed_count,
     )
+
+
+@dependency
+def list_trades(
+    *,
+    status: str | None = None,
+    trade_repo: TradeRepo | None = None,
+) -> list[Trade]:
+    """
+    查询交易记录（v0.3.2）。
+
+    Args:
+        status: 交易状态（pending/confirmed/skipped），None 表示查询所有状态。
+        trade_repo: 交易仓储（可选，自动注入）。
+
+    Returns:
+        交易列表，按 trade_date 降序、id 降序排列。
+    """
+    if status is not None:
+        return trade_repo.list_by_status(status)
+
+    # status=None 时，合并所有状态的交易
+    all_trades: list[Trade] = []
+    for s in ["pending", "confirmed", "skipped"]:
+        all_trades.extend(trade_repo.list_by_status(s))
+
+    # 按 trade_date 降序、id 降序排序
+    all_trades.sort(key=lambda t: (t.trade_date, t.id or 0), reverse=True)
+    return all_trades

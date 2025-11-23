@@ -28,6 +28,7 @@
     - 工厂函数名应清晰表达返回的对象类型
     - @register 的名字必须与 Flow 函数参数名一致
     - 单例资源（如数据库连接）应在模块级缓存
+    - 本模块在 src/flows/__init__.py 中自动导入，确保注册表在任何 Flow 使用前被填充
 """
 
 from __future__ import annotations
@@ -185,7 +186,7 @@ def get_discord_report_service() -> DiscordReportService:
     return DiscordReportService()
 
 
-@register("alloc_repo")
+@register("alloc_config_repo")
 def get_alloc_config_repo() -> AllocConfigRepo:
     """
     获取资产配置仓储。
@@ -193,7 +194,7 @@ def get_alloc_config_repo() -> AllocConfigRepo:
     Returns:
         资产配置仓储实例。
 
-    注册名：alloc_repo
+    注册名：alloc_config_repo
     """
     conn = get_db_connection()
     return AllocConfigRepo(conn)

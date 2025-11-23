@@ -6,7 +6,7 @@ from typing import Optional
 
 from src.core.config import enable_sql_debug, get_db_path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA_DDL = """
 CREATE TABLE IF NOT EXISTS funds (
@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS dca_plans (
     fund_code TEXT PRIMARY KEY,
     amount TEXT NOT NULL,
     frequency TEXT NOT NULL,
-    rule TEXT NOT NULL
+    rule TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active'
 );
 
 CREATE TABLE IF NOT EXISTS alloc_config (

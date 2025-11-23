@@ -42,6 +42,7 @@
 - 注册名必须与函数参数名完全一致（大小写敏感）
 - 仅当参数值为 None 时才会自动注入
 - IDE 可能无法推断注入后的类型，但运行时保证正确
+- 依赖注册在 src/flows/__init__.py 自动触发（导入任何 flow 模块时生效）
 """
 
 from __future__ import annotations

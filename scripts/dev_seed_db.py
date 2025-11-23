@@ -1,4 +1,4 @@
-"""开发环境数据初始化脚本（v0.3 版本）。
+"""开发环境数据初始化脚本（v0.3.2 版本）。
 
 职责：
 - 初始化开发用 SQLite 数据：基金/定投/配置/净值/样例交易
@@ -21,18 +21,17 @@ import os
 from datetime import date, timedelta
 from decimal import Decimal
 
-from src.adapters.datasources.local_nav import LocalNavService
-from src.adapters.db.sqlite.alloc_config_repo import SqliteAllocConfigRepo
-from src.adapters.db.sqlite.calendar import DbCalendarService
-from src.adapters.db.sqlite.db_helper import SqliteDbHelper
-from src.adapters.db.sqlite.dca_plan_repo import SqliteDcaPlanRepo
-from src.adapters.db.sqlite.fund_repo import SqliteFundRepo
-from src.adapters.db.sqlite.nav_repo import SqliteNavRepo
-from src.adapters.db.sqlite.trade_repo import SqliteTradeRepo
-from src.core.asset_class import AssetClass
-from src.core.trade import Trade
-from src.core.trading.settlement import calc_settlement_dates, default_policy
-from src.usecases.trading.confirm_pending import ConfirmTrades
+from src.core.models.asset_class import AssetClass
+from src.core.models.trade import Trade
+from src.core.rules.settlement import calc_settlement_dates, default_policy
+from src.data.db.alloc_config_repo import AllocConfigRepo
+from src.data.db.calendar import CalendarService
+from src.data.db.db_helper import DbHelper
+from src.data.db.dca_plan_repo import DcaPlanRepo
+from src.data.db.fund_repo import FundRepo
+from src.data.db.nav_repo import NavRepo
+from src.data.db.trade_repo import TradeRepo
+from src.flows.trade import confirm_trades
 
 
 def _seed_basic_calendar(conn, today: date, days_back: int = 30) -> None:
@@ -74,7 +73,7 @@ def _seed_basic_calendar(conn, today: date, days_back: int = 30) -> None:
     print(f"[DevSeed] 已填充 {len(rows)} 天的 CN_A 交易日历（工作日=交易日）")
 
 
-def _prev_business_day(d: date, calendar: DbCalendarService, n: int = 1) -> date:
+def _prev_business_day(d: date, calendar: CalendarService, n: int = 1) -> date:
     """
     返回 d 之前的第 n 个交易日。
 
@@ -101,38 +100,41 @@ def main() -> None:
 
     行为：可通过环境变量控制重置与自动确认。
     """
-    helper = SqliteDbHelper()
+    helper = DbHelper()
     helper.init_schema_if_needed()
     conn = helper.get_connection()
 
     # 可选：重置核心表，避免历史数据干扰
     reset = os.getenv("SEED_RESET", "1") == "1"
     if reset:
+        # 查询已存在的表
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
+            "('trades', 'navs', 'funds', 'dca_plans', 'alloc_config', 'trading_calendar')"
+        )
+        existing_tables = {row[0] for row in cursor.fetchall()}
+
         with conn:
-            conn.execute("DELETE FROM trades")
-            conn.execute("DELETE FROM navs")
-            conn.execute("DELETE FROM funds")
-            conn.execute("DELETE FROM dca_plans")
-            conn.execute("DELETE FROM alloc_config")
-            conn.execute("DELETE FROM trading_calendar")
-        print("[DevSeed] 已重置所有核心表数据")
+            for table in existing_tables:
+                conn.execute(f"DELETE FROM {table}")
+        print(f"[DevSeed] 已重置核心表数据：{', '.join(sorted(existing_tables))}")
 
     # 填充基础交易日历（开发用简化版）
     today = date.today()
     _seed_basic_calendar(conn, today, days_back=30)
 
     # 初始化仓储和服务
-    fund_repo = SqliteFundRepo(conn)
-    calendar = DbCalendarService(conn)
-    trade_repo = SqliteTradeRepo(conn, calendar)
-    nav_repo = SqliteNavRepo(conn)
-    _ = SqliteDcaPlanRepo(conn)  # dca_repo 用于初始化表结构，不在脚本中直接使用
-    alloc_repo = SqliteAllocConfigRepo(conn)
+    fund_repo = FundRepo(conn)
+    calendar = CalendarService(conn)
+    trade_repo = TradeRepo(conn, calendar)
+    nav_repo = NavRepo(conn)
+    _ = DcaPlanRepo(conn)  # dca_repo 用于初始化表结构，不在脚本中直接使用
+    alloc_repo = AllocConfigRepo(conn)
 
     # Seed funds（幂等）
-    fund_repo.add_fund("110022", "易方达沪深300ETF联接", AssetClass.CSI300, "A")
-    fund_repo.add_fund("000001", "华夏大盘精选", AssetClass.CSI300, "A")
-    fund_repo.add_fund("162411", "华宝标普美国消费", AssetClass.US_QDII, "QDII")
+    fund_repo.add_fund("110022", "易方达沪深300ETF联接", AssetClass.CSI300, "CN_A")
+    fund_repo.add_fund("000001", "华夏大盘精选", AssetClass.CSI300, "CN_A")
+    fund_repo.add_fund("162411", "华宝标普美国消费", AssetClass.US_QDII, "US_NYSE")
     print("[DevSeed] 已添加 3 只测试基金")
 
     # Seed DCA plan
@@ -167,7 +169,7 @@ def main() -> None:
     trade_day_a = _prev_business_day(today, calendar, n=1)
 
     # 计算定价日和确认日（使用策略）
-    policy = default_policy("A")
+    policy = default_policy("CN_A")
     pricing_date, confirm_date = calc_settlement_dates(trade_day_a, policy, calendar)
 
     # Seed NAV：
@@ -187,7 +189,7 @@ def main() -> None:
         amount=Decimal("1000"),
         trade_date=trade_day_a,
         status="pending",
-        market="A",
+        market="CN_A",
     )
     saved = trade_repo.add(trade)
     print(
@@ -202,9 +204,7 @@ def main() -> None:
 
     # 自动执行一次确认（默认开启）
     if os.getenv("SEED_SIMULATE_CONFIRM", "1") == "1":
-        nav_service = LocalNavService(nav_repo)
-        usecase = ConfirmTrades(trade_repo, nav_service)
-        result = usecase.execute(today=confirm_date)
+        result = confirm_trades(today=confirm_date)
         print(
             f"[DevSeed] 确认结果: confirmed={result.confirmed_count}, "
             f"skipped={result.skipped_count}, delayed={result.delayed_count}"
@@ -220,7 +220,7 @@ def main() -> None:
             amount=Decimal("500"),
             trade_date=delayed_trade_day,
             status="pending",
-            market="QDII",
+            market="US_NYSE",
         )
         saved_delayed = trade_repo.add(delayed_trade)
         print(

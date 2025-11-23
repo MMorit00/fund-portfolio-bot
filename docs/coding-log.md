@@ -5,6 +5,102 @@
 
 ---
 
+## 2025-11-22 v0.3.2 配置管理 CLI（闭环完成）
+
+### 完成内容
+
+**问题定位**：
+- v0.3.1 完成架构重构后，发现用户必须直接操作数据库才能配置基金、定投计划、资产配置
+- 破坏了"命令行工具"的定位，无法形成完整业务闭环
+
+**解决方案**：
+- 新建 4 个配置管理 CLI 模块（共 ~400 行）
+- 补全仓储层的 upsert/list 方法（~100 行）
+- 新建 Flow 层配置管理函数（~200 行）
+
+**新增文件**：
+- `src/flows/config.py`：8 个配置管理 Flow 函数
+  - 基金管理：`add_fund()` / `list_funds()`
+  - 定投计划：`add_dca_plan()` / `list_dca_plans()` / `disable_dca_plan()` / `enable_dca_plan()`
+  - 资产配置：`set_allocation()` / `list_allocations()`
+- `src/flows/trade.py`：新增 `list_trades()` 函数
+- `src/cli/fund.py`：基金配置 CLI（add/list 子命令）
+- `src/cli/dca_plan.py`：定投计划 CLI（add/list/disable/enable 子命令）
+- `src/cli/alloc.py`：资产配置 CLI（set/show 子命令）
+- `src/cli/trade.py`：手动交易 CLI（buy/sell/list 子命令）
+- `src/core/models/alloc_config.py`：AllocConfig 数据类
+
+**仓储层增强**：
+- `DcaPlanRepo`：新增 `upsert_plan()` / `set_status()` / `list_all()` / `list_active()`
+- `AllocConfigRepo`：新增 `set_alloc()` / `list_all()`
+- `TradeRepo`：新增 `list_by_status()`
+- `FundRepo`：确认已有 `add_fund()` upsert 支持
+
+**Schema 变更**（v3 → v3，无版本号变化）：
+- `dca_plans` 表增加 `status TEXT NOT NULL DEFAULT 'active'` 字段
+- 向后兼容：`_row_to_plan()` 使用 `row.get("status", "active")` 兼容旧数据
+
+**依赖注册修正**：
+- `container.py`：`alloc_repo` 重命名为 `alloc_config_repo`（与 Flow 参数名一致）
+
+### 决策
+
+**CLI 设计原则**：
+- **子命令模式**：每个 CLI 文件支持多个子命令（add/list/set/show 等）
+- **职责单一**：每个 CLI 只负责参数解析和结果展示，业务逻辑在 Flow 层
+- **用户友好**：
+  - 使用有意义的参数名（`--fund` / `--class` / `--target`）
+  - 提供清晰的错误提示（参数验证、计划不存在等）
+  - 显示操作结果摘要（如 `alloc show` 提示总权重是否为 100%）
+
+**定投计划状态管理**：
+- 新增 `status` 字段（active/disabled）：支持临时禁用而不删除配置
+- 新增 `enable_dca_plan()` 函数：对称设计（disable/enable 成对）
+- 理由：用户可能短期暂停定投，后续恢复，无需重新配置
+
+**交易查询策略**：
+- `list_trades(status=None)` 合并所有状态（pending/confirmed/skipped）
+- 按 trade_date 降序排列（最新交易在前）
+- 理由：避免为"查询所有交易"单独添加 `TradeRepo.list_all()` 方法
+
+**命名规范统一**：
+- Flow 函数：`snake_case`（如 `add_fund()` / `set_allocation()`）
+- CLI 子命令：`kebab-case`（如 `dca_plan add` / `alloc show`）
+- Repo 方法：`snake_case`（如 `upsert_plan()` / `list_all()`）
+
+### 影响范围
+
+- 新增文件：7 个（1 个 Model + 1 个 Flow + 4 个 CLI + 1 个 __init__）
+- 修改文件：5 个 Repo + 1 个 Flow + 1 个 container + 2 个 docs
+- Schema 变更：1 个字段（dca_plans.status）
+- 代码增量：~700 行
+- 文档更新：`operations-log.md` 新增完整 v0.3.2 CLI 用法示例
+
+### 验证结果
+
+- ✅ Ruff 检查：全部通过（自动修复 2 处 import 顺序）
+- ✅ CLI 用法：operations-log.md 已更新示例
+- ✅ 业务闭环：用户可完全通过 CLI 完成配置 → 定投 → 确认 → 报表流程
+
+### 用户体验对比
+
+**重构前**（v0.3.1）：
+```bash
+# ❌ 必须直接操作数据库
+sqlite3 data/portfolio.db "INSERT INTO funds VALUES ('000001', '华夏成长', 'CSI300', 'CN_A');"
+sqlite3 data/portfolio.db "INSERT INTO dca_plans VALUES ('000001', '1000', 'monthly', '1');"
+```
+
+**重构后**（v0.3.2）：
+```bash
+# ✅ 使用统一的 CLI
+python -m src.cli.fund add --code 000001 --name "华夏成长" --class CSI300 --market CN_A
+python -m src.cli.dca_plan add --fund 000001 --amount 1000 --freq monthly --rule 1
+python -m src.cli.alloc set --class CSI300 --target 0.6 --deviation 0.05
+```
+
+---
+
 ## 2025-11-22 v0.3.1 依赖注入重构（阶段 2）
 
 ### 完成内容
