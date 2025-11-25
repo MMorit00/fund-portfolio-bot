@@ -204,6 +204,27 @@ class TradeRepo:
         ).fetchall()
         return [_row_to_trade(r) for r in rows]
 
+    def cancel(self, trade_id: int) -> None:
+        """
+        取消 pending 交易（v0.3.4 新增）。
+
+        Args:
+            trade_id: 交易 ID。
+
+        Raises:
+            ValueError: 交易不存在或不是 pending 状态时抛出。
+
+        副作用：
+            将 status 从 pending 更新为 skipped。
+        """
+        cursor = self.conn.execute(
+            "UPDATE trades SET status = 'skipped' WHERE id = ? AND status = 'pending'",
+            (trade_id,),
+        )
+        if cursor.rowcount == 0:
+            raise ValueError(f"交易不存在或不可取消（仅支持 pending 状态）：trade_id={trade_id}")
+        self.conn.commit()
+
 
 def _decimal_to_str(value: Decimal | None) -> str | None:
     """将 Decimal 转换为字符串格式，None 原样返回。"""

@@ -74,6 +74,27 @@ class AllocConfigRepo:
         ).fetchall()
         return [_row_to_config(r) for r in rows]
 
+    def delete(self, asset_class: AssetClass) -> None:
+        """
+        删除资产配置目标（v0.3.4 新增）。
+
+        Args:
+            asset_class: 资产类别。
+
+        Raises:
+            ValueError: 配置不存在时抛出。
+
+        副作用：
+            从 alloc_config 表删除指定资产配置。
+        """
+        cursor = self.conn.execute(
+            "DELETE FROM alloc_config WHERE asset_class = ?",
+            (asset_class.value,),
+        )
+        if cursor.rowcount == 0:
+            raise ValueError(f"资产配置不存在：{asset_class.value}")
+        self.conn.commit()
+
 
 def _row_to_config(row: sqlite3.Row) -> AllocConfig:
     """将 SQLite Row 转换为 AllocConfig 对象。"""

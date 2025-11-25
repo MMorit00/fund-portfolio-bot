@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from src.core.log import log
-from src.flows.trade import create_trade, list_trades
+from src.flows.trade import cancel_trade, create_trade, list_trades
 
 
 def _parse_args() -> argparse.Namespace:
@@ -41,6 +41,10 @@ def _parse_args() -> argparse.Namespace:
         choices=["pending", "confirmed", "skipped"],
         help="按状态过滤（不指定则显示全部）",
     )
+
+    # ========== cancel 子命令 ==========
+    cancel_parser = subparsers.add_parser("cancel", help="取消 pending 交易")
+    cancel_parser.add_argument("--id", required=True, type=int, help="交易 ID")
 
     return parser.parse_args()
 
@@ -97,6 +101,22 @@ def _do_sell(args: argparse.Namespace) -> int:
         return 5
 
 
+def _do_cancel(args: argparse.Namespace) -> int:
+    """执行 cancel 命令。"""
+    try:
+        trade_id = args.id
+        log(f"[Trade:cancel] 取消交易：ID={trade_id}")
+        cancel_trade(trade_id=trade_id)
+        log(f"✅ 交易 {trade_id} 已取消")
+        return 0
+    except ValueError as err:
+        log(f"❌ 取消失败：{err}")
+        return 4
+    except Exception as err:  # noqa: BLE001
+        log(f"❌ 取消交易失败：{err}")
+        return 5
+
+
 def _do_list(args: argparse.Namespace) -> int:
     """执行 list 命令。"""
     try:
@@ -144,7 +164,7 @@ def _do_list(args: argparse.Namespace) -> int:
 
 def main() -> int:
     """
-    手动交易管理 CLI（v0.3.2）。
+    手动交易管理 CLI（v0.3.4）。
 
     Returns:
         退出码：0=成功；4=参数错误；5=其他失败。
@@ -157,6 +177,8 @@ def main() -> int:
         return _do_sell(args)
     elif args.command == "list":
         return _do_list(args)
+    elif args.command == "cancel":
+        return _do_cancel(args)
     else:
         log(f"❌ 未知命令：{args.command}")
         return 1

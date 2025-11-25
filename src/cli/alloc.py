@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from src.core.log import log
 from src.core.models.asset_class import AssetClass
-from src.flows.config import list_allocations, set_allocation
+from src.flows.config import delete_allocation, list_allocations, set_allocation
 
 
 def _parse_args() -> argparse.Namespace:
@@ -41,6 +41,16 @@ def _parse_args() -> argparse.Namespace:
     # ========== show 子命令 ==========
     subparsers.add_parser("show", help="查看所有资产配置目标")
 
+    # ========== delete 子命令 ==========
+    delete_parser = subparsers.add_parser("delete", help="删除资产配置目标")
+    delete_parser.add_argument(
+        "--class",
+        dest="asset_class",
+        required=True,
+        choices=["CSI300", "US_QDII", "CGB_3_5Y"],
+        help="资产类别",
+    )
+
     return parser.parse_args()
 
 
@@ -71,6 +81,22 @@ def _do_set(args: argparse.Namespace) -> int:
         return 0
     except Exception as err:  # noqa: BLE001
         log(f"❌ 设置资产配置失败：{err}")
+        return 5
+
+
+def _do_delete(args: argparse.Namespace) -> int:
+    """执行 delete 命令。"""
+    try:
+        asset_class = AssetClass(args.asset_class)
+        log(f"[Alloc:delete] 删除资产配置：{asset_class.value}")
+        delete_allocation(asset_class=asset_class)
+        log(f"✅ 资产配置 {asset_class.value} 删除成功")
+        return 0
+    except ValueError as err:
+        log(f"❌ 删除失败：{err}")
+        return 4
+    except Exception as err:  # noqa: BLE001
+        log(f"❌ 删除资产配置失败：{err}")
         return 5
 
 
@@ -106,7 +132,7 @@ def _do_show(_args: argparse.Namespace) -> int:
 
 def main() -> int:
     """
-    资产配置目标管理 CLI（v0.3.2）。
+    资产配置目标管理 CLI（v0.3.4）。
 
     Returns:
         退出码：0=成功；4=参数错误；5=其他失败。
@@ -117,6 +143,8 @@ def main() -> int:
         return _do_set(args)
     elif args.command == "show":
         return _do_show(args)
+    elif args.command == "delete":
+        return _do_delete(args)
     else:
         log(f"❌ 未知命令：{args.command}")
         return 1

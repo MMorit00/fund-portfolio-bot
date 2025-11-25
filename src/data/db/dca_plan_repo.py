@@ -111,6 +111,27 @@ class DcaPlanRepo:
         ).fetchall()
         return [_row_to_plan(r) for r in rows]
 
+    def delete(self, fund_code: str) -> None:
+        """
+        删除定投计划（v0.3.4 新增）。
+
+        Args:
+            fund_code: 基金代码。
+
+        Raises:
+            ValueError: 计划不存在时抛出。
+
+        副作用：
+            从 dca_plans 表删除指定计划。
+        """
+        cursor = self.conn.execute(
+            "DELETE FROM dca_plans WHERE fund_code = ?",
+            (fund_code,),
+        )
+        if cursor.rowcount == 0:
+            raise ValueError(f"定投计划不存在：{fund_code}")
+        self.conn.commit()
+
 
 def _row_to_plan(row: sqlite3.Row) -> DcaPlan:
     """将 SQLite Row 转换为 DcaPlan 对象。"""

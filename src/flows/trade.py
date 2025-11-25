@@ -178,3 +178,25 @@ def list_trades(
     # 按 trade_date 降序、id 降序排序
     all_trades.sort(key=lambda t: (t.trade_date, t.id or 0), reverse=True)
     return all_trades
+
+
+@dependency
+def cancel_trade(
+    *,
+    trade_id: int,
+    trade_repo: TradeRepo | None = None,
+) -> None:
+    """
+    取消 pending 交易（v0.3.4 新增）。
+
+    Args:
+        trade_id: 交易 ID。
+        trade_repo: 交易仓储（可选，自动注入）。
+
+    Raises:
+        ValueError: 交易不存在或不是 pending 状态时抛出。
+
+    副作用：
+        将指定交易的 status 从 pending 更新为 skipped。
+    """
+    trade_repo.cancel(trade_id)

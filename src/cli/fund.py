@@ -5,7 +5,7 @@ import sys
 
 from src.core.log import log
 from src.core.models.asset_class import AssetClass
-from src.flows.config import add_fund, list_funds
+from src.flows.config import add_fund, list_funds, remove_fund
 
 
 def _parse_args() -> argparse.Namespace:
@@ -36,6 +36,10 @@ def _parse_args() -> argparse.Namespace:
     # ========== list 子命令 ==========
     subparsers.add_parser("list", help="列出所有基金")
 
+    # ========== remove 子命令 ==========
+    remove_parser = subparsers.add_parser("remove", help="删除基金")
+    remove_parser.add_argument("--code", required=True, help="基金代码（6位数字）")
+
     return parser.parse_args()
 
 
@@ -61,6 +65,22 @@ def _do_add(args: argparse.Namespace) -> int:
         return 5
 
 
+def _do_remove(args: argparse.Namespace) -> int:
+    """执行 remove 命令。"""
+    try:
+        fund_code = args.code
+        log(f"[Fund:remove] 删除基金：{fund_code}")
+        remove_fund(fund_code=fund_code)
+        log(f"✅ 基金 {fund_code} 删除成功")
+        return 0
+    except ValueError as err:
+        log(f"❌ 删除失败：{err}")
+        return 4
+    except Exception as err:  # noqa: BLE001
+        log(f"❌ 删除基金失败：{err}")
+        return 5
+
+
 def _do_list(_args: argparse.Namespace) -> int:
     """执行 list 命令。"""
     try:
@@ -82,10 +102,10 @@ def _do_list(_args: argparse.Namespace) -> int:
 
 def main() -> int:
     """
-    基金配置管理 CLI（v0.3.2）。
+    基金配置管理 CLI（v0.3.4）。
 
     Returns:
-        退出码：0=成功；5=失败。
+        退出码：0=成功；4=参数错误；5=其他失败。
     """
     args = _parse_args()
 
@@ -93,6 +113,8 @@ def main() -> int:
         return _do_add(args)
     elif args.command == "list":
         return _do_list(args)
+    elif args.command == "remove":
+        return _do_remove(args)
     else:
         log(f"❌ 未知命令：{args.command}")
         return 1

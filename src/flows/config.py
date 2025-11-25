@@ -56,6 +56,28 @@ def list_funds(
     return fund_repo.list_all()
 
 
+@dependency
+def remove_fund(
+    *,
+    fund_code: str,
+    fund_repo: FundRepo | None = None,
+) -> None:
+    """
+    删除基金（v0.3.4 新增）。
+
+    Args:
+        fund_code: 基金代码。
+        fund_repo: 基金仓储（可选，自动注入）。
+
+    Raises:
+        ValueError: 基金不存在时抛出。
+
+    副作用：
+        从 funds 表删除指定基金。
+    """
+    fund_repo.delete(fund_code)
+
+
 # ==================== 定投计划管理 ====================
 
 
@@ -151,6 +173,28 @@ def enable_dca_plan(
     dca_plan_repo.set_status(fund_code, "active")
 
 
+@dependency
+def delete_dca_plan(
+    *,
+    fund_code: str,
+    dca_plan_repo: DcaPlanRepo | None = None,
+) -> None:
+    """
+    删除定投计划（v0.3.4 新增）。
+
+    Args:
+        fund_code: 基金代码。
+        dca_plan_repo: 定投计划仓储（可选，自动注入）。
+
+    Raises:
+        ValueError: 计划不存在时抛出。
+
+    副作用：
+        从 dca_plans 表删除指定计划。
+    """
+    dca_plan_repo.delete(fund_code)
+
+
 # ==================== 资产配置管理 ====================
 
 
@@ -192,3 +236,25 @@ def list_allocations(
         所有资产配置列表，按 asset_class 排序。
     """
     return alloc_config_repo.list_all()
+
+
+@dependency
+def delete_allocation(
+    *,
+    asset_class: AssetClass,
+    alloc_config_repo: AllocConfigRepo | None = None,
+) -> None:
+    """
+    删除资产配置目标（v0.3.4 新增）。
+
+    Args:
+        asset_class: 资产类别（AssetClass 枚举）。
+        alloc_config_repo: 配置仓储（可选，自动注入）。
+
+    Raises:
+        ValueError: 配置不存在时抛出。
+
+    副作用：
+        从 alloc_config 表删除指定资产配置。
+    """
+    alloc_config_repo.delete(asset_class)

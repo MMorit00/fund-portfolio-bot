@@ -1,10 +1,23 @@
 from __future__ import annotations
 
+import argparse
 import sys
 from datetime import date
 
 from src.core.log import log
 from src.flows.dca import run_daily_dca
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="python -m src.cli.dca",
+        description="定投执行（按计划生成交易）",
+    )
+    parser.add_argument(
+        "--date",
+        help="执行日期（格式：YYYY-MM-DD，默认今天）",
+    )
+    return parser.parse_args()
 
 
 def main() -> int:
@@ -15,9 +28,11 @@ def main() -> int:
         退出码：0=成功；5=未知错误。
     """
     try:
-        log("[Job:dca] 开始")
-        today = date.today()
-        log(f"今日：{today}")
+        args = _parse_args()
+        date_arg = getattr(args, "date", None)
+        today = date.fromisoformat(date_arg) if date_arg else date.today()
+
+        log(f"[Job:dca] 开始：date={today}")
 
         # 直接调用 Flow 函数（依赖自动创建）
         count = run_daily_dca(today=today)

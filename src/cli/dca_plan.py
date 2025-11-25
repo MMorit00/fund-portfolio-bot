@@ -5,7 +5,13 @@ import sys
 from decimal import Decimal
 
 from src.core.log import log
-from src.flows.config import add_dca_plan, disable_dca_plan, enable_dca_plan, list_dca_plans
+from src.flows.config import (
+    add_dca_plan,
+    delete_dca_plan,
+    disable_dca_plan,
+    enable_dca_plan,
+    list_dca_plans,
+)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -52,6 +58,10 @@ def _parse_args() -> argparse.Namespace:
     # ========== enable 子命令 ==========
     enable_parser = subparsers.add_parser("enable", help="启用定投计划")
     enable_parser.add_argument("--fund", required=True, help="基金代码")
+
+    # ========== delete 子命令 ==========
+    delete_parser = subparsers.add_parser("delete", help="删除定投计划")
+    delete_parser.add_argument("--fund", required=True, help="基金代码")
 
     return parser.parse_args()
 
@@ -135,9 +145,25 @@ def _do_enable(args: argparse.Namespace) -> int:
         return 5
 
 
+def _do_delete(args: argparse.Namespace) -> int:
+    """执行 delete 命令。"""
+    try:
+        fund_code = args.fund
+        log(f"[DCA:delete] 删除定投计划：{fund_code}")
+        delete_dca_plan(fund_code=fund_code)
+        log(f"✅ 定投计划 {fund_code} 已删除")
+        return 0
+    except ValueError as err:
+        log(f"❌ 删除失败：{err}")
+        return 4
+    except Exception as err:  # noqa: BLE001
+        log(f"❌ 删除定投计划失败：{err}")
+        return 5
+
+
 def main() -> int:
     """
-    定投计划管理 CLI（v0.3.2）。
+    定投计划管理 CLI（v0.3.4）。
 
     Returns:
         退出码：0=成功；4=计划不存在；5=其他失败。
@@ -152,6 +178,8 @@ def main() -> int:
         return _do_disable(args)
     elif args.command == "enable":
         return _do_enable(args)
+    elif args.command == "delete":
+        return _do_delete(args)
     else:
         log(f"❌ 未知命令：{args.command}")
         return 1

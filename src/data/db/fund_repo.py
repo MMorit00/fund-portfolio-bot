@@ -43,6 +43,27 @@ class FundRepo:
         rows = self.conn.execute("SELECT * FROM funds ORDER BY fund_code").fetchall()
         return [_row_to_fund_info(r) for r in rows]
 
+    def delete(self, fund_code: str) -> None:
+        """
+        删除基金（v0.3.4 新增）。
+
+        Args:
+            fund_code: 基金代码。
+
+        Raises:
+            ValueError: 基金不存在时抛出。
+
+        副作用：
+            从 funds 表删除指定基金。
+        """
+        cursor = self.conn.execute(
+            "DELETE FROM funds WHERE fund_code = ?",
+            (fund_code,),
+        )
+        if cursor.rowcount == 0:
+            raise ValueError(f"基金不存在：{fund_code}")
+        self.conn.commit()
+
 
 def _row_to_fund_info(row: sqlite3.Row) -> FundInfo:
     """将 SQLite Row 转换为 FundInfo 对象。"""
