@@ -8,15 +8,6 @@ from src.core.log import log
 from src.flows.market import fetch_navs
 
 
-def _parse_date(value: str | None) -> date:
-    if not value:
-        raise ValueError("必须提供日期参数，格式 YYYY-MM-DD")
-    try:
-        return date.fromisoformat(value)
-    except ValueError as exc:
-        raise ValueError(f"日期格式无效：{value}（期望：YYYY-MM-DD）") from exc
-
-
 def _daterange(start: date, end: date):
     """包含端点的日期区间生成器。"""
     step = timedelta(days=1)
@@ -45,8 +36,8 @@ def main() -> int:
     """
     try:
         args = _parse_args()
-        start = _parse_date(args.date_from)
-        end = _parse_date(args.date_to)
+        start = date.fromisoformat(args.date_from)
+        end = date.fromisoformat(args.date_to)
         if end < start:
             start, end = end, start
 

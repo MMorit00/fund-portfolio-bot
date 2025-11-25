@@ -45,22 +45,12 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _parse_date(value: str | None) -> date:
-    """解析日期参数。"""
-    if not value:
-        return date.today()
-    try:
-        return date.fromisoformat(value)
-    except ValueError as exc:
-        raise ValueError(f"日期格式无效：{value}（期望：YYYY-MM-DD）") from exc
-
-
 def _do_buy(args: argparse.Namespace) -> int:
     """执行 buy 命令。"""
     try:
         fund_code = args.fund
         amount = args.amount
-        trade_day = _parse_date(args.date)
+        trade_day = date.fromisoformat(args.date) if args.date else date.today()
 
         log(f"[Trade:buy] 创建买入交易：{fund_code} - {amount} 元 @ {trade_day}")
         trade = create_trade(
@@ -86,7 +76,7 @@ def _do_sell(args: argparse.Namespace) -> int:
     try:
         fund_code = args.fund
         amount = args.amount
-        trade_day = _parse_date(args.date)
+        trade_day = date.fromisoformat(args.date) if args.date else date.today()
 
         log(f"[Trade:sell] 创建卖出交易：{fund_code} - {amount} 元 @ {trade_day}")
         trade = create_trade(

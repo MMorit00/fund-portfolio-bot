@@ -9,6 +9,7 @@ from decimal import Decimal
 from src.core.dependency import dependency
 from src.core.log import log
 from src.data.client.eastmoney import EastmoneyNavService
+from src.data.db.calendar import CalendarService
 from src.data.db.fund_repo import FundRepo
 from src.data.db.nav_repo import NavRepo
 from src.data.db.trade_repo import TradeRepo
@@ -19,7 +20,7 @@ class FetchNavsResult:
     """
     抓取某一日官方单位净值的结果汇总。
 
-    - day: 目标日期；
+    - day: 目标日期（补抓模式下为 None）；
     - total: 参与抓取的基金数量；
     - success: 成功写入的数量；
     - failed_codes: 获取失败或无效 NAV（None/<=0）的基金代码列表。
@@ -36,15 +37,13 @@ def fetch_navs(
     *,
     day: date | None = None,
     fund_codes: list[str] | None = None,
-    auto_detect_missing: bool = False,
-    days: int = 30,
     fund_repo: FundRepo | None = None,
     nav_repo: NavRepo | None = None,
-    trade_repo: TradeRepo | None = None,
     eastmoney_service: EastmoneyNavService | None = None,
+    calendar_service: CalendarService | None = None,
 ) -> FetchNavsResult:
     """
-    遍历当前已配置基金，按指定日期调用外部 NavProvider 获取单位净值并落库。
+    按指定日期抓取基金净值并落库。
 
     口径：
     - 仅抓取"指定日"的官方单位净值（严格版，不做回退）；
@@ -52,32 +51,27 @@ def fetch_navs(
     - 落库：调用 NavRepo.upsert(fund_code, day, nav)，按 (fund_code, day) 幂等。
 
     Args:
-        day: 目标日期（auto_detect_missing=False 时必填）。
+        day: 目标日期，None 时使用上一交易日。
         fund_codes: 指定基金代码列表（可选，未指定时抓取所有已配置基金）。
-        auto_detect_missing: 是否自动检测延迟交易的缺失 NAV 并补抓（v0.3.2 新增）。
-        days: auto_detect_missing=True 时，检测最近 N 天的延迟交易，默认 30 天。
-        fund_repo: 基金仓储（可选，自动注入）。
-        nav_repo: 净值仓储（可选，自动注入）。
-        trade_repo: 交易仓储（可选，自动注入，auto_detect_missing=True 时需要）。
-        eastmoney_service: 东方财富服务（可选，自动注入）。
+        fund_repo: 基金仓储（自动注入）。
+        nav_repo: 净值仓储（自动注入）。
+        eastmoney_service: 东方财富服务（自动注入）。
+        calendar_service: 交易日历服务（自动注入）。
 
     Returns:
-        抓取结果统计（day / total / success / failed_codes）。
+        抓取结果统计。
+
+    Raises:
+        RuntimeError: 日历数据缺失时。
     """
     # 所有依赖已通过装饰器自动注入
 
-    # 模式 1：自动检测缺失 NAV（基于延迟交易）
-    if auto_detect_missing:
-        return _fetch_navs_auto_detect(
-            days=days,
-            trade_repo=trade_repo,
-            nav_repo=nav_repo,
-            eastmoney_service=eastmoney_service,
-        )
-
-    # 模式 2：按指定日期抓取
+    # 默认使用上一交易日
     if day is None:
-        raise ValueError("day 参数在 auto_detect_missing=False 时必填")
+        prev_day = calendar_service.prev_open("CN_A", date.today(), lookback=15)
+        if prev_day is None:
+            raise RuntimeError("未能找到上一交易日（15天内），请检查 trading_calendar 表数据")
+        day = prev_day
 
     # 确定要抓取的基金列表
     if fund_codes:
@@ -110,15 +104,16 @@ def fetch_navs(
     return FetchNavsResult(day=day, total=total, success=success, failed_codes=failed_codes)
 
 
-def _fetch_navs_auto_detect(
+@dependency
+def fetch_missing_navs(
     *,
-    days: int,
-    trade_repo: TradeRepo,
-    nav_repo: NavRepo,
-    eastmoney_service: EastmoneyNavService,
+    days: int = 30,
+    trade_repo: TradeRepo | None = None,
+    nav_repo: NavRepo | None = None,
+    eastmoney_service: EastmoneyNavService | None = None,
 ) -> FetchNavsResult:
     """
-    自动检测缺失 NAV 并补抓（v0.3.2 新增）。
+    自动检测延迟交易的缺失 NAV 并补抓。
 
     逻辑：
     1. 扫描最近 N 天的延迟交易（confirmation_status='delayed'）
@@ -126,9 +121,17 @@ def _fetch_navs_auto_detect(
     3. 检查 navs 表，找出缺失的 (fund_code, pricing_date)
     4. 批量补抓这些缺失的 NAV
 
+    Args:
+        days: 检测最近 N 天的延迟交易，默认 30 天。
+        trade_repo: 交易仓储（自动注入）。
+        nav_repo: 净值仓储（自动注入）。
+        eastmoney_service: 东方财富服务（自动注入）。
+
     Returns:
         抓取结果统计（day 为 None，total 为缺失 NAV 的总数）。
     """
+    # 所有依赖已通过装饰器自动注入
+
     # 1. 扫描延迟交易
     delayed_trades = trade_repo.list_delayed_trades(days=days)
 

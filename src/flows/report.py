@@ -72,14 +72,14 @@ class ReportResult:
 @dataclass(slots=True)
 class RebalanceResult:
     """
-    再平衡建议结果（v0.3.3 增强版：含基金级别建议 + NAV 质量元数据）。
+    再平衡建议结果（含基金级别建议 + NAV 质量元数据）。
 
     - as_of: 建议生成日期（通常为今天）；
     - total_value: 参与建议计算的组合总市值；
     - suggestions: 按资产类别的建议列表，已按偏离绝对值降序排序；
-    - fund_suggestions: 按资产类别分组的基金级别建议（v0.3.3 阶段 2）；
-    - nav_quality_summary: 各基金 NAV 质量等级（v0.3.3 阶段 3）；
-    - skipped_funds: 因 NAV 缺失而跳过的基金列表（v0.3.3 阶段 3）。
+    - fund_suggestions: 按资产类别分组的基金级别建议；
+    - nav_quality_summary: 各基金 NAV 质量等级；
+    - skipped_funds: 因 NAV 缺失而跳过的基金列表。
     """
 
     as_of: date
@@ -101,6 +101,7 @@ def make_daily_report(
     trade_repo: TradeRepo | None = None,
     fund_repo: FundRepo | None = None,
     nav_service: LocalNavService | None = None,
+    calendar_service: CalendarService | None = None,
 ) -> str:
     """
     生成文本日报（市值/份额两种模式）。
@@ -109,31 +110,40 @@ def make_daily_report(
     - 仅统计"已确认份额"，不包含当日 pending；
     - 市值模式按"确认为准的份额 × 当日官方 NAV"计算；`nav <= 0` 视为缺失并在文末列出；
     - 缺失 NAV 的基金不参与市值累计与权重分母；
-    - v0.2 严格版不做 NAV 回退；
+    - 严格版不做 NAV 回退；
     - 再平衡提示阈值当前固定为 ±5%（后续可配置）。
 
     Args:
         mode: 视图模式，`market`（市值）或 `shares`（份额），默认 `market`。
-        as_of: 展示日（通常为上一交易日）。未提供时由调用方决定默认值。
-        alloc_config_repo: 配置仓储（可选，自动注入）。
-        trade_repo: 交易仓储（可选，自动注入）。
-        fund_repo: 基金仓储（可选，自动注入）。
-        nav_service: 净值查询服务（可选，自动注入）。
+        as_of: 展示日，None 时使用上一交易日。
+        alloc_config_repo: 配置仓储（自动注入）。
+        trade_repo: 交易仓储（自动注入）。
+        fund_repo: 基金仓储（自动注入）。
+        nav_service: 净值查询服务（自动注入）。
+        calendar_service: 交易日历服务（自动注入）。
 
     Returns:
         文本格式的日报内容。
+
+    Raises:
+        RuntimeError: 日历数据缺失时。
     """
     # 所有依赖已通过装饰器自动注入
+
+    # 默认使用上一交易日
+    if as_of is None:
+        prev_day = calendar_service.prev_open("CN_A", date.today(), lookback=15)
+        if prev_day is None:
+            raise RuntimeError("未能找到上一交易日（15天内），请检查 trading_calendar 表数据")
+        as_of = prev_day
+
     target_weights = alloc_config_repo.get_target_weights()
     position_shares = trade_repo.position_shares()
 
-    # 由调用方传入 as_of，未传入时使用今天（调用方通常会提供上一交易日）
-    eff_as_of = as_of or date.today()
-
     report_data = (
-        _build_market_view(position_shares, target_weights, eff_as_of, fund_repo, nav_service)
+        _build_market_view(position_shares, target_weights, as_of, fund_repo, nav_service)
         if mode == "market"
-        else _build_share_view(position_shares, target_weights, eff_as_of, fund_repo)
+        else _build_share_view(position_shares, target_weights, as_of, fund_repo)
     )
 
     # v0.2.1: 获取最近交易用于确认情况展示
@@ -168,7 +178,7 @@ def send_daily_report(
 @dependency
 def make_rebalance_suggestion(
     *,
-    today: date,
+    today: date | None = None,
     alloc_config_repo: AllocConfigRepo | None = None,
     trade_repo: TradeRepo | None = None,
     fund_repo: FundRepo | None = None,
@@ -176,36 +186,46 @@ def make_rebalance_suggestion(
     calendar_service: CalendarService | None = None,
 ) -> RebalanceResult:
     """
-    生成资产配置再平衡建议（v0.3.3 增强版：含基金建议 + NAV 智能降级）。
+    生成资产配置再平衡建议（含基金级别建议 + NAV 智能降级）。
 
     口径：
     - 权重口径与"市值版日报"一致：仅使用已确认份额；
-    - NAV 策略（v0.3.3 阶段 3 新增）：
-      - 优先使用当日 NAV（EXACT）
-      - 周末/节假日：降级使用最近交易日 NAV（FALLBACK_HOLIDAY）
-      - NAV 延迟 1-2 天：降级使用（FALLBACK_DELAYED，带警告）
-      - NAV 缺失 3+ 天：跳过该基金（MISSING）
+    - NAV 策略：
+      - 优先使用当日 NAV（exact）
+      - 周末/节假日：降级使用最近交易日 NAV（holiday）
+      - NAV 延迟 1-2 天：降级使用（delayed，带警告）
+      - NAV 缺失 3+ 天：跳过该基金（missing）
     - 阈值来源优先使用 alloc_config.max_deviation；未配置时使用默认 5%；
     - 建议金额采用 calc_rebalance_amount（总市值 × |偏离| × 50%），仅用于提示。
 
     Args:
-        today: 建议生成日期。
-        alloc_config_repo: 配置仓储（可选，自动注入）。
-        trade_repo: 交易仓储（可选，自动注入）。
-        fund_repo: 基金仓储（可选，自动注入）。
-        nav_service: 净值查询服务（可选，自动注入）。
-        calendar_service: 交易日历服务（可选，自动注入）。
+        today: 建议生成日期，None 时使用上一交易日。
+        alloc_config_repo: 配置仓储（自动注入）。
+        trade_repo: 交易仓储（自动注入）。
+        fund_repo: 基金仓储（自动注入）。
+        nav_service: 净值查询服务（自动注入）。
+        calendar_service: 交易日历服务（自动注入）。
 
     Returns:
-        再平衡建议结果（含 NAV 质量元数据）。
+        再平衡建议结果（含基金建议 + NAV 质量元数据）。
+
+    Raises:
+        RuntimeError: 日历数据缺失时。
     """
     # 所有依赖已通过装饰器自动注入
+
+    # 默认使用上一交易日
+    if today is None:
+        prev_day = calendar_service.prev_open("CN_A", date.today(), lookback=15)
+        if prev_day is None:
+            raise RuntimeError("未能找到上一交易日（15天内），请检查 trading_calendar 表数据")
+        today = prev_day
+
     target_weights = alloc_config_repo.get_target_weights()
     thresholds = alloc_config_repo.get_max_deviation()
-
     position_shares = trade_repo.position_shares()
 
-    # 聚合当日市值（使用 NAV 质量分级逻辑，v0.3.3 阶段 3）
+    # 聚合当日市值（使用 NAV 质量分级逻辑）
     class_values: dict[AssetClass, Decimal] = {}
     nav_quality_summary: dict[str, NavQuality] = {}
     skipped_funds: list[str] = []
@@ -215,14 +235,9 @@ def make_rebalance_suggestion(
         if not fund:
             continue
 
-        # 使用质量分级查询 NAV
         nav_result = _get_nav_with_quality(fund_code, today, nav_service, calendar_service, fund.market)
 
-        if nav_result.quality == NavQuality.missing:
-            skipped_funds.append(fund_code)
-            continue
-
-        if nav_result.nav is None:
+        if nav_result.quality == NavQuality.missing or nav_result.nav is None:
             skipped_funds.append(fund_code)
             continue
 
@@ -537,25 +552,25 @@ def _get_nav_with_quality(
     market: str = "CN_A",
 ) -> NavResult:
     """
-    查询 NAV 并评估数据质量（v0.3.3 阶段 3 新增）。
+    查询 NAV 并评估数据质量。
 
     逻辑：
     1. 尝试获取 target_date 的 NAV
-    2. 如果成功 → EXACT
+    2. 如果成功 → exact
     3. 如果失败，检查 target_date 是否交易日：
-       - 非交易日（周末/节假日）→ 查找最近交易日（lookback=5）→ FALLBACK_HOLIDAY
-       - 交易日但 NAV 缺失 → 查找最近交易日（lookback=5）→ FALLBACK_DELAYED
-       - 延迟 3+ 天或无可用 NAV → MISSING
+       - 非交易日（周末/节假日）→ 查找最近交易日 → holiday
+       - 交易日但 NAV 缺失 → 查找最近交易日 → delayed
+       - 延迟 3+ 天或无可用 NAV → missing
 
     Args:
-        fund_code: 基金代码
-        target_date: 目标日期
-        nav_service: NAV 查询服务
-        calendar: 交易日历服务
-        market: 市场标识（默认 "CN_A"）
+        fund_code: 基金代码。
+        target_date: 目标日期。
+        nav_service: NAV 查询服务。
+        calendar: 交易日历服务。
+        market: 市场标识（默认 "CN_A"）。
 
     Returns:
-        NAV 查询结果（包含质量等级）
+        NAV 查询结果（包含质量等级）。
     """
     # 1. 尝试获取当日 NAV
     nav = nav_service.get_nav(fund_code, target_date)
@@ -566,7 +581,7 @@ def _get_nav_with_quality(
     try:
         is_trading_day = calendar.is_open(market, target_date)
     except RuntimeError:
-        # 日历数据缺失，降级为 MISSING
+        # 日历数据缺失，降级为 missing
         return NavResult(None, NavQuality.missing, None)
 
     # 3. 查找最近交易日的 NAV
@@ -587,7 +602,7 @@ def _get_nav_with_quality(
         # 交易日但 NAV 延迟 1-2 天 → 可接受降级
         quality = NavQuality.delayed
     else:
-        # 延迟 3+ 天 → 数据质量太差，标记为 MISSING
+        # 延迟 3+ 天 → 数据质量太差，标记为 missing
         return NavResult(None, NavQuality.missing, None)
 
     return NavResult(fallback_nav, quality, last_trading)
@@ -604,15 +619,13 @@ def _suggest_specific_funds(
     today: date,
 ) -> list[FundSuggestion]:
     """
-    将资产类别级别的建议拆分到具体基金（v0.3.3 新增）。
+    将资产类别级别的建议拆分到具体基金。
 
     策略：
-    - buy：优先推荐该类别下当前持仓较小的基金（平均化）；
-    - sell：优先推荐持仓较大的基金（渐进式减仓）。
+    - buy：优先推荐该类别下当前持仓较小的基金（平均化），包含无持仓基金；
+    - sell：优先推荐持仓较大的基金（渐进式减仓），且金额不超过当前市值。
 
-    NAV 策略（v0.3.3 bugfix）：
-    - 复用 _get_nav_with_quality() 智能降级逻辑；
-    - 避免周末/节假日时基金建议为空的问题。
+    NAV 策略：复用 _get_nav_with_quality() 智能降级逻辑。
 
     Returns:
         基金建议列表（按建议金额降序）。
@@ -626,15 +639,22 @@ def _suggest_specific_funds(
 
     # 2. 计算每只基金的当前市值（使用智能降级 NAV）
     fund_values: dict[str, Decimal] = {}
+    fund_navs: dict[str, Decimal] = {}  # 存储有效 NAV 用于买入建议
+
     for fund in class_funds:
         shares = position_shares.get(fund.fund_code, Decimal("0"))
-        if shares <= Decimal("0"):
-            continue
-        # 使用 _get_nav_with_quality() 支持周末/节假日降级
         nav_result = _get_nav_with_quality(fund.fund_code, today, nav_service, calendar_service)
+
         if nav_result.nav is None or nav_result.nav <= Decimal("0"):
             continue
-        fund_values[fund.fund_code] = shares * nav_result.nav
+
+        fund_navs[fund.fund_code] = nav_result.nav
+
+        if shares > Decimal("0"):
+            fund_values[fund.fund_code] = shares * nav_result.nav
+        elif action == "buy":
+            # 买入时包含无持仓基金（市值为 0）
+            fund_values[fund.fund_code] = Decimal("0")
 
     if not fund_values:
         return []
@@ -646,8 +666,15 @@ def _suggest_specific_funds(
         # 买入：优先推荐持仓较小的基金（平均化）
         sorted_funds = sorted(fund_values.items(), key=lambda x: x[1])
     else:
-        # 卖出：优先推荐持仓较大的基金
-        sorted_funds = sorted(fund_values.items(), key=lambda x: x[1], reverse=True)
+        # 卖出：优先推荐持仓较大的基金，且排除无持仓基金
+        sorted_funds = sorted(
+            [(k, v) for k, v in fund_values.items() if v > Decimal("0")],
+            key=lambda x: x[1],
+            reverse=True,
+        )
+
+    if not sorted_funds:
+        return []
 
     # 4. 分配金额到具体基金（简化策略：平均分配）
     suggestions: list[FundSuggestion] = []
@@ -669,6 +696,10 @@ def _suggest_specific_funds(
             # 平均分配
             allocated = target_amount / Decimal(str(num_funds))
             allocated = min(allocated, remaining)
+
+        # 卖出时限制金额不超过当前市值
+        if action == "sell":
+            allocated = min(allocated, current_value)
 
         suggestions.append(
             FundSuggestion(

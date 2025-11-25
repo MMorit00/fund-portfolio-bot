@@ -20,25 +20,17 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _parse_day(value: str | None) -> date:
-    if not value:
-        return date.today()
-    try:
-        return date.fromisoformat(value)
-    except ValueError as exc:
-        raise ValueError(f"日期格式无效：{value}（期望：YYYY-MM-DD）") from exc
-
-
 def main() -> int:
     """
-    确认交易任务入口：按 v0.2.1 规则与 DB 预写确认日确认当日交易。
+    确认交易任务入口：按确认规则与 DB 预写确认日确认当日交易。
 
     Returns:
         退出码：0=成功；5=未知错误。
     """
     try:
         args = _parse_args()
-        day = _parse_day(getattr(args, "day", None))
+        day_arg = getattr(args, "day", None)
+        day = date.fromisoformat(day_arg) if day_arg else date.today()
         log(f"[Job:confirm] 开始：day={day}")
 
         # 直接调用 Flow 函数（依赖自动创建）

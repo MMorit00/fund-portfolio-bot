@@ -2,18 +2,10 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import date, timedelta
+from datetime import date
 
 from src.core.log import log
 from src.flows.report import send_daily_report
-
-
-def _prev_business_day(ref: date) -> date:
-    """上一工作日（仅周末视为非交易日）。"""
-    d = ref - timedelta(days=1)
-    while d.weekday() >= 5:
-        d = d - timedelta(days=1)
-    return d
 
 
 def _parse_args() -> argparse.Namespace:
@@ -45,9 +37,9 @@ def main() -> int:
         args = _parse_args()
         mode = getattr(args, "mode", "market")
         as_of_arg = getattr(args, "as_of", None)
-        as_of = date.fromisoformat(as_of_arg) if as_of_arg else _prev_business_day(date.today())
+        as_of = date.fromisoformat(as_of_arg) if as_of_arg else None
 
-        log(f"[Job:report] 开始：as_of={as_of}, mode={mode}")
+        log(f"[Job:report] 开始：as_of={as_of or '上一交易日'}, mode={mode}")
 
         # 直接调用 Flow 函数（依赖自动创建）
         success = send_daily_report(mode=mode, as_of=as_of)
