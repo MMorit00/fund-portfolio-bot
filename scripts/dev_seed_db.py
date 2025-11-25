@@ -132,9 +132,9 @@ def main() -> None:
     alloc_repo = AllocConfigRepo(conn)
 
     # Seed funds（幂等）
-    fund_repo.add_fund("110022", "易方达沪深300ETF联接", AssetClass.CSI300, "CN_A")
-    fund_repo.add_fund("000001", "华夏大盘精选", AssetClass.CSI300, "CN_A")
-    fund_repo.add_fund("162411", "华宝标普美国消费", AssetClass.US_QDII, "US_NYSE")
+    fund_repo.add("110022", "易方达沪深300ETF联接", AssetClass.CSI300, "CN_A")
+    fund_repo.add("000001", "华夏大盘精选", AssetClass.CSI300, "CN_A")
+    fund_repo.add("162411", "华宝标普美国消费", AssetClass.US_QDII, "US_NYSE")
     print("[DevSeed] 已添加 3 只测试基金")
 
     # Seed DCA plan
@@ -199,7 +199,7 @@ def main() -> None:
     )
 
     # Print pending list
-    pending = trade_repo.list_pending_to_confirm(confirm_date)
+    pending = trade_repo.list_pending(confirm_date)
     print(f"[DevSeed] 待确认交易（confirm_date={confirm_date}）: {len(pending)} 笔")
 
     # 自动执行一次确认（默认开启）

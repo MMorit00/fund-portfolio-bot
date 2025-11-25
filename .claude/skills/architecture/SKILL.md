@@ -142,7 +142,7 @@ def confirm_trades(
     nav_service: LocalNavService | None = None,  # 自动注入
 ) -> ConfirmResult:
     # 直接使用，无需检查 None
-    to_confirm = trade_repo.list_pending_to_confirm(today)
+    to_confirm = trade_repo.list_pending(today)
     ...
 
 # ✅ cli/ 直接调用 Flow 函数

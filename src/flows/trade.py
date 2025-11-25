@@ -46,7 +46,7 @@ def create_trade(
         - 测试时可传入 Mock 对象覆盖默认依赖
     """
     # trade_repo 和 fund_repo 已通过装饰器自动注入，直接使用
-    fund = fund_repo.get_fund(fund_code)
+    fund = fund_repo.get(fund_code)
     if not fund:
         raise ValueError(f"未知基金代码：{fund_code}")
 
@@ -109,7 +109,7 @@ def confirm_trades(
     """
     # trade_repo 和 nav_service 已通过装饰器自动注入
     # 找到今天应确认的交易（按交易日+T+N）
-    to_confirm = trade_repo.list_pending_to_confirm(today)
+    to_confirm = trade_repo.list_pending(today)
 
     confirmed_count = 0
     skipped_count = 0

@@ -100,7 +100,7 @@ scripts/       # 辅助脚本
        nav_service: LocalNavService | None = None,  # 自动注入
    ) -> ConfirmResult:
        # 直接使用，无需手动检查 None
-       to_confirm = trade_repo.list_pending_to_confirm(today)
+       to_confirm = trade_repo.list_pending(today)
        ...
 
 3. 调用阶段（src/cli/confirm.py）:

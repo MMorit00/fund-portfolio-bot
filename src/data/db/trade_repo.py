@@ -3,13 +3,10 @@ from __future__ import annotations
 import sqlite3
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING
 
 from src.core.models.trade import Trade
 from src.core.rules.settlement import calc_settlement_dates, default_policy
-
-if TYPE_CHECKING:
-    from src.data.db.calendar import CalendarService
+from src.data.db.calendar import CalendarService
 
 
 class TradeRepo:
@@ -22,7 +19,7 @@ class TradeRepo:
     - 已确认持仓份额聚合。
     """
 
-    def __init__(self, conn: sqlite3.Connection, calendar: "CalendarService") -> None:
+    def __init__(self, conn: sqlite3.Connection, calendar: CalendarService) -> None:
         self.conn = conn
         self.calendar = calendar
 
@@ -72,9 +69,9 @@ class TradeRepo:
             delayed_since=trade.delayed_since,
         )
 
-    def list_pending_to_confirm(self, confirm_date: date) -> list[Trade]:  # type: ignore[override]
+    def list_pending(self, confirm_date: date) -> list[Trade]:  # type: ignore[override]
         """
-        查询待确认交易（v0.2.1：包括过期交易以支持延迟追踪）。
+        查询待确认交易（包括过期交易以支持延迟追踪）。
 
         返回所有 confirm_date <= 指定日期 的 pending 交易，按 id 升序。
         """
@@ -185,6 +182,27 @@ class TradeRepo:
         )
         self.conn.commit()
         return cur.rowcount
+
+    def list_delayed_trades(self, days: int = 30) -> list[Trade]:
+        """
+        列出最近 N 天内的延迟交易（v0.3.2 新增）。
+
+        Args:
+            days: 查询天数范围，默认 30 天。
+
+        Returns:
+            confirmation_status='delayed' 的交易列表，按 trade_date 降序排列。
+        """
+        rows = self.conn.execute(
+            """
+            SELECT * FROM trades
+            WHERE confirmation_status = 'delayed'
+              AND trade_date >= date('now', '-' || ? || ' days')
+            ORDER BY trade_date DESC, id DESC
+            """,
+            (days,),
+        ).fetchall()
+        return [_row_to_trade(r) for r in rows]
 
 
 def _decimal_to_str(value: Decimal | None) -> str | None:

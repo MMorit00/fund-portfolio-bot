@@ -16,7 +16,7 @@ class FundRepo:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def add_fund(self, fund_code: str, name: str, asset_class: AssetClass, market: str) -> None:  # type: ignore[override]
+    def add(self, fund_code: str, name: str, asset_class: AssetClass, market: str) -> None:  # type: ignore[override]
         """新增或更新基金信息（fund_code 幂等）。"""
         with self.conn:
             self.conn.execute(
@@ -28,7 +28,7 @@ class FundRepo:
                 (fund_code, name, asset_class.value, market),
             )
 
-    def get_fund(self, fund_code: str) -> FundInfo | None:  # type: ignore[override]
+    def get(self, fund_code: str) -> FundInfo | None:  # type: ignore[override]
         """按基金代码读取，未找到返回 None。"""
         row = self.conn.execute(
             "SELECT * FROM funds WHERE fund_code = ?",
@@ -38,7 +38,7 @@ class FundRepo:
             return None
         return _row_to_fund_info(row)
 
-    def list_funds(self) -> list[FundInfo]:  # type: ignore[override]
+    def list_all(self) -> list[FundInfo]:  # type: ignore[override]
         """按 fund_code 排序返回全部基金。"""
         rows = self.conn.execute("SELECT * FROM funds ORDER BY fund_code").fetchall()
         return [_row_to_fund_info(r) for r in rows]

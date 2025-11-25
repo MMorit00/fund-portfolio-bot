@@ -7,6 +7,27 @@ from typing import Literal
 from src.core.models.asset_class import AssetClass
 
 
+@dataclass(slots=True)
+class FundSuggestion:
+    """
+    单只基金的调仓建议。
+
+    - fund_code: 基金代码
+    - fund_name: 基金名称
+    - action: "buy" 或 "sell"
+    - amount: 建议金额（非负）
+    - current_value: 当前持仓市值
+    - current_pct: 当前在该资产类别中的占比
+    """
+
+    fund_code: str
+    fund_name: str
+    action: Literal["buy", "sell"]
+    amount: Decimal
+    current_value: Decimal
+    current_pct: Decimal
+
+
 def calc_weight_diff(
     actual: dict[AssetClass, Decimal], target: dict[AssetClass, Decimal]
 ) -> dict[AssetClass, Decimal]:

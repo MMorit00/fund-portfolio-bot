@@ -30,14 +30,36 @@ SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 - **开发建议**：测试数据库直接删除重建，无需迁移
 - **未来生产**：需要时可添加版本检测与 ALTER 迁移逻辑
 
-## 日常 Job 调度（推荐顺序）
+## 日常运维流程（推荐）
+
+### 方案 A：早上定时执行（推荐）
 
 ```bash
-# 假设上一交易日为 T
-python -m src.cli.fetch_navs --date T      # 抓取 T 日 NAV
-python -m src.cli.confirm --day T+1        # 确认到期交易
-python -m src.cli.report --as-of T         # 生成日报（展示日=T）
+# 每天早上 9:00 自动运行（展示昨天的数据）
+python -m src.cli.dca              # 1. 执行定投（创建今日pending交易）
+python -m src.cli.fetch_navs       # 2. 抓取昨日NAV（默认，因今日NAV通常晚上才公布）
+python -m src.cli.confirm          # 3. 确认昨日创建的交易
+python -m src.cli.report           # 4. 生成日报（默认展示昨日数据）
 ```
+
+**说明**：
+- `fetch_navs` 默认抓"上一工作日"的 NAV，因为当日 NAV 通常在 18:00-22:00 后才公布
+- `report` 默认展示"上一工作日"的持仓，与 `fetch_navs` 保持一致
+- 今日创建的交易会在明天确认（T+1）
+
+### 方案 B：晚上补充执行（可选）
+
+```bash
+# 晚上 22:00 后手动运行（抓取今日NAV）
+python -m src.cli.fetch_navs --date $(date +%Y-%m-%d)  # 抓今日NAV
+python -m src.cli.report --as-of $(date +%Y-%m-%d)     # 查看今日持仓
+
+# 次日早上confirm时，昨天创建的交易就能被确认
+```
+
+**说明**：
+- 如需查看今日最新净值，晚上手动执行
+- 为次日早上的 `confirm` 准备好今日 NAV
 
 > NAV 策略、确认规则、再平衡触发条件见 `docs/settlement-rules.md`。
 
@@ -112,6 +134,114 @@ python -m src.cli.fetch_navs_range --from 2025-01-01 --to 2025-03-31
 # 补录后重跑确认
 python -m src.cli.confirm --day 2025-04-01
 ```
+
+---
+
+## v0.3.3 再平衡独立 CLI
+
+### 功能说明
+
+v0.3.3 新增独立再平衡 CLI，提供：
+- 快速查看资产配置状态和再平衡建议（无需跑完整日报）
+- 具体到基金级别的调仓建议（而非仅资产类别）
+- 智能买入/卖出策略（平均化 vs 渐进式减仓）
+
+### 基本用法
+
+```bash
+# 查看当前再平衡建议（默认：上一交易日）
+python -m src.cli.rebalance
+
+# 查看指定日期的再平衡建议
+python -m src.cli.rebalance --as-of 2025-01-20
+
+# 查看帮助
+python -m src.cli.rebalance --help
+```
+
+### 输出示例
+
+```
+📊 再平衡建议（2025-11-21）
+
+总市值：¥2,964.17
+
+当前资产配置：
+  CSI300: 100.0% (目标 50.0%) ⚠️ 偏高 50.0%
+  US_QDII: 0.0% (目标 30.0%) ⚠️ 偏低 30.0%
+  CGB_3_5Y: 0.0% (目标 20.0%) ⚠️ 偏低 20.0%
+
+调仓建议：
+  CSI300：建议卖出 ¥741
+    • [110022] 易方达沪深300ETF联接：¥741 (当前占比 100.0%)
+  US_QDII：建议买入 ¥445
+  CGB_3_5Y：建议买入 ¥296
+```
+
+### 状态说明
+
+- **✓ 正常**：当前权重在目标范围内（偏离 ≤ 5%）
+- **💡 偏低/偏高**：轻微偏离（5% < 偏离 ≤ 10%）
+- **⚠️ 偏低/偏高**：明显偏离（偏离 > 10%）
+
+### 基金建议策略
+
+**买入策略（平均化持仓）**：
+- 优先推荐该资产类别下当前持仓较小的基金
+- 目的：避免单只基金占比过大，分散风险
+
+**卖出策略（渐进式减仓）**：
+- 优先推荐持仓较大的基金
+- 目的：避免一次性清仓小持仓基金，保持流动性
+
+### 使用场景
+
+**场景 1：快速查看再平衡建议**
+```bash
+# 早上执行完日常流程后，单独查看再平衡建议
+python -m src.cli.dca
+python -m src.cli.fetch_navs
+python -m src.cli.confirm
+python -m src.cli.rebalance  # ✅ 快速查看，无需等待日报生成
+```
+
+**场景 2：周末规划下周调仓**
+```bash
+# 周六查看上周五的建议
+python -m src.cli.rebalance --as-of 2025-01-17
+
+# 根据输出的具体基金代码和金额，规划下周交易
+```
+
+**场景 3：配合手动交易**
+```bash
+# 1. 查看建议
+python -m src.cli.rebalance
+
+# 2. 执行建议的交易
+python -m src.cli.trade buy --fund 513500 --amount 2400
+python -m src.cli.trade sell --fund 110022 --amount 741
+
+# 3. 再次查看（验证）
+python -m src.cli.rebalance
+```
+
+### 注意事项
+
+1. **NAV 依赖**：
+   - 再平衡计算依赖当日 NAV
+   - 如果 NAV 缺失，会提示"当日 NAV 缺失，无法给出金额建议"
+   - 建议先运行 `python -m src.cli.fetch_navs` 确保 NAV 数据完整
+
+2. **默认日期**：
+   - 默认展示"上一交易日"（与日报一致）
+   - 原因：当日 NAV 通常晚上才公布，早上运行时使用昨日数据更稳定
+
+3. **建议性质**：
+   - 再平衡建议仅供参考，不自动执行
+   - 用户需根据实际情况（市场判断、资金可用性等）决定是否调仓
+
+---
 
 ## 日志前缀规范
 

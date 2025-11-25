@@ -36,7 +36,7 @@ def add_fund(
     副作用：
         幂等插入或更新 funds 表。
     """
-    fund_repo.add_fund(fund_code, name, asset_class, market)
+    fund_repo.add(fund_code, name, asset_class, market)
 
 
 @dependency
@@ -53,7 +53,7 @@ def list_funds(
     Returns:
         所有基金列表，按 fund_code 排序。
     """
-    return fund_repo.list_funds()
+    return fund_repo.list_all()
 
 
 # ==================== 定投计划管理 ====================
@@ -83,7 +83,7 @@ def add_dca_plan(
     副作用:
         幂等插入或更新 dca_plans 表。
     """
-    dca_plan_repo.upsert_plan(fund_code, amount, frequency, rule, status)
+    dca_plan_repo.upsert(fund_code, amount, frequency, rule, status)
 
 
 @dependency

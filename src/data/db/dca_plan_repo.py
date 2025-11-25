@@ -11,18 +11,18 @@ class DcaPlanRepo:
     """
     定投计划仓储（SQLite）。
 
-    说明：当前实现 `list_due_plans(day)` 返回全部计划，是否到期的判断在用例层完成。
+    说明：当前实现 `list_due(day)` 返回全部计划，是否到期的判断在用例层完成。
     """
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def list_due_plans(self, day: date) -> list[DcaPlan]:  # type: ignore[override]
+    def list_due(self, day: date) -> list[DcaPlan]:  # type: ignore[override]
         """返回需检查的定投计划（MVP 返回全部）。"""
         rows = self.conn.execute("SELECT * FROM dca_plans ORDER BY fund_code").fetchall()
         return [_row_to_plan(r) for r in rows]
 
-    def get_plan(self, fund_code: str) -> DcaPlan | None:  # type: ignore[override]
+    def get(self, fund_code: str) -> DcaPlan | None:  # type: ignore[override]
         """读取某基金定投计划，未配置返回 None。"""
         row = self.conn.execute(
             "SELECT * FROM dca_plans WHERE fund_code = ?",
@@ -32,7 +32,7 @@ class DcaPlanRepo:
             return None
         return _row_to_plan(row)
 
-    def upsert_plan(
+    def upsert(
         self,
         fund_code: str,
         amount: Decimal,

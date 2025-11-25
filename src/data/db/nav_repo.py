@@ -35,3 +35,20 @@ class NavRepo:
         if not row:
             return None
         return Decimal(row["nav"])
+
+    def exists(self, fund_code: str, day: date) -> bool:
+        """
+        检查某日净值是否存在（v0.3.2 新增）。
+
+        Args:
+            fund_code: 基金代码。
+            day: 日期。
+
+        Returns:
+            存在返回 True，否则返回 False。
+        """
+        row = self.conn.execute(
+            "SELECT 1 FROM navs WHERE fund_code = ? AND day = ?",
+            (fund_code, day.isoformat()),
+        ).fetchone()
+        return row is not None

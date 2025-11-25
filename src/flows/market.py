@@ -7,9 +7,11 @@ from datetime import date
 from decimal import Decimal
 
 from src.core.dependency import dependency
+from src.core.log import log
 from src.data.client.eastmoney import EastmoneyNavService
 from src.data.db.fund_repo import FundRepo
 from src.data.db.nav_repo import NavRepo
+from src.data.db.trade_repo import TradeRepo
 
 
 @dataclass(slots=True)
@@ -23,7 +25,7 @@ class FetchNavsResult:
     - failed_codes: 获取失败或无效 NAV（None/<=0）的基金代码列表。
     """
 
-    day: date
+    day: date | None
     total: int
     success: int
     failed_codes: list[str]
@@ -32,9 +34,13 @@ class FetchNavsResult:
 @dependency
 def fetch_navs(
     *,
-    day: date,
+    day: date | None = None,
+    fund_codes: list[str] | None = None,
+    auto_detect_missing: bool = False,
+    days: int = 30,
     fund_repo: FundRepo | None = None,
     nav_repo: NavRepo | None = None,
+    trade_repo: TradeRepo | None = None,
     eastmoney_service: EastmoneyNavService | None = None,
 ) -> FetchNavsResult:
     """
@@ -46,16 +52,48 @@ def fetch_navs(
     - 落库：调用 NavRepo.upsert(fund_code, day, nav)，按 (fund_code, day) 幂等。
 
     Args:
-        day: 目标日期。
+        day: 目标日期（auto_detect_missing=False 时必填）。
+        fund_codes: 指定基金代码列表（可选，未指定时抓取所有已配置基金）。
+        auto_detect_missing: 是否自动检测延迟交易的缺失 NAV 并补抓（v0.3.2 新增）。
+        days: auto_detect_missing=True 时，检测最近 N 天的延迟交易，默认 30 天。
         fund_repo: 基金仓储（可选，自动注入）。
         nav_repo: 净值仓储（可选，自动注入）。
+        trade_repo: 交易仓储（可选，自动注入，auto_detect_missing=True 时需要）。
         eastmoney_service: 东方财富服务（可选，自动注入）。
 
     Returns:
         抓取结果统计（day / total / success / failed_codes）。
     """
     # 所有依赖已通过装饰器自动注入
-    funds = fund_repo.list_funds()
+
+    # 模式 1：自动检测缺失 NAV（基于延迟交易）
+    if auto_detect_missing:
+        return _fetch_navs_auto_detect(
+            days=days,
+            trade_repo=trade_repo,
+            nav_repo=nav_repo,
+            eastmoney_service=eastmoney_service,
+        )
+
+    # 模式 2：按指定日期抓取
+    if day is None:
+        raise ValueError("day 参数在 auto_detect_missing=False 时必填")
+
+    # 确定要抓取的基金列表
+    if fund_codes:
+        # 指定基金代码时，从 fund_repo 查询对应的 FundInfo
+        funds = []
+        for code in fund_codes:
+            fund = fund_repo.get(code)
+            if fund:
+                funds.append(fund)
+            else:
+                # 基金代码不存在，记录到失败列表
+                log(f"[FetchNavs] ⚠️ 基金代码 {code} 未在系统中配置，跳过")
+    else:
+        # 未指定时抓取所有基金
+        funds = fund_repo.list_all()
+
     total = len(funds)
     success = 0
     failed_codes: list[str] = []
@@ -70,3 +108,60 @@ def fetch_navs(
         success += 1
 
     return FetchNavsResult(day=day, total=total, success=success, failed_codes=failed_codes)
+
+
+def _fetch_navs_auto_detect(
+    *,
+    days: int,
+    trade_repo: TradeRepo,
+    nav_repo: NavRepo,
+    eastmoney_service: EastmoneyNavService,
+) -> FetchNavsResult:
+    """
+    自动检测缺失 NAV 并补抓（v0.3.2 新增）。
+
+    逻辑：
+    1. 扫描最近 N 天的延迟交易（confirmation_status='delayed'）
+    2. 提取 pricing_date 和 fund_code
+    3. 检查 navs 表，找出缺失的 (fund_code, pricing_date)
+    4. 批量补抓这些缺失的 NAV
+
+    Returns:
+        抓取结果统计（day 为 None，total 为缺失 NAV 的总数）。
+    """
+    # 1. 扫描延迟交易
+    delayed_trades = trade_repo.list_delayed_trades(days=days)
+
+    if not delayed_trades:
+        log("[FetchNavs] 未发现延迟交易，无需补抓 NAV")
+        return FetchNavsResult(day=None, total=0, success=0, failed_codes=[])
+
+    # 2. 提取缺失 NAV 的 (fund_code, pricing_date)
+    missing_navs: set[tuple[str, date]] = set()
+    for t in delayed_trades:
+        if t.pricing_date and not nav_repo.exists(t.fund_code, t.pricing_date):
+            missing_navs.add((t.fund_code, t.pricing_date))
+
+    if not missing_navs:
+        log(f"[FetchNavs] 扫描到 {len(delayed_trades)} 笔延迟交易，但所有 NAV 已存在，无需补抓")
+        return FetchNavsResult(day=None, total=0, success=0, failed_codes=[])
+
+    log(f"[FetchNavs] 检测到 {len(missing_navs)} 个缺失 NAV，开始补抓...")
+
+    # 3. 批量补抓
+    total = len(missing_navs)
+    success = 0
+    failed_codes: list[str] = []
+
+    for fund_code, pricing_date in sorted(missing_navs):
+        nav = eastmoney_service.get_nav(fund_code, pricing_date)
+        if nav is None or nav <= Decimal("0"):
+            failed_codes.append(f"{fund_code}@{pricing_date}")
+            log(f"[FetchNavs] 补抓失败：{fund_code} {pricing_date}")
+            continue
+        nav_repo.upsert(fund_code, pricing_date, nav)
+        success += 1
+        log(f"[FetchNavs] 补抓成功：{fund_code} {pricing_date} = {nav}")
+
+    log(f"[FetchNavs] 补抓完成：total={total} success={success} failed={len(failed_codes)}")
+    return FetchNavsResult(day=None, total=total, success=success, failed_codes=failed_codes)

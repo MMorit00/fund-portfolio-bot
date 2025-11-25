@@ -2,21 +2,44 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from src.core.dependency import dependency
 from src.core.models.asset_class import AssetClass
+from src.core.models.nav import NavQuality
 from src.core.models.trade import Trade
-from src.core.rules.rebalance import RebalanceAdvice, build_rebalance_advice, calc_weight_diff
+from src.core.rules.rebalance import (
+    FundSuggestion,
+    RebalanceAdvice,
+    build_rebalance_advice,
+    calc_weight_diff,
+)
 from src.data.client.discord import DiscordReportService
 from src.data.client.local_nav import LocalNavService
 from src.data.db.alloc_config_repo import AllocConfigRepo
+from src.data.db.calendar import CalendarService
 from src.data.db.fund_repo import FundRepo
 from src.data.db.trade_repo import TradeRepo
 
 ReportMode = str  # "market" | "shares"
+
+
+@dataclass(slots=True, frozen=True)
+class NavResult:
+    """
+    NAV 查询结果（不可变）。
+
+    - nav: 净值（可能为 None）
+    - quality: 数据质量等级
+    - actual_date: 实际使用的 NAV 日期（可能不是查询日期）
+    """
+
+    nav: Decimal | None
+    quality: NavQuality
+    actual_date: date | None
 
 
 @dataclass(slots=True)
@@ -49,16 +72,22 @@ class ReportResult:
 @dataclass(slots=True)
 class RebalanceResult:
     """
-    再平衡建议结果（基础版，仅资产类别粒度）。
+    再平衡建议结果（v0.3.3 增强版：含基金级别建议 + NAV 质量元数据）。
 
     - as_of: 建议生成日期（通常为今天）；
     - total_value: 参与建议计算的组合总市值；
-    - suggestions: 按资产类别的建议列表，已按偏离绝对值降序排序。
+    - suggestions: 按资产类别的建议列表，已按偏离绝对值降序排序；
+    - fund_suggestions: 按资产类别分组的基金级别建议（v0.3.3 阶段 2）；
+    - nav_quality_summary: 各基金 NAV 质量等级（v0.3.3 阶段 3）；
+    - skipped_funds: 因 NAV 缺失而跳过的基金列表（v0.3.3 阶段 3）。
     """
 
     as_of: date
     total_value: Decimal
     suggestions: list[RebalanceAdvice]
+    fund_suggestions: dict[AssetClass, list[FundSuggestion]] = field(default_factory=dict)
+    nav_quality_summary: dict[str, NavQuality] = field(default_factory=dict)
+    skipped_funds: list[str] = field(default_factory=list)
     no_market_data: bool = False
     note: str | None = None
 
@@ -144,12 +173,18 @@ def make_rebalance_suggestion(
     trade_repo: TradeRepo | None = None,
     fund_repo: FundRepo | None = None,
     nav_service: LocalNavService | None = None,
+    calendar_service: CalendarService | None = None,
 ) -> RebalanceResult:
     """
-    生成资产配置再平衡建议（基础版，仅文字提示，不自动下单）。
+    生成资产配置再平衡建议（v0.3.3 增强版：含基金建议 + NAV 智能降级）。
 
     口径：
-    - 权重口径与"市值版日报"一致：仅使用已确认份额与当日 NAV（严格版，不回退）；
+    - 权重口径与"市值版日报"一致：仅使用已确认份额；
+    - NAV 策略（v0.3.3 阶段 3 新增）：
+      - 优先使用当日 NAV（EXACT）
+      - 周末/节假日：降级使用最近交易日 NAV（FALLBACK_HOLIDAY）
+      - NAV 延迟 1-2 天：降级使用（FALLBACK_DELAYED，带警告）
+      - NAV 缺失 3+ 天：跳过该基金（MISSING）
     - 阈值来源优先使用 alloc_config.max_deviation；未配置时使用默认 5%；
     - 建议金额采用 calc_rebalance_amount（总市值 × |偏离| × 50%），仅用于提示。
 
@@ -159,9 +194,10 @@ def make_rebalance_suggestion(
         trade_repo: 交易仓储（可选，自动注入）。
         fund_repo: 基金仓储（可选，自动注入）。
         nav_service: 净值查询服务（可选，自动注入）。
+        calendar_service: 交易日历服务（可选，自动注入）。
 
     Returns:
-        再平衡建议结果。
+        再平衡建议结果（含 NAV 质量元数据）。
     """
     # 所有依赖已通过装饰器自动注入
     target_weights = alloc_config_repo.get_target_weights()
@@ -169,18 +205,31 @@ def make_rebalance_suggestion(
 
     position_shares = trade_repo.position_shares()
 
-    # 聚合当日市值（严格口径：仅使用当日 NAV>0；未配置基金跳过）
+    # 聚合当日市值（使用 NAV 质量分级逻辑，v0.3.3 阶段 3）
     class_values: dict[AssetClass, Decimal] = {}
+    nav_quality_summary: dict[str, NavQuality] = {}
+    skipped_funds: list[str] = []
+
     for fund_code, shares in position_shares.items():
-        fund = fund_repo.get_fund(fund_code)
+        fund = fund_repo.get(fund_code)
         if not fund:
             continue
-        nav = nav_service.get_nav(fund_code, today)
-        if nav is None or nav <= Decimal("0"):
+
+        # 使用质量分级查询 NAV
+        nav_result = _get_nav_with_quality(fund_code, today, nav_service, calendar_service, fund.market)
+
+        if nav_result.quality == NavQuality.missing:
+            skipped_funds.append(fund_code)
             continue
-        value = shares * nav
+
+        if nav_result.nav is None:
+            skipped_funds.append(fund_code)
+            continue
+
+        value = shares * nav_result.nav
         asset_class: AssetClass = fund.asset_class
         class_values[asset_class] = class_values.get(asset_class, Decimal("0")) + value
+        nav_quality_summary[fund_code] = nav_result.quality
 
     total_value = sum(class_values.values(), Decimal("0"))
 
@@ -208,10 +257,28 @@ def make_rebalance_suggestion(
         default_threshold=Decimal("0.05"),
     )
 
+    # 生成基金级别建议（v0.3.3）
+    fund_suggestions: dict[AssetClass, list[FundSuggestion]] = {}
+    for advice in suggestions:
+        if advice.action != "hold":
+            fund_suggestions[advice.asset_class] = _suggest_specific_funds(
+                asset_class=advice.asset_class,
+                target_amount=advice.amount,
+                action=advice.action,
+                fund_repo=fund_repo,
+                position_shares=position_shares,
+                nav_service=nav_service,
+                calendar_service=calendar_service,
+                today=today,
+            )
+
     return RebalanceResult(
         as_of=today,
         total_value=total_value,
         suggestions=suggestions,
+        fund_suggestions=fund_suggestions,
+        nav_quality_summary=nav_quality_summary,
+        skipped_funds=skipped_funds,
     )
 
 
@@ -240,7 +307,7 @@ def _build_market_view(
     funds_with_nav = 0
 
     for fund_code, shares in position_shares.items():
-        fund = fund_repo.get_fund(fund_code)
+        fund = fund_repo.get(fund_code)
         if not fund:
             # 未配置基金：不计入分母，也不参与市值与缺失列表
             continue
@@ -290,7 +357,7 @@ def _build_share_view(
     """
     class_shares: dict[AssetClass, Decimal] = {}
     for fund_code, shares in position_shares.items():
-        fund = fund_repo.get_fund(fund_code)
+        fund = fund_repo.get(fund_code)
         if not fund:
             continue
         asset_class = fund.asset_class
@@ -387,12 +454,12 @@ def _render_report(
 
 def _render_confirmation_status(trades: list[Trade], today: date) -> str:
     """
-    生成交易确认情况板块（v0.2.1）。
+    生成交易确认情况板块（v0.3.2 优化版）。
 
     分三类：
-    1. 已确认（正常）
-    2. 待确认（未到确认日）
-    3. 异常延迟（已到确认日但 NAV 缺失）
+    1. 已确认（正常）- 显示最近 5 笔
+    2. 待确认（未到确认日）- 仅显示统计，不展开明细
+    3. 异常延迟（已到确认日但 NAV 缺失）- 重点展示，加入操作建议
     """
     if not trades:
         return ""
@@ -412,10 +479,10 @@ def _render_confirmation_status(trades: list[Trade], today: date) -> str:
 
     lines = ["\n【交易确认情况】\n"]
 
-    # 1. 已确认
+    # 1. 已确认（最近 5 笔）
     if confirmed_trades:
-        lines.append(f"\n✅ 已确认（{len(confirmed_trades)}笔）\n")
-        for t in confirmed_trades[:5]:  # 最近5笔
+        lines.append(f"\n✅ 已确认（最近 {min(5, len(confirmed_trades))} 笔）\n")
+        for t in confirmed_trades[:5]:
             trade_type_text = "买入" if t.type == "buy" else "卖出"
             lines.append(
                 f"  - {t.trade_date.strftime('%m-%d')} {trade_type_text} "
@@ -423,33 +490,13 @@ def _render_confirmation_status(trades: list[Trade], today: date) -> str:
                 f"→ 已确认 {t.shares:.2f}份\n"
             )
 
-    # 2. 待确认
+    # 2. 待确认（仅统计，不展开明细）
     if waiting_trades:
-        lines.append(f"\n⏳ 待确认（{len(waiting_trades)}笔）\n")
-        for t in waiting_trades:
-            trade_type_text = "买入" if t.type == "buy" else "卖出"
-            if t.confirm_date:
-                days_until_confirm = (t.confirm_date - today).days
-                # 处理负天数情况（理论上不应出现，但防御性处理）
-                if days_until_confirm >= 0:
-                    days_text = f"（还有{days_until_confirm}天）"
-                else:
-                    days_text = f"（已过期{abs(days_until_confirm)}天，待补充净值/待确认）"
+        lines.append(f"\n💡 提示：当前有 {len(waiting_trades)} 笔交易待确认（正常进行中）\n")
 
-                lines.append(
-                    f"  - {t.trade_date.strftime('%m-%d')} {trade_type_text} "
-                    f"{t.fund_code} {t.amount:.2f}元 "
-                    f"→ 预计 {t.confirm_date.strftime('%m-%d')} 确认{days_text}\n"
-                )
-            else:
-                lines.append(
-                    f"  - {t.trade_date.strftime('%m-%d')} {trade_type_text} "
-                    f"{t.fund_code} {t.amount:.2f}元 → 确认日待定\n"
-                )
-
-    # 3. 异常延迟
+    # 3. 异常延迟（重点展示 + 操作建议）
     if delayed_trades:
-        lines.append(f"\n⚠️ 异常延迟（{len(delayed_trades)}笔）\n")
+        lines.append(f"\n⚠️ 异常延迟（{len(delayed_trades)} 笔）—— 需要处理\n")
         for t in delayed_trades:
             trade_type_text = "买入" if t.type == "buy" else "卖出"
             delayed_days = (today - t.confirm_date).days if t.confirm_date else 0
@@ -459,7 +506,7 @@ def _render_confirmation_status(trades: list[Trade], today: date) -> str:
                 lines.append(f"    理论确认日：{t.confirm_date.strftime('%Y-%m-%d')}\n")
             lines.append(f"    当前状态：确认延迟（已超过 {delayed_days} 天）\n")
             lines.append(f"    延迟原因：{_get_delayed_reason_text(t.delayed_reason)}\n")
-            lines.append(f"    建议：{_get_delayed_suggestion(delayed_days)}\n")
+            lines.append(f"    建议操作：{_get_delayed_suggestion_command(t)}\n")
 
     return "".join(lines)
 
@@ -471,8 +518,171 @@ def _get_delayed_reason_text(reason: str | None) -> str:
     return "原因未明"
 
 
-def _get_delayed_suggestion(delayed_days: int) -> str:
-    """延迟建议文案。"""
-    if delayed_days <= 2:
-        return "等待 1-2 个工作日，基金公司可能延后披露净值"
-    return "请到支付宝查看订单状态，如显示「确认中」则正常等待；如显示「失败/撤单」请及时在系统中标记"
+def _get_delayed_suggestion_command(trade: Trade) -> str:
+    """
+    延迟交易的操作建议（v0.3.2 优化版）。
+
+    返回具体的命令示例，让用户可以直接复制执行。
+    """
+    if trade.delayed_reason == "nav_missing" and trade.pricing_date:
+        return f"python -m src.cli.fetch_navs --date {trade.pricing_date} --funds {trade.fund_code}"
+    return "请检查数据源或手动补录 NAV"
+
+
+def _get_nav_with_quality(
+    fund_code: str,
+    target_date: date,
+    nav_service: LocalNavService,
+    calendar: CalendarService,
+    market: str = "CN_A",
+) -> NavResult:
+    """
+    查询 NAV 并评估数据质量（v0.3.3 阶段 3 新增）。
+
+    逻辑：
+    1. 尝试获取 target_date 的 NAV
+    2. 如果成功 → EXACT
+    3. 如果失败，检查 target_date 是否交易日：
+       - 非交易日（周末/节假日）→ 查找最近交易日（lookback=5）→ FALLBACK_HOLIDAY
+       - 交易日但 NAV 缺失 → 查找最近交易日（lookback=5）→ FALLBACK_DELAYED
+       - 延迟 3+ 天或无可用 NAV → MISSING
+
+    Args:
+        fund_code: 基金代码
+        target_date: 目标日期
+        nav_service: NAV 查询服务
+        calendar: 交易日历服务
+        market: 市场标识（默认 "CN_A"）
+
+    Returns:
+        NAV 查询结果（包含质量等级）
+    """
+    # 1. 尝试获取当日 NAV
+    nav = nav_service.get_nav(fund_code, target_date)
+    if nav is not None and nav > Decimal("0"):
+        return NavResult(nav, NavQuality.exact, target_date)
+
+    # 2. 检查是否交易日
+    try:
+        is_trading_day = calendar.is_open(market, target_date)
+    except RuntimeError:
+        # 日历数据缺失，降级为 MISSING
+        return NavResult(None, NavQuality.missing, None)
+
+    # 3. 查找最近交易日的 NAV
+    last_trading = calendar.prev_open(market, target_date)
+    if last_trading is None:
+        return NavResult(None, NavQuality.missing, None)
+
+    fallback_nav = nav_service.get_nav(fund_code, last_trading)
+    if fallback_nav is None or fallback_nav <= Decimal("0"):
+        return NavResult(None, NavQuality.missing, None)
+
+    # 4. 判断质量等级
+    delay_days = (target_date - last_trading).days
+    if not is_trading_day and delay_days <= 2:
+        # 非交易日 + 2 天内 → 正常降级（周末/节假日）
+        quality = NavQuality.holiday
+    elif delay_days <= 2:
+        # 交易日但 NAV 延迟 1-2 天 → 可接受降级
+        quality = NavQuality.delayed
+    else:
+        # 延迟 3+ 天 → 数据质量太差，标记为 MISSING
+        return NavResult(None, NavQuality.missing, None)
+
+    return NavResult(fallback_nav, quality, last_trading)
+
+
+def _suggest_specific_funds(
+    asset_class: AssetClass,
+    target_amount: Decimal,
+    action: Literal["buy", "sell"],
+    fund_repo: FundRepo,
+    position_shares: dict[str, Decimal],
+    nav_service: LocalNavService,
+    calendar_service: CalendarService,
+    today: date,
+) -> list[FundSuggestion]:
+    """
+    将资产类别级别的建议拆分到具体基金（v0.3.3 新增）。
+
+    策略：
+    - buy：优先推荐该类别下当前持仓较小的基金（平均化）；
+    - sell：优先推荐持仓较大的基金（渐进式减仓）。
+
+    NAV 策略（v0.3.3 bugfix）：
+    - 复用 _get_nav_with_quality() 智能降级逻辑；
+    - 避免周末/节假日时基金建议为空的问题。
+
+    Returns:
+        基金建议列表（按建议金额降序）。
+    """
+    # 1. 获取该资产类别下的所有基金
+    all_funds = fund_repo.list_all()
+    class_funds = [f for f in all_funds if f.asset_class == asset_class]
+
+    if not class_funds:
+        return []
+
+    # 2. 计算每只基金的当前市值（使用智能降级 NAV）
+    fund_values: dict[str, Decimal] = {}
+    for fund in class_funds:
+        shares = position_shares.get(fund.fund_code, Decimal("0"))
+        if shares <= Decimal("0"):
+            continue
+        # 使用 _get_nav_with_quality() 支持周末/节假日降级
+        nav_result = _get_nav_with_quality(fund.fund_code, today, nav_service, calendar_service)
+        if nav_result.nav is None or nav_result.nav <= Decimal("0"):
+            continue
+        fund_values[fund.fund_code] = shares * nav_result.nav
+
+    if not fund_values:
+        return []
+
+    total_class_value = sum(fund_values.values(), Decimal("0"))
+
+    # 3. 按策略排序基金
+    if action == "buy":
+        # 买入：优先推荐持仓较小的基金（平均化）
+        sorted_funds = sorted(fund_values.items(), key=lambda x: x[1])
+    else:
+        # 卖出：优先推荐持仓较大的基金
+        sorted_funds = sorted(fund_values.items(), key=lambda x: x[1], reverse=True)
+
+    # 4. 分配金额到具体基金（简化策略：平均分配）
+    suggestions: list[FundSuggestion] = []
+    remaining = target_amount
+    num_funds = len(sorted_funds)
+
+    for i, (fund_code, current_value) in enumerate(sorted_funds):
+        if remaining <= Decimal("0"):
+            break
+
+        fund = next(f for f in class_funds if f.fund_code == fund_code)
+        current_pct = current_value / total_class_value if total_class_value > Decimal("0") else Decimal("0")
+
+        # 简化：平均分配（或按当前占比分配）
+        if i == num_funds - 1:
+            # 最后一只基金：分配剩余全部金额
+            allocated = remaining
+        else:
+            # 平均分配
+            allocated = target_amount / Decimal(str(num_funds))
+            allocated = min(allocated, remaining)
+
+        suggestions.append(
+            FundSuggestion(
+                fund_code=fund_code,
+                fund_name=fund.name,
+                action=action,
+                amount=allocated,
+                current_value=current_value,
+                current_pct=current_pct,
+            )
+        )
+
+        remaining -= allocated
+
+    # 按金额降序排序
+    suggestions.sort(key=lambda x: x.amount, reverse=True)
+    return suggestions

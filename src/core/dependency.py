@@ -26,7 +26,7 @@
         nav_service: LocalNavService | None = None,  # 自动注入
     ) -> ConfirmResult:
         # trade_repo 和 nav_service 已自动填充，直接使用
-        to_confirm = trade_repo.list_pending_to_confirm(today)
+        to_confirm = trade_repo.list_pending(today)
         ...
 
     # 3. 调用（依赖自动创建）

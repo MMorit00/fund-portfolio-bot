@@ -122,6 +122,32 @@ class CalendarService:
 
         return d
 
+    def prev_open(self, calendar_key: str, day: date, lookback: int = 15) -> date | None:
+        """
+        查找 day 之前最近的交易日（与 next_open 对称）。
+
+        从 day - 1 开始向前查找，最多回溯 lookback 天。
+
+        Args:
+            calendar_key: 日历标识（如 "CN_A"）
+            day: 参考日期
+            lookback: 向前查找天数（默认 15 天，覆盖春节/国庆等长假）
+
+        Returns:
+            最近的交易日，若 lookback 天内无交易日则返回 None
+
+        Raises:
+            RuntimeError: 若 trading_calendar 表中缺失记录
+        """
+        d = day - timedelta(days=1)
+        for _ in range(lookback):
+            if d < date(2020, 1, 1):  # 防止无限回溯到过早日期
+                return None
+            if self.is_open(calendar_key, d):
+                return d
+            d = d - timedelta(days=1)
+        return None
+
     def _validate_table_exists(self) -> None:
         """
         验证 trading_calendar 表是否存在。
