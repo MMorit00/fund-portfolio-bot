@@ -68,6 +68,22 @@
 - 只记录"发生了什么"，不存储快照或结果（需要时从 trades/navs 动态计算）
 - `intent` 和 `note` 是给 AI 的关键信息，手动填写
 
+**埋点范围**：
+
+| 场景 | 是否记录 | action | actor | 说明 |
+|------|----------|--------|-------|------|
+| 手动买入/卖出 | ✅ | buy / sell | human | CLI `trade buy/sell` |
+| DCA 自动执行 | ❌ | - | - | 系统行为，不记录 |
+| 跳过定投 | ✅ | dca_skip | human | CLI `dca skip` |
+| 交易确认 | ❌ | - | - | trades.status 已有 |
+| 取消交易 | ❌ | - | - | trades.status 已有 |
+| 再平衡执行 | ❌ | - | - | 留到后续版本 |
+
+**actor 含义**：
+- `human`：用户通过 CLI 手动执行
+- `system`：后台 job 自动执行（当前未使用）
+- `dca`：定投计划触发（当前未使用）
+
 ### trading_calendar 表
 
 用于维护不同市场的交易日信息（节假日/临时休市等）。

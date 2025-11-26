@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from calendar import monthrange
-from datetime import date
+from datetime import date, datetime
 
 from src.core.dependency import dependency
+from src.core.models.action import ActionLog
 from src.core.models.dca_plan import DcaPlan
+from src.data.db.action_repo import ActionRepo
 from src.data.db.dca_plan_repo import DcaPlanRepo
 from src.data.db.trade_repo import TradeRepo
 from src.flows.trade import create_trade
@@ -60,7 +62,9 @@ def skip_dca(
     *,
     fund_code: str,
     day: date,
+    note: str | None = None,
     trade_repo: TradeRepo | None = None,
+    action_repo: ActionRepo | None = None,
 ) -> int:
     """
     将指定基金在某日的定投标记为 skipped。
@@ -70,13 +74,31 @@ def skip_dca(
     Args:
         fund_code: 基金代码。
         day: 目标日期（仅影响当日、类型为 buy、状态为 pending 的记录）。
+        note: 人话备注（为什么跳过）。
         trade_repo: 交易仓储（可选，自动注入）。
+        action_repo: 行为日志仓储（可选，自动注入）。
 
     Returns:
         受影响的记录数。
     """
     # trade_repo 已通过装饰器自动注入
-    return trade_repo.skip_dca_for_date(fund_code, day)
+    affected = trade_repo.skip_dca_for_date(fund_code, day)
+
+    # 记录行为日志（用户主动决定跳过定投）
+    if affected > 0 and action_repo is not None:
+        action_repo.add(
+            ActionLog(
+                id=None,
+                action="dca_skip",
+                actor="human",
+                acted_at=datetime.now(),
+                trade_id=None,  # 可能影响多条，不关联具体 trade
+                intent=None,
+                note=note or f"{fund_code} @ {day}",
+            )
+        )
+
+    return affected
 
 
 # ========== 私有辅助函数 ==========
