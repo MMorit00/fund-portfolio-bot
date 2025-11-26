@@ -1,18 +1,18 @@
-# Database Schema (开发版)
+# Database Schema
 
 > **开发阶段说明**：
 > - 本项目处于开发阶段，数据库可随时重建
-> - 无需维护迁移脚本，直接运行 `SEED_RESET=1 python -m scripts.dev_seed_db`
-> - Schema 由 `src/adapters/db/sqlite/db_helper.py` 自动创建
+> - 无需维护迁移脚本，直接运行 `SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db`
+> - Schema 由 `src/data/db/db_helper.py` 自动创建
 
 ## 当前版本
 
-- Schema Version: **3** (SCHEMA_VERSION = 3)
-- 最后更新: 2025-11-19
+- Schema Version: **4** (SCHEMA_VERSION = 4)
+- 最后更新: 2025-11-26
 
 ## 核心表结构
 
-完整 DDL 见代码：`src/adapters/db/sqlite/db_helper.py:_create_tables()`
+完整 DDL 见代码：`src/data/db/db_helper.py:_create_tables()`
 
 ### 主要表
 
@@ -22,13 +22,13 @@
 | `trades` | 交易记录 | id, fund_code, trade_date, pricing_date, confirm_date, confirmation_status |
 | `navs` | 净值数据 | fund_code, day, nav |
 | `trading_calendar` | 交易日历 | market, day, is_trading_day |
-| `dca_plans` | 定投计划 | fund_code, target_amount, frequency |
+| `dca_plans` | 定投计划 | fund_code, amount, frequency, rule, status |
 | `alloc_config` | 资产配置目标 | asset_class, target_weight, max_deviation |
 | `meta` | 元数据 | key, value (schema_version 等) |
 
 ## 重要字段说明
 
-### trades 表关键字段 (v0.3)
+### trades 表关键字段
 
 | 字段 | 类型 | 说明 | 引入版本 |
 |------|------|------|---------|
@@ -39,13 +39,30 @@
 
 **业务规则**：见 `docs/settlement-rules.md`
 
-### trading_calendar 表 (v0.2)
+### dca_plans 表关键字段
+
+| 字段 | 类型 | 说明 | 引入版本 |
+|------|------|------|---------|
+| `frequency` | TEXT | 定投频率：daily / weekly / monthly | v0.1 |
+| `rule` | TEXT | 定投规则（weekly: MON/TUE, monthly: 1..31） | v0.1 |
+| `status` | TEXT | 状态：active / disabled | v0.3.2 |
+
+**月度定投短月顺延**（v0.3.4+）：rule=29/30/31 在短月自动顺延到月末最后一天
+
+### trading_calendar 表
 
 用于维护不同市场的交易日信息（节假日/临时休市等）。
 
-**初始化方式**：
+**初始化方式**（v0.3.4+）：
 ```bash
-python scripts/import_trading_calendar.py data/trading_calendar/a_shares.csv
+# 使用 exchange_calendars 注油
+python -m src.cli.calendar sync --market CN_A --from 2020-01-01 --to 2025-12-31
+
+# 使用 Akshare 修补
+python -m src.cli.calendar patch-cn-a --back 30 --forward 365
+
+# 或从 CSV 导入
+python -m src.cli.calendar refresh --csv data/trading_calendar.csv
 ```
 
 ## Schema 变更流程
@@ -54,13 +71,13 @@ python scripts/import_trading_calendar.py data/trading_calendar/a_shares.csv
 
 ```bash
 # 1. 修改 DDL
-vim src/adapters/db/sqlite/db_helper.py
+vim src/data/db/db_helper.py
 
 # 2. 删除旧库
 rm data/portfolio.db
 
 # 3. 重建数据库
-SEED_RESET=1 python -m scripts.dev_seed_db
+SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 
 # 4. 记录决策
 # 在 docs/coding-log.md 记录为什么改 schema
@@ -73,6 +90,8 @@ SEED_RESET=1 python -m scripts.dev_seed_db
 - **v0.1** (2025-11-15): 初始 schema（funds/trades/navs/dca_plans/alloc_config）
 - **v0.2** (2025-11-18): 引入 `trading_calendar` 表，`trades` 表增加确认延迟追踪字段
 - **v0.3** (2025-11-19): `trades` 表增加 `pricing_date` 字段，持久化定价日
+- **v0.3.2** (2025-11-22): `dca_plans` 表增加 `status` 字段（active/disabled）
+- **v0.3.4** (2025-11-26): 月度定投短月顺延（逻辑变更，无 schema 变更）
 
 ## 何时需要迁移文档？
 

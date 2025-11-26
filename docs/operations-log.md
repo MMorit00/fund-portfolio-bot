@@ -23,11 +23,9 @@ SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 ./scripts/backup_db.sh
 ```
 
-**Schema 管理（v0.3.2）**：
-- 当前开发阶段：使用 `CREATE TABLE IF NOT EXISTS`，**无自动迁移**
-- `SCHEMA_VERSION = 4`（仅用于标识版本，不含迁移逻辑）
-- **开发建议**：测试数据库直接删除重建，无需迁移
-- **未来生产**：需要时可添加版本检测与 ALTER 迁移逻辑
+**Schema 管理**：
+- 当前版本：`SCHEMA_VERSION = 4`（详见 `docs/sql-schema.md`）
+- 开发阶段直接删除重建，无需迁移脚本
 
 ## 日常运维流程（推荐）
 
@@ -35,13 +33,14 @@ SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 
 ```bash
 # 每天早上 9:00 自动运行（展示昨天的数据）
-python -m src.cli.dca              # 1. 执行定投（创建今日pending交易）
-python -m src.cli.fetch_navs       # 2. 抓取昨日NAV（默认，因今日NAV通常晚上才公布）
+python -m src.cli.dca              # 1. 执行定投（创建今日 pending 交易，支持 --date 补录）
+python -m src.cli.fetch_navs       # 2. 抓取昨日 NAV（默认，因今日 NAV 通常晚上才公布）
 python -m src.cli.confirm          # 3. 确认昨日创建的交易
 python -m src.cli.report           # 4. 生成日报（默认展示昨日数据）
 ```
 
 **说明**：
+- `dca` 默认创建今日交易，可用 `--date YYYY-MM-DD` 补录历史定投
 - `fetch_navs` 默认抓"上一工作日"的 NAV，因为当日 NAV 通常在 18:00-22:00 后才公布
 - `report` 默认展示"上一工作日"的持仓，与 `fetch_navs` 保持一致
 - 今日创建的交易会在明天确认（T+1）
@@ -62,7 +61,7 @@ python -m src.cli.report --as-of $(date +%Y-%m-%d)     # 查看今日持仓
 
 > NAV 策略、确认规则、再平衡触发条件见 `docs/settlement-rules.md`。
 
-## v0.3.2 配置管理 CLI
+## 配置管理
 
 ### 基金配置
 
@@ -119,6 +118,12 @@ python -m src.cli.trade sell --fund 000001 --amount 500 --date 2025-11-16
 python -m src.cli.trade list                    # 全部交易
 python -m src.cli.trade list --status pending   # 待确认
 python -m src.cli.trade list --status confirmed # 已确认
+
+# 取消 pending 交易
+python -m src.cli.trade cancel --id 123
+
+# 手动确认（NAV 永久缺失场景）
+python -m src.cli.trade confirm-manual --id 123 --shares 404.86 --nav 1.234
 ```
 
 ### 补录历史 NAV
@@ -136,11 +141,11 @@ python -m src.cli.confirm --day 2025-04-01
 
 ---
 
-## v0.3.3 再平衡独立 CLI
+## 再平衡管理
 
 ### 功能说明
 
-v0.3.3 新增独立再平衡 CLI，提供：
+独立再平衡 CLI，提供：
 - 快速查看资产配置状态和再平衡建议（无需跑完整日报）
 - 具体到基金级别的调仓建议（而非仅资产类别）
 - 智能买入/卖出策略（平均化 vs 渐进式减仓）
@@ -348,18 +353,17 @@ python -m src.cli.fetch_navs --date 2025-11-15
 python -m src.cli.confirm
 ```
 
-### 手动标记已确认（异常场景）
+### 手动确认交易（NAV 永久缺失场景）
 
-如果支付宝订单已成功但系统 NAV 缺失，可手动更新：
+如果支付宝订单已成功但系统 NAV 持续缺失（基金停牌、数据源故障），可手动确认：
 
-```sql
-UPDATE trades
-SET status = 'confirmed', shares = 404.86,  -- 从支付宝复制
-    confirmation_status = 'normal', delayed_reason = NULL, delayed_since = NULL
-WHERE id = 123;
+```bash
+# 从支付宝复制份额和净值，手动确认交易
+python -m src.cli.trade confirm-manual --id 123 --shares 404.86 --nav 1.234
 ```
 
 **注意**：
-- 不要修改 `confirm_date`（用于追踪延迟时长）
-- 优先使用 `fetch_navs` 补数据
-- 延迟超过 3 天建议到支付宝核实订单状态
+- 仅用于 pending 状态交易，确认后无法撤销
+- NAV 和份额必须从支付宝等平台准确复制
+- 优先使用 `fetch_navs` 补数据，手动确认作为最后手段
+- 延迟超过 3 天建议先到支付宝核实订单状态
