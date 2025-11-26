@@ -24,6 +24,12 @@ def _parse_args() -> argparse.Namespace:
         "--date",
         help="交易日期（YYYY-MM-DD，默认今天）",
     )
+    buy_parser.add_argument(
+        "--intent",
+        choices=["planned", "impulse", "opportunistic", "exit"],
+        help="意图标签",
+    )
+    buy_parser.add_argument("--note", help="备注")
 
     # ========== sell 子命令 ==========
     sell_parser = subparsers.add_parser("sell", help="创建卖出交易")
@@ -33,6 +39,12 @@ def _parse_args() -> argparse.Namespace:
         "--date",
         help="交易日期（YYYY-MM-DD，默认今天）",
     )
+    sell_parser.add_argument(
+        "--intent",
+        choices=["planned", "impulse", "opportunistic", "exit"],
+        help="意图标签",
+    )
+    sell_parser.add_argument("--note", help="备注")
 
     # ========== list 子命令 ==========
     list_parser = subparsers.add_parser("list", help="查询交易记录")
@@ -74,6 +86,8 @@ def _do_buy(args: argparse.Namespace) -> int:
         fund_code = args.fund
         amount = args.amount
         trade_day = date.fromisoformat(args.date) if args.date else date.today()
+        intent = args.intent
+        note = args.note
 
         log(f"[Trade:buy] 创建买入交易：{fund_code} - {amount} 元 @ {trade_day}")
         trade = create_trade(
@@ -81,6 +95,8 @@ def _do_buy(args: argparse.Namespace) -> int:
             trade_type="buy",
             amount=amount,
             trade_day=trade_day,
+            intent=intent,
+            note=note,
         )
         log(
             f"✅ 交易创建成功：ID={trade.id}，定价日={trade.pricing_date}，确认日={trade.confirm_date}"
@@ -100,6 +116,8 @@ def _do_sell(args: argparse.Namespace) -> int:
         fund_code = args.fund
         amount = args.amount
         trade_day = date.fromisoformat(args.date) if args.date else date.today()
+        intent = args.intent
+        note = args.note
 
         log(f"[Trade:sell] 创建卖出交易：{fund_code} - {amount} 元 @ {trade_day}")
         trade = create_trade(
@@ -107,6 +125,8 @@ def _do_sell(args: argparse.Namespace) -> int:
             trade_type="sell",
             amount=amount,
             trade_day=trade_day,
+            intent=intent,
+            note=note,
         )
         log(
             f"✅ 交易创建成功：ID={trade.id}，定价日={trade.pricing_date}，确认日={trade.confirm_date}"

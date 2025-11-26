@@ -39,6 +39,7 @@ from src.core.dependency import register
 from src.data.client.discord import DiscordReportService
 from src.data.client.eastmoney import EastmoneyNavService
 from src.data.client.local_nav import LocalNavService
+from src.data.db.action_repo import ActionRepo
 from src.data.db.alloc_config_repo import AllocConfigRepo
 from src.data.db.calendar import CalendarService
 from src.data.db.db_helper import DbHelper
@@ -211,3 +212,17 @@ def get_alloc_config_repo() -> AllocConfigRepo:
     """
     conn = get_db_connection()
     return AllocConfigRepo(conn)
+
+
+@register("action_repo")
+def get_action_repo() -> ActionRepo:
+    """
+    获取行为日志仓储。
+
+    Returns:
+        行为日志仓储实例。
+
+    注册名：action_repo
+    """
+    conn = get_db_connection()
+    return ActionRepo(conn)

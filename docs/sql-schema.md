@@ -7,7 +7,7 @@
 
 ## 当前版本
 
-- Schema Version: **4** (SCHEMA_VERSION = 4)
+- Schema Version: **5** (SCHEMA_VERSION = 5)
 - 最后更新: 2025-11-26
 
 ## 核心表结构
@@ -24,6 +24,7 @@
 | `trading_calendar` | 交易日历 | market, day, is_trading_day |
 | `dca_plans` | 定投计划 | fund_code, amount, frequency, rule, status |
 | `alloc_config` | 资产配置目标 | asset_class, target_weight, max_deviation |
+| `action_log` | 用户行为日志 | id, action, actor, acted_at, trade_id, intent, note |
 | `meta` | 元数据 | key, value (schema_version 等) |
 
 ## 重要字段说明
@@ -48,6 +49,24 @@
 | `status` | TEXT | 状态：active / disabled | v0.3.2 |
 
 **月度定投短月顺延**（v0.3.4+）：rule=29/30/31 在短月自动顺延到月末最后一天
+
+### action_log 表（v0.4 新增）
+
+用户行为日志，记录每一次投资操作，为后续 AI 分析提供数据基础。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER | 主键 |
+| `action` | TEXT | 动作类型：buy / sell / dca_skip / rebalance |
+| `actor` | TEXT | 执行者：human / system / dca |
+| `acted_at` | TEXT | 发生时间（ISO datetime） |
+| `trade_id` | INTEGER | 关联 trades.id（可空） |
+| `intent` | TEXT | 意图标签：planned / impulse / opportunistic / exit（可空） |
+| `note` | TEXT | 人话备注（可空） |
+
+**设计说明**：
+- 只记录"发生了什么"，不存储快照或结果（需要时从 trades/navs 动态计算）
+- `intent` 和 `note` 是给 AI 的关键信息，手动填写
 
 ### trading_calendar 表
 
@@ -92,6 +111,7 @@ SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 - **v0.3** (2025-11-19): `trades` 表增加 `pricing_date` 字段，持久化定价日
 - **v0.3.2** (2025-11-22): `dca_plans` 表增加 `status` 字段（active/disabled）
 - **v0.3.4** (2025-11-26): 月度定投短月顺延（逻辑变更，无 schema 变更）
+- **v0.4** (2025-11-26): 新增 `action_log` 表，用户行为日志
 
 ## 何时需要迁移文档？
 

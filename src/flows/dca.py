@@ -46,6 +46,7 @@ def run_daily_dca(
                 trade_type="buy",
                 amount=p.amount,
                 trade_day=today,
+                _log_action=False,  # DCA 自动执行不记录行为日志
             )
             count += 1
         except ValueError:

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from src.core.dependency import dependency
+from src.core.models.action import ActionLog, Intent
 from src.core.models.trade import Trade
 from src.core.rules.precision import quantize_shares
 from src.data.client.local_nav import LocalNavService
+from src.data.db.action_repo import ActionRepo
 from src.data.db.fund_repo import FundRepo
 from src.data.db.trade_repo import TradeRepo
 
@@ -19,8 +21,12 @@ def create_trade(
     trade_type: str,
     amount: Decimal,
     trade_day: date,
+    intent: Intent | None = None,
+    note: str | None = None,
+    _log_action: bool = True,
     trade_repo: TradeRepo | None = None,
     fund_repo: FundRepo | None = None,
+    action_repo: ActionRepo | None = None,
 ) -> Trade:
     """
     创建一笔买入/卖出交易（pending）。
@@ -30,8 +36,12 @@ def create_trade(
         trade_type: 交易类型，`buy` 或 `sell`。
         amount: 金额，必须大于 0（Decimal）。
         trade_day: 交易日期（下单/约定日）。
+        intent: 意图标签（planned/impulse/opportunistic/exit）。
+        note: 人话备注。
+        _log_action: 是否记录行为日志（DCA 等自动场景应传 False）。
         trade_repo: 交易仓储（可选，自动注入）。
         fund_repo: 基金仓储（可选，自动注入）。
+        action_repo: 行为日志仓储（可选，自动注入）。
 
     Returns:
         入库后的 Trade 实体（包含生成的 id）。
@@ -42,7 +52,7 @@ def create_trade(
     说明：
         - 金额使用 Decimal
         - 市场类型从 FundRepo 读取
-        - 通过 @inject_deps 装饰器自动注入依赖
+        - 通过 @dependency 装饰器自动注入依赖
         - 测试时可传入 Mock 对象覆盖默认依赖
     """
     # trade_repo 和 fund_repo 已通过装饰器自动注入，直接使用
@@ -59,7 +69,23 @@ def create_trade(
         status="pending",
         market=fund.market,
     )
-    return trade_repo.add(trade)
+    saved_trade = trade_repo.add(trade)
+
+    # 记录行为日志（仅手动交易，DCA 等自动场景不记录）
+    if _log_action and action_repo is not None:
+        action_repo.add(
+            ActionLog(
+                id=None,
+                action=trade_type,  # buy / sell
+                actor="human",
+                acted_at=datetime.now(),
+                trade_id=saved_trade.id,
+                intent=intent,
+                note=note,
+            )
+        )
+
+    return saved_trade
 
 
 @dataclass(slots=True)

@@ -5,6 +5,73 @@
 
 ---
 
+## 2025-11-26 v0.4 行为数据（action_log）
+
+### 背景
+
+为后续 AI 分析准备数据基础。核心问题：如何记录用户的投资行为，让 AI 能理解"你做了什么"和"为什么这样做"。
+
+### 设计决策
+
+**1. 只建一张表**：
+- 只做 `action_log`，不做 `ContextSnapshot` / `Outcome`
+- 理由：快照和结果可从 `trades` / `navs` 动态计算，无需预存
+- 真正需要固化时再加表（验证驱动）
+
+**2. 字段精简（7 个）**：
+```
+id, action, actor, acted_at, trade_id, intent, note
+```
+- 去掉 `source`：`action` + `actor` 组合已足够区分来源
+- 去掉 `plan_id`：可通过 `trade_id` 追溯
+- 去掉 `fund_code`：可通过 `trade_id` JOIN `trades` 查到
+- 去掉 `extra`：有 `note` 就够，JSON 扩展是过度设计
+
+**3. `intent` 固定枚举**：
+```python
+Intent = Literal["planned", "impulse", "opportunistic", "exit"]
+```
+- 固定选项保证数据一致性，方便统计
+- 特殊情况写 `note`
+
+**4. 埋点原则**：
+- 只记录用户的**决策行为**，不记录系统自动处理
+- 确认结果从 `trades` 表查询（status/confirm_date）
+- DCA 自动执行通过 `_log_action=False` 禁用埋点
+
+| Flow 函数 | action | actor | 备注 |
+|-----------|--------|-------|------|
+| `create_trade` | `buy` / `sell` | `human` | 仅 `_log_action=True` 时记录 |
+| `run_daily_dca` | - | - | 调用 `create_trade(_log_action=False)` |
+
+### Schema 变更
+
+- `SCHEMA_VERSION`：4 → 5
+- 新增 `action_log` 表
+
+### 修改文件
+
+**新增**：
+- `src/core/models/action.py`：`ActionLog` 数据类
+- `src/data/db/action_repo.py`：`ActionRepo` 仓储
+
+**修改**：
+- `src/data/db/db_helper.py`：DDL
+- `src/core/container.py`：注册 `action_repo`
+- `src/flows/trade.py`：埋点 + 新增 `intent` / `note` 参数
+- `src/cli/trade.py`：`--intent` / `--note` 参数
+
+**文档**：
+- `docs/sql-schema.md`：action_log 表说明
+
+### 不做的事
+
+- ❌ 不建 ContextSnapshot / Outcome 表
+- ❌ 不做 DCA 行为埋点（留到后续版本）
+- ❌ 不做历史数据回填
+
+---
+
 ## 2025-11-26 v0.3.4+ 闭环完善（月度定投 + 手动确认 + 日历管理）
 
 ### 完成内容
