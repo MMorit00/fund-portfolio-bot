@@ -26,7 +26,7 @@ def _parse_args() -> argparse.Namespace:
     )
     buy_parser.add_argument(
         "--intent",
-        choices=["planned", "impulse", "opportunistic", "exit"],
+        choices=["planned", "impulse", "opportunistic", "exit", "rebalance"],
         help="意图标签",
     )
     buy_parser.add_argument("--note", help="备注")
@@ -41,7 +41,7 @@ def _parse_args() -> argparse.Namespace:
     )
     sell_parser.add_argument(
         "--intent",
-        choices=["planned", "impulse", "opportunistic", "exit"],
+        choices=["planned", "impulse", "opportunistic", "exit", "rebalance"],
         help="意图标签",
     )
     sell_parser.add_argument("--note", help="备注")
@@ -57,6 +57,7 @@ def _parse_args() -> argparse.Namespace:
     # ========== cancel 子命令 ==========
     cancel_parser = subparsers.add_parser("cancel", help="取消 pending 交易")
     cancel_parser.add_argument("--id", required=True, type=int, help="交易 ID")
+    cancel_parser.add_argument("--note", help="取消原因")
 
     # ========== confirm-manual 子命令 ==========
     confirm_manual_parser = subparsers.add_parser(
@@ -144,8 +145,9 @@ def _do_cancel(args: argparse.Namespace) -> int:
     """执行 cancel 命令。"""
     try:
         trade_id = args.id
+        note = args.note
         log(f"[Trade:cancel] 取消交易：ID={trade_id}")
-        cancel_trade(trade_id=trade_id)
+        cancel_trade(trade_id=trade_id, note=note)
         log(f"✅ 交易 {trade_id} 已取消")
         return 0
     except ValueError as err:

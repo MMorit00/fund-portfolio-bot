@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-ActionType = Literal["buy", "sell", "dca_skip", "rebalance"]
+ActionType = Literal["buy", "sell", "dca_skip", "cancel"]
 Actor = Literal["human", "system", "dca"]
-Intent = Literal["planned", "impulse", "opportunistic", "exit"]
+Intent = Literal["planned", "impulse", "opportunistic", "exit", "rebalance"]
 
 
 @dataclass(slots=True)
@@ -19,9 +19,9 @@ class ActionLog:
     - 记录操作意图和人话备注
 
     字段说明：
-    - action: 动作类型（buy/sell/dca_skip/rebalance）
+    - action: 动作类型（buy/sell/dca_skip/cancel）
     - actor: 执行者（human/system/dca）
-    - intent: 意图标签，手动填写（planned/impulse/opportunistic/exit）
+    - intent: 意图标签，手动填写（planned/impulse/opportunistic/exit/rebalance）
     - note: 人话备注，手动填写
 
     设计原则：

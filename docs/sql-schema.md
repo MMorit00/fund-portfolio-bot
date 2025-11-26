@@ -57,11 +57,11 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `id` | INTEGER | 主键 |
-| `action` | TEXT | 动作类型：buy / sell / dca_skip / rebalance |
+| `action` | TEXT | 动作类型：buy / sell / dca_skip / cancel |
 | `actor` | TEXT | 执行者：human / system / dca |
 | `acted_at` | TEXT | 发生时间（ISO datetime） |
 | `trade_id` | INTEGER | 关联 trades.id（可空） |
-| `intent` | TEXT | 意图标签：planned / impulse / opportunistic / exit（可空） |
+| `intent` | TEXT | 意图标签：planned / impulse / opportunistic / exit / rebalance（可空） |
 | `note` | TEXT | 人话备注（可空） |
 
 **设计说明**：
@@ -75,8 +75,8 @@
 | 手动买入/卖出 | ✅ | buy / sell | human | CLI `trade buy/sell` |
 | DCA 自动执行 | ❌ | - | - | 系统行为，不记录 |
 | 跳过定投 | ✅ | dca_skip | human | CLI `dca skip` |
+| 取消交易 | ✅ | cancel | human | CLI `trade cancel`（v0.4.1+） |
 | 交易确认 | ❌ | - | - | trades.status 已有 |
-| 取消交易 | ❌ | - | - | trades.status 已有 |
 | 再平衡执行 | ❌ | - | - | 留到后续版本 |
 
 **actor 含义**：

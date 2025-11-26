@@ -210,14 +210,18 @@ def list_trades(
 def cancel_trade(
     *,
     trade_id: int,
+    note: str | None = None,
     trade_repo: TradeRepo | None = None,
+    action_repo: ActionRepo | None = None,
 ) -> None:
     """
-    取消 pending 交易（v0.3.4 新增）。
+    取消 pending 交易（v0.3.4 新增，v0.4.1 添加埋点）。
 
     Args:
         trade_id: 交易 ID。
+        note: 取消原因备注（可选）。
         trade_repo: 交易仓储（可选，自动注入）。
+        action_repo: 行为日志仓储（可选，自动注入）。
 
     Raises:
         ValueError: 交易不存在或不是 pending 状态时抛出。
@@ -226,6 +230,20 @@ def cancel_trade(
         将指定交易的 status 从 pending 更新为 skipped。
     """
     trade_repo.cancel(trade_id)
+
+    # 记录行为日志
+    if action_repo is not None:
+        action_repo.add(
+            ActionLog(
+                id=None,
+                action="cancel",
+                actor="human",
+                acted_at=datetime.now(),
+                trade_id=trade_id,
+                intent=None,
+                note=note,
+            )
+        )
 
 
 @dependency
