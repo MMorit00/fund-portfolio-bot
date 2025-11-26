@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import date
 
 from src.core.dependency import dependency
@@ -18,12 +19,12 @@ def run_daily_dca(
     dca_plan_repo: DcaPlanRepo | None = None,
 ) -> int:
     """
-    生成当天应执行的定投 pending 交易（v0.3.2：仅处理 active 计划）。
+    生成当天应执行的定投 pending 交易（v0.3.4+：短月自动顺延）。
 
     规则：
     - daily: 每日生成
     - weekly: rule = MON/TUE/WED/THU/FRI
-    - monthly: rule = 1..31（若当月无该日，顺延到月末可留 TODO）
+    - monthly: rule = 1..31（若当月无该日，顺延到月末最后一天）
 
     Args:
         today: 当日日期；按计划频率/规则判断是否到期。
@@ -81,7 +82,13 @@ def skip_dca(
 
 
 def _is_plan_due(plan: DcaPlan, day: date) -> bool:
-    """判断定投计划在指定日期是否到期。"""
+    """
+    判断定投计划在指定日期是否到期（v0.3.4+：月度定投支持短月顺延）。
+
+    月度定投规则：
+    - 若 rule=31 但当月只有 28/29/30 天，则在月末最后一天触发
+    - 示例：rule=31 在 2 月 28 日（非闰年）触发
+    """
     if plan.frequency == "daily":
         return True
     if plan.frequency == "weekly":
@@ -89,7 +96,11 @@ def _is_plan_due(plan: DcaPlan, day: date) -> bool:
         return plan.rule.upper() == weekday_map[day.weekday()]
     if plan.frequency == "monthly":
         try:
-            return int(plan.rule) == day.day
+            target_day = int(plan.rule)
+            # 短月顺延到月末最后一天
+            _, last_day = monthrange(day.year, day.month)
+            effective_day = min(target_day, last_day)
+            return day.day == effective_day
         except ValueError:
             return False
     return False

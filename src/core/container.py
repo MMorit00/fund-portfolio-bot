@@ -41,6 +41,7 @@ from src.data.client.eastmoney import EastmoneyNavService
 from src.data.client.local_nav import LocalNavService
 from src.data.db.alloc_config_repo import AllocConfigRepo
 from src.data.db.calendar import CalendarService
+from src.data.db.db_helper import DbHelper
 from src.data.db.dca_plan_repo import DcaPlanRepo
 from src.data.db.fund_repo import FundRepo
 from src.data.db.nav_repo import NavRepo

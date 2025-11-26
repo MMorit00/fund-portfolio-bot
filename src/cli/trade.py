@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from src.core.log import log
-from src.flows.trade import cancel_trade, create_trade, list_trades
+from src.flows.trade import cancel_trade, confirm_trade_manual, create_trade, list_trades
 
 
 def _parse_args() -> argparse.Namespace:
@@ -45,6 +45,25 @@ def _parse_args() -> argparse.Namespace:
     # ========== cancel 子命令 ==========
     cancel_parser = subparsers.add_parser("cancel", help="取消 pending 交易")
     cancel_parser.add_argument("--id", required=True, type=int, help="交易 ID")
+
+    # ========== confirm-manual 子命令 ==========
+    confirm_manual_parser = subparsers.add_parser(
+        "confirm-manual",
+        help="手动确认 pending 交易（应对 NAV 永久缺失场景）",
+    )
+    confirm_manual_parser.add_argument("--id", required=True, type=int, help="交易 ID")
+    confirm_manual_parser.add_argument(
+        "--shares",
+        required=True,
+        type=Decimal,
+        help="确认份额（从支付宝等平台复制）",
+    )
+    confirm_manual_parser.add_argument(
+        "--nav",
+        required=True,
+        type=Decimal,
+        help="确认净值（从支付宝等平台复制）",
+    )
 
     return parser.parse_args()
 
@@ -117,6 +136,24 @@ def _do_cancel(args: argparse.Namespace) -> int:
         return 5
 
 
+def _do_confirm_manual(args: argparse.Namespace) -> int:
+    """执行 confirm-manual 命令。"""
+    try:
+        trade_id = args.id
+        shares = args.shares
+        nav = args.nav
+        log(f"[Trade:confirm-manual] 手动确认交易：ID={trade_id}，份额={shares}，NAV={nav}")
+        confirm_trade_manual(trade_id=trade_id, shares=shares, nav=nav)
+        log(f"✅ 交易 {trade_id} 已手动确认（份额={shares}，NAV={nav}）")
+        return 0
+    except ValueError as err:
+        log(f"❌ 手动确认失败：{err}")
+        return 4
+    except Exception as err:  # noqa: BLE001
+        log(f"❌ 手动确认交易失败：{err}")
+        return 5
+
+
 def _do_list(args: argparse.Namespace) -> int:
     """执行 list 命令。"""
     try:
@@ -164,7 +201,7 @@ def _do_list(args: argparse.Namespace) -> int:
 
 def main() -> int:
     """
-    手动交易管理 CLI（v0.3.4）。
+    手动交易管理 CLI（v0.3.4+）。
 
     Returns:
         退出码：0=成功；4=参数错误；5=其他失败。
@@ -179,6 +216,8 @@ def main() -> int:
         return _do_list(args)
     elif args.command == "cancel":
         return _do_cancel(args)
+    elif args.command == "confirm-manual":
+        return _do_confirm_manual(args)
     else:
         log(f"❌ 未知命令：{args.command}")
         return 1

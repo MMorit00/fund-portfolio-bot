@@ -178,7 +178,10 @@ def sync_calendar(
         import exchange_calendars as xc  # type: ignore[import]
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(
-            "导入 exchange_calendars 失败，请先安装依赖，例如：uv add exchange_calendars"
+            "exchange_calendars 未安装或导入失败。\n"
+            "解决方案：\n"
+            "  1. 安装依赖：uv sync（推荐）或 uv add exchange_calendars\n"
+            "  2. 或使用 'calendar refresh' 命令从 CSV 导入日历"
         ) from exc
 
     ex_code = _map_market_to_xc_code(market)
@@ -265,7 +268,11 @@ def patch_calendar_cn_a(
         import pandas as pd  # type: ignore[import]
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(
-            "导入 Akshare 或 pandas 失败，请先安装依赖：uv add akshare pandas"
+            "Akshare 或 pandas 未安装或导入失败。\n"
+            "解决方案：\n"
+            "  1. 安装依赖：uv sync（推荐）或 uv add akshare pandas\n"
+            "  2. 或使用 'calendar sync' 命令同步基础日历（仅 exchange_calendars）\n"
+            "  3. 或使用 'calendar refresh' 命令从 CSV 导入日历"
         ) from exc
 
     log("[Calendar:patch] 正在从新浪财经(Akshare)拉取最新 A 股日历…")

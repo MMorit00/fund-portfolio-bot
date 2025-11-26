@@ -200,3 +200,50 @@ def cancel_trade(
         将指定交易的 status 从 pending 更新为 skipped。
     """
     trade_repo.cancel(trade_id)
+
+
+@dependency
+def confirm_trade_manual(
+    *,
+    trade_id: int,
+    shares: Decimal,
+    nav: Decimal,
+    trade_repo: TradeRepo | None = None,
+) -> None:
+    """
+    手动确认 pending 交易（v0.3.4+ 新增，应对 NAV 永久缺失场景）。
+
+    使用场景：
+    - 支付宝等平台订单已成功，但系统 NAV 持续缺失（基金停牌、数据源故障）
+    - 用户从平台复制 NAV 和份额，手动确认系统交易记录
+
+    Args:
+        trade_id: 交易 ID（必须是 pending 状态）。
+        shares: 确认份额（从支付宝等平台复制，Decimal 类型）。
+        nav: 确认净值（从支付宝等平台复制，Decimal 类型）。
+        trade_repo: 交易仓储（可选，自动注入）。
+
+    Raises:
+        ValueError: 交易不存在、不是 pending 状态、或参数无效时抛出。
+
+    副作用：
+        将交易状态更新为 confirmed，写入份额与净值，重置延迟标记。
+
+    注意：
+        - NAV 和 shares 必须大于 0
+        - 建议仅在 NAV 延迟超过 3 天后使用
+        - 确认后无法撤销，请仔细核对数据
+    """
+    if shares <= Decimal("0"):
+        raise ValueError(f"份额必须大于 0：{shares}")
+    if nav <= Decimal("0"):
+        raise ValueError(f"净值必须大于 0：{nav}")
+
+    trade = trade_repo.get(trade_id)
+    if not trade:
+        raise ValueError(f"交易不存在：trade_id={trade_id}")
+    if trade.status != "pending":
+        raise ValueError(f"只能确认 pending 交易：trade_id={trade_id}，当前状态={trade.status}")
+
+    # 使用 confirm 方法确认交易（会自动重置延迟标记）
+    trade_repo.confirm(trade_id, shares, nav)

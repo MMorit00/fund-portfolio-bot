@@ -274,12 +274,16 @@ v0.3.4 统一使用 DB 日历后端，通过 `calendar` CLI 管理日历数据�
 **适用场景**：国内 A 股投资，需要自动同步最新交易日历。
 
 ```bash
-# 1. 首次初始化：使用 exchange_calendars 同步历史数据（需安装：uv add exchange_calendars）
+# 1. 首次初始化：使用 exchange_calendars 同步历史数据
 python -m src.cli.calendar sync --market CN_A --from 2020-01-01 --to 2025-12-31
 
-# 2. 日常修补：使用 Akshare 修补近期 A 股日历（需安装：uv add akshare pandas）
+# 2. 日常修补：使用 Akshare 修补近期 A 股日历
 python -m src.cli.calendar patch-cn-a --back 30 --forward 365
 ```
+
+**依赖说明**：
+- `exchange-calendars` 和 `akshare` 已在 `pyproject.toml` 中声明为项目依赖
+- 安装项目时会自动安装这些库（`uv sync`）
 
 **说明**：
 - `sync` 提供"骨架"（官方标准日历，覆盖历史 + 已知未来）
