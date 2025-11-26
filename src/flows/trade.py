@@ -36,7 +36,7 @@ def create_trade(
         trade_type: 交易类型，`buy` 或 `sell`。
         amount: 金额，必须大于 0（Decimal）。
         trade_day: 交易日期（下单/约定日）。
-        intent: 意图标签（planned/impulse/opportunistic/exit）。
+        intent: 意图标签（planned/impulse/opportunistic/exit/rebalance）。
         note: 人话备注。
         _log_action: 是否记录行为日志（DCA 等自动场景应传 False）。
         trade_repo: 交易仓储（可选，自动注入）。

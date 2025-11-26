@@ -3,10 +3,12 @@ from __future__ import annotations
 from decimal import Decimal
 
 from src.core.dependency import dependency
+from src.core.models.action import ActionLog
 from src.core.models.alloc_config import AllocConfig
 from src.core.models.asset_class import AssetClass
 from src.core.models.dca_plan import DcaPlan
 from src.core.models.fund import FundInfo
+from src.data.db.action_repo import ActionRepo
 from src.data.db.alloc_config_repo import AllocConfigRepo
 from src.data.db.dca_plan_repo import DcaPlanRepo
 from src.data.db.fund_repo import FundRepo
@@ -258,3 +260,25 @@ def delete_allocation(
         从 alloc_config 表删除指定资产配置。
     """
     alloc_config_repo.delete(asset_class)
+
+
+# ==================== 行为日志查询 ====================
+
+
+@dependency
+def list_actions(
+    *,
+    days: int = 30,
+    action_repo: ActionRepo | None = None,
+) -> list[ActionLog]:
+    """
+    查询最近 N 天的行为日志（v0.4.1）。
+
+    Args:
+        days: 查询天数（默认 30 天）。
+        action_repo: 行为日志仓储（可选，自动注入）。
+
+    Returns:
+        行为日志列表，按时间降序排列。
+    """
+    return action_repo.list_recent(days)

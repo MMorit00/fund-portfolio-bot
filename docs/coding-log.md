@@ -114,6 +114,7 @@ ActionType = Literal["buy", "sell", "dca_skip", "cancel"]
 - `src/cli/trade.py`：buy/sell 支持 `--intent rebalance`，cancel 支持 `--note`
 
 **新增**：
+- `src/flows/config.py`：新增 `list_actions` 函数（行为日志查询）
 - `src/cli/action.py`：行为日志查询 CLI（~100 行）
 
 ### 设计原则
@@ -122,6 +123,11 @@ ActionType = Literal["buy", "sell", "dca_skip", "cancel"]
 - 所有 `actor="human"` 的行为都记录
 - 保持 action + actor 组合的语义清晰
 - note 字段用于记录用户决策原因
+
+**架构设计**：
+- Flow 层（`flows/config.py`）：`list_actions` 函数，带 `@dependency` 注入
+- CLI 层（`cli/action.py`）：只负责参数解析和格式化输出
+- 符合项目分层规范：db → flow → cli
 
 **CLI 设计**：
 - `action list`：只查询，不修改

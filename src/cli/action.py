@@ -3,29 +3,9 @@ from __future__ import annotations
 import argparse
 import sys
 
-from src.core.dependency import dependency
 from src.core.log import log
 from src.core.models.action import ActionLog
-from src.data.db.action_repo import ActionRepo
-
-
-@dependency
-def list_actions(
-    *,
-    days: int = 30,
-    action_repo: ActionRepo | None = None,
-) -> list[ActionLog]:
-    """
-    查询最近 N 天的行为日志（v0.4.1）。
-
-    Args:
-        days: 查询天数（默认 30 天）。
-        action_repo: 行为日志仓储（可选，自动注入）。
-
-    Returns:
-        行为日志列表，按时间降序排列。
-    """
-    return action_repo.list_recent(days)
+from src.flows.config import list_actions
 
 
 def _parse_args() -> argparse.Namespace:
