@@ -41,7 +41,6 @@ from src.data.client.eastmoney import EastmoneyNavService
 from src.data.client.local_nav import LocalNavService
 from src.data.db.alloc_config_repo import AllocConfigRepo
 from src.data.db.calendar import CalendarService
-from src.data.db.db_helper import DbHelper
 from src.data.db.dca_plan_repo import DcaPlanRepo
 from src.data.db.fund_repo import FundRepo
 from src.data.db.nav_repo import NavRepo
@@ -87,6 +86,19 @@ def get_calendar_service() -> CalendarService:
     """
     conn = get_db_connection()
     return CalendarService(conn)
+
+
+@register("db_helper")
+def get_db_helper() -> DbHelper:
+    """
+    获取 DbHelper 实例（用于 Flow 层直接操作数据库）。
+
+    Returns:
+        DbHelper 实例（内部按配置的 DB_PATH 管理 SQLite 连接）。
+
+    注册名：db_helper
+    """
+    return DbHelper()
 
 
 @register("trade_repo")

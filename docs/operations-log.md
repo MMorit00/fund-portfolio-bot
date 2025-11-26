@@ -9,7 +9,6 @@
 - `DISCORD_WEBHOOK_URL`：日报推送地址
 - `DB_PATH`：SQLite 路径（默认 `data/portfolio.db`）
 - `ENABLE_SQL_DEBUG`：是否启用 SQL trace 打印
-- `TRADING_CALENDAR_BACKEND`：交易日历后端（`db` 或默认 `simple`）
 
 配置统一在 `src/core/config.py` 读取。
 
@@ -260,20 +259,55 @@ python -m src.cli.rebalance
 [Job:fetch_navs] ✅ 抓取完成：成功 45/50，失败 5 只
 ```
 
-## 交易日历管理（v0.3）
+## 交易日历管理（v0.3.4+）
 
-### 导入交易日历
+v0.3.4 统一使用 DB 日历后端，通过 `calendar` CLI 管理日历数据。提供三种日历管理方式：
 
-CSV 格式：`market,day,is_trading_day` 或 `day,is_trading_day`（market 默认 A）
+| 命令 | 用途 | 数据源 | 场景 |
+|------|------|--------|------|
+| `refresh` | CSV 导入 | 手动准备的 CSV | 离线场景/自定义日历 |
+| `sync` | 基础日历注油 | exchange_calendars | 首次初始化历史数据 |
+| `patch-cn-a` | A 股日历修补 | Akshare + 新浪财经 | 日常修补临时调休 |
+
+### 方案 A：exchange_calendars 注油 + Akshare 修补（推荐）
+
+**适用场景**：国内 A 股投资，需要自动同步最新交易日历。
 
 ```bash
-# 注油（exchange_calendars）
-TRADING_CALENDAR_BACKEND=db DB_PATH=data/portfolio.db \
-  python -m src.cli.sync_calendar --cal CN_A --from 2024-01-01 --to 2030-12-31
+# 1. 首次初始化：使用 exchange_calendars 同步历史数据（需安装：uv add exchange_calendars）
+python -m src.cli.calendar sync --market CN_A --from 2020-01-01 --to 2025-12-31
 
-# 修补（Akshare/新浪，在线覆盖）
-DB_PATH=data/portfolio.db python -m src.cli.patch_calendar
+# 2. 日常修补：使用 Akshare 修补近期 A 股日历（需安装：uv add akshare pandas）
+python -m src.cli.calendar patch-cn-a --back 30 --forward 365
 ```
+
+**说明**：
+- `sync` 提供"骨架"（官方标准日历，覆盖历史 + 已知未来）
+- `patch-cn-a` 提供"补丁"（新浪财经实时数据，修正临时调休/节假日变更）
+- **推荐定期执行** `patch-cn-a`（如每周/每月），确保日历最新
+- 支持其他市场：`--market US_NYSE`（美股）
+
+### 方案 B：纯 CSV 导入（离线场景）
+
+**适用场景**：无法安装外部依赖、完全自定义日历、离线环境。
+
+```bash
+# 从预先准备的 CSV 导入
+python -m src.cli.calendar refresh --csv data/trading_calendar_cn_a.csv
+
+# 支持多市场导入
+python -m src.cli.calendar refresh --csv data/trading_calendar_us_nyse.csv
+```
+
+**CSV 格式支持**：
+- 完整格式：`market,day,is_trading_day`
+- 简化格式：`day,is_trading_day`（market 默认 CN_A）
+
+### 首次使用要求
+
+- 系统要求 `trading_calendar` 表必须存在且有数据
+- **首次运行任何 CLI 前，必须先初始化日历**（使用上述任一方案）
+- 否则会抛出明确错误提示
 
 ### 验证日历数据
 
@@ -283,6 +317,9 @@ sqlite3 data/portfolio.db "SELECT market, COUNT(*) AS total, SUM(is_trading_day)
 
 # 点查（国庆场景）
 sqlite3 data/portfolio.db "SELECT * FROM trading_calendar WHERE market='CN_A' AND day='2025-10-01';"
+
+# 查看最新修补日期
+sqlite3 data/portfolio.db "SELECT market, MAX(day) FROM trading_calendar WHERE is_trading_day=1 GROUP BY market;"
 ```
 
 ## 确认延迟处理
