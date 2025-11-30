@@ -7,8 +7,8 @@
 
 ## 当前版本
 
-- Schema Version: **5** (SCHEMA_VERSION = 5)
-- 最后更新: 2025-11-26
+- Schema Version: **6** (SCHEMA_VERSION = 6)
+- 最后更新: 2025-11-30
 
 ## 核心表结构
 
@@ -18,7 +18,7 @@
 
 | 表名 | 作用 | 关键字段 |
 |------|------|---------|
-| `funds` | 基金基础信息 | fund_code, name, asset_class, market |
+| `funds` | 基金基础信息 | fund_code, name, asset_class, market, alias |
 | `trades` | 交易记录 | id, fund_code, trade_date, pricing_date, confirm_date, confirmation_status |
 | `navs` | 净值数据 | fund_code, day, nav |
 | `trading_calendar` | 交易日历 | market, day, is_trading_day |
@@ -128,6 +128,7 @@ SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 - **v0.3.2** (2025-11-22): `dca_plans` 表增加 `status` 字段（active/disabled）
 - **v0.3.4** (2025-11-26): 月度定投短月顺延（逻辑变更，无 schema 变更）
 - **v0.4** (2025-11-26): 新增 `action_log` 表，用户行为日志
+- **v0.4.2** (2025-11-30): `funds` 表增加 `alias` 字段，支持历史账单导入
 
 ## 何时需要迁移文档？
 
@@ -142,11 +143,11 @@ SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 
 ---
 
-## v0.4.2 规划（历史导入支持）
+## v0.4.2 实现（历史导入支持）
 
-> **状态**：设计完成，待实现
+> **状态**：Schema 已完成，Flow 逻辑开发中
 
-### funds 表扩展
+### funds 表扩展（✅ 已实现）
 
 ```sql
 -- 新增 alias 字段：存储支付宝/天天基金等平台的完整基金名称
@@ -162,7 +163,11 @@ ALTER TABLE funds ADD COLUMN alias TEXT;
 | 016057 | 嘉实纳指A | 嘉实纳斯达克100ETF联接(QDII)A |
 | 001551 | 天弘纳指C | 天弘纳斯达克100指数(QDII)C |
 
-### trades 表扩展（可选）
+**Repo 方法**：
+- `FundRepo.find_by_alias(alias)` - 通过 alias 查找基金
+- `FundRepo.update_alias(fund_code, alias)` - 更新基金的 alias
+
+### trades 表扩展（待实现）
 
 ```sql
 -- 新增 source 字段：标识交易来源

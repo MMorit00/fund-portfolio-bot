@@ -16,16 +16,25 @@ class FundRepo:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def add(self, fund_code: str, name: str, asset_class: AssetClass, market: str) -> None:  # type: ignore[override]
+    def add(
+        self,
+        fund_code: str,
+        name: str,
+        asset_class: AssetClass,
+        market: str,
+        alias: str | None = None,
+    ) -> None:
         """新增或更新基金信息（fund_code 幂等）。"""
         with self.conn:
             self.conn.execute(
                 (
-                    "INSERT INTO funds(fund_code, name, asset_class, market) VALUES(?, ?, ?, ?) "
-                    "ON CONFLICT(fund_code) DO UPDATE SET name=excluded.name, "  # noqa: E501
-                    "asset_class=excluded.asset_class, market=excluded.market"
+                    "INSERT INTO funds(fund_code, name, asset_class, market, alias) "
+                    "VALUES(?, ?, ?, ?, ?) "
+                    "ON CONFLICT(fund_code) DO UPDATE SET name=excluded.name, "
+                    "asset_class=excluded.asset_class, market=excluded.market, "
+                    "alias=excluded.alias"
                 ),
-                (fund_code, name, asset_class.value, market),
+                (fund_code, name, asset_class.value, market, alias),
             )
 
     def get(self, fund_code: str) -> FundInfo | None:  # type: ignore[override]
@@ -64,6 +73,45 @@ class FundRepo:
             raise ValueError(f"基金不存在：{fund_code}")
         self.conn.commit()
 
+    def find_by_alias(self, alias: str) -> FundInfo | None:
+        """
+        通过 alias 查找基金（v0.4.2 新增）。
+
+        用于历史账单导入时，根据平台完整基金名称查找对应的 fund_code。
+
+        Args:
+            alias: 平台完整基金名称（精确匹配）。
+
+        Returns:
+            匹配的 FundInfo，未找到返回 None。
+        """
+        row = self.conn.execute(
+            "SELECT * FROM funds WHERE alias = ?",
+            (alias,),
+        ).fetchone()
+        if not row:
+            return None
+        return _row_to_fund_info(row)
+
+    def update_alias(self, fund_code: str, alias: str | None) -> None:
+        """
+        更新基金的 alias（v0.4.2 新增）。
+
+        Args:
+            fund_code: 基金代码。
+            alias: 平台完整基金名称，None 表示清除。
+
+        Raises:
+            ValueError: 基金不存在时抛出。
+        """
+        cursor = self.conn.execute(
+            "UPDATE funds SET alias = ? WHERE fund_code = ?",
+            (alias, fund_code),
+        )
+        if cursor.rowcount == 0:
+            raise ValueError(f"基金不存在：{fund_code}")
+        self.conn.commit()
+
 
 def _row_to_fund_info(row: sqlite3.Row) -> FundInfo:
     """将 SQLite Row 转换为 FundInfo 对象。"""
@@ -72,4 +120,5 @@ def _row_to_fund_info(row: sqlite3.Row) -> FundInfo:
         name=row["name"],
         asset_class=AssetClass(row["asset_class"]),
         market=row["market"],
+        alias=row["alias"],
     )

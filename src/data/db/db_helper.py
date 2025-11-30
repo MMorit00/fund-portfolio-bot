@@ -6,14 +6,15 @@ from typing import Optional
 
 from src.core.config import enable_sql_debug, get_db_path
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA_DDL = """
 CREATE TABLE IF NOT EXISTS funds (
     fund_code TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     asset_class TEXT NOT NULL,
-    market TEXT NOT NULL
+    market TEXT NOT NULL,
+    alias TEXT
 );
 
 CREATE TABLE IF NOT EXISTS trades (
