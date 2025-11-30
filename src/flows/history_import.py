@@ -19,8 +19,10 @@ from src.core.models.history_import import (
     ImportSource,
 )
 from src.core.models.trade import TradeStatus, TradeType
+from src.core.rules.settlement import calc_pricing_date, default_policy
 from src.data.client.eastmoney import EastmoneyNavService
 from src.data.db.action_repo import ActionRepo
+from src.data.db.calendar import CalendarService
 from src.data.db.fund_repo import FundRepo
 from src.data.db.nav_repo import NavRepo
 from src.data.db.trade_repo import TradeRepo
@@ -50,6 +52,7 @@ def import_trades_from_csv(
     nav_repo: NavRepo | None = None,
     action_repo: ActionRepo | None = None,
     eastmoney_service: EastmoneyNavService | None = None,
+    calendar_service: CalendarService | None = None,
 ) -> ImportResult:
     """
     从 CSV 文件导入历史交易。
@@ -77,6 +80,7 @@ def import_trades_from_csv(
         nav_repo: 净值仓储（自动注入）。
         action_repo: 行为日志仓储（自动注入）。
         eastmoney_service: 东方财富服务（自动注入）。
+        calendar_service: 日历服务（自动注入，用于计算定价日）。
 
     Returns:
         ImportResult: 导入结果统计。
@@ -93,19 +97,37 @@ def import_trades_from_csv(
         >>> result = import_trades_from_csv(csv_path="data/alipay.csv", mode="apply")
         >>> print(f"成功导入 {result.succeeded} 笔，失败 {result.failed} 笔")
     """
-    # TODO: 实现具体逻辑
-    #
-    # 步骤 1: records = _parse_csv(csv_path, source)
-    # 步骤 2: _map_funds(records, fund_repo)
-    # 步骤 3: _fetch_navs(records, eastmoney_service, nav_repo)
-    # 步骤 4: _calculate_shares(records)
-    # 步骤 5: if mode == "apply": _write_trades(records, trade_repo, action_repo)
-    # 步骤 6: return _build_result(records)
+    # 步骤 1: 解析 CSV
+    records = _parse_csv(csv_path, source)
 
-    raise NotImplementedError(
-        "历史账单导入目前处于规划阶段，仅完成接口与文档设计。\n"
-        "详见 docs/history-import.md"
-    )
+    # 步骤 2: 映射 fund_code + market
+    if fund_repo is not None:
+        _map_funds(records, fund_repo)
+
+    # 步骤 3: 抓取历史 NAV（使用定价日而非下单日）
+    if eastmoney_service is not None and nav_repo is not None and calendar_service is not None:
+        _fetch_navs(records, eastmoney_service, nav_repo, calendar_service)
+
+    # 步骤 4: 计算份额
+    _calculate_shares(records)
+
+    # 步骤 5: 写入数据库（apply 模式）
+    succeeded = 0
+    if mode == "apply" and trade_repo is not None:
+        succeeded = _write_trades(
+            records, trade_repo, action_repo, with_actions, csv_path
+        )
+    elif mode == "dry_run":
+        # dry_run 模式：统计可导入数量（不实际写入）
+        for record in records:
+            if record.target_status == "confirmed":
+                if record.is_ready_for_confirm:
+                    succeeded += 1
+            elif record.is_valid:
+                succeeded += 1
+
+    # 步骤 6: 构建结果
+    return _build_result(records, succeeded)
 
 
 def _parse_csv(csv_path: str, source: ImportSource) -> list[ImportRecord]:
@@ -289,30 +311,116 @@ def _map_funds(records: list[ImportRecord], fund_repo: FundRepo) -> None:
     2. 找到匹配的 fund_code 和 market
     3. 映射失败的记录标记 error_type="fund_not_found"
 
-    TODO: 实现映射逻辑（需先实现 FundRepo.find_by_alias）
+    Args:
+        records: ImportRecord 列表（原地修改）。
+        fund_repo: 基金仓储。
     """
-    raise NotImplementedError
+    # 缓存已查询的映射结果，避免重复查询
+    alias_cache: dict[str, tuple[str, str] | None] = {}
+
+    for record in records:
+        # 跳过已有错误的记录
+        if record.error_type is not None:
+            continue
+
+        fund_name = record.original_fund_name
+
+        # 查缓存
+        if fund_name in alias_cache:
+            cached = alias_cache[fund_name]
+            if cached is None:
+                record.error_type = "fund_not_found"
+                record.error_message = f"未找到 alias 映射：{fund_name}"
+            else:
+                record.fund_code, record.market = cached
+            continue
+
+        # 查数据库
+        fund_info = fund_repo.find_by_alias(fund_name)
+        if fund_info is None:
+            alias_cache[fund_name] = None
+            record.error_type = "fund_not_found"
+            record.error_message = f"未找到 alias 映射：{fund_name}"
+        else:
+            alias_cache[fund_name] = (fund_info.fund_code, fund_info.market)
+            record.fund_code = fund_info.fund_code
+            record.market = fund_info.market
 
 
 def _fetch_navs(
     records: list[ImportRecord],
     eastmoney_service: EastmoneyNavService,
     nav_repo: NavRepo,
+    calendar_service: CalendarService,
 ) -> None:
     """
     批量抓取历史 NAV。
 
+    重要：使用 **定价日（pricing_date）** 而非下单日（trade_date）抓取 NAV。
+
+    原因：支付宝允许 7×24 下单，但基金公司只在开放日处理，按定价日净值计算份额。
+    例如：周六下单 → 定价日是下周一 → 使用周一的 NAV。
+
     逻辑：
-    1. 对每条有效记录，调用 eastmoney_service.get_nav(fund_code, trade_date)
-    2. 抓取成功则填充 record.nav
-    3. 抓取失败且 target_status="confirmed" 则标记 error_type="nav_missing"
-    4. 抓取失败且 target_status="pending" 则跳过（后续正常确认流程处理）
+    1. 根据 market 获取结算策略，计算 pricing_date
+    2. 调用 eastmoney_service.get_nav(fund_code, pricing_date)
+    3. 抓取成功则填充 record.nav
+    4. 抓取失败且 target_status="confirmed" 则标记 error_type="nav_missing"
+    5. 抓取失败且 target_status="pending" 则跳过（后续正常确认流程处理）
 
     优化：先查 nav_repo 缓存，避免重复抓取
 
-    TODO: 实现抓取逻辑
+    Args:
+        records: ImportRecord 列表（原地修改）。
+        eastmoney_service: 东方财富服务。
+        nav_repo: 净值仓储（缓存查询）。
+        calendar_service: 日历服务（用于计算定价日）。
     """
-    raise NotImplementedError
+    # 缓存：(fund_code, pricing_date) → nav
+    nav_cache: dict[tuple[str, str], Decimal | None] = {}
+
+    for record in records:
+        # 跳过已有错误或未完成映射的记录
+        if record.error_type is not None or record.fund_code is None or record.market is None:
+            continue
+
+        fund_code = record.fund_code
+        market = record.market
+
+        # 计算定价日（关键修复：使用 pricing_date 而非 trade_date）
+        try:
+            policy = default_policy(market)
+            pricing_date = calc_pricing_date(record.trade_date, policy, calendar_service)
+        except (ValueError, RuntimeError) as e:
+            # 日历数据缺失等错误
+            if record.target_status == "confirmed":
+                record.error_type = "nav_missing"
+                record.error_message = f"无法计算定价日：{e}"
+            continue
+
+        cache_key = (fund_code, str(pricing_date))
+
+        # 查缓存
+        if cache_key in nav_cache:
+            nav = nav_cache[cache_key]
+        else:
+            # 先查 nav_repo（本地数据库缓存）
+            nav = nav_repo.get(fund_code, pricing_date)
+            if nav is None:
+                # 调用东方财富 API
+                nav = eastmoney_service.get_nav(fund_code, pricing_date)
+                # 如果抓取成功，存入本地缓存
+                if nav is not None:
+                    nav_repo.upsert(fund_code, pricing_date, nav)
+            nav_cache[cache_key] = nav
+
+        if nav is not None:
+            record.nav = nav
+        elif record.target_status == "confirmed":
+            # confirmed 记录必须有 NAV，否则标记错误
+            record.error_type = "nav_missing"
+            record.error_message = f"NAV 缺失：{fund_code} @ {pricing_date}（定价日，下单日={record.trade_date}）"
+        # pending 记录不需要 NAV（后续正常确认流程处理）
 
 
 def _calculate_shares(records: list[ImportRecord]) -> None:
@@ -321,11 +429,23 @@ def _calculate_shares(records: list[ImportRecord]) -> None:
 
     逻辑：
     - 只对有 nav 的记录计算
-    - 保留 4 位小数
+    - 保留 4 位小数（ROUND_HALF_UP）
 
-    TODO: 实现计算逻辑
+    Args:
+        records: ImportRecord 列表（原地修改）。
     """
-    raise NotImplementedError
+    from decimal import ROUND_HALF_UP
+
+    for record in records:
+        # 跳过无 NAV 的记录
+        if record.nav is None:
+            continue
+
+        # 计算份额，保留 4 位小数
+        shares = (record.amount / record.nav).quantize(
+            Decimal("0.0001"), rounding=ROUND_HALF_UP
+        )
+        record.shares = shares
 
 
 def _write_trades(
@@ -333,24 +453,105 @@ def _write_trades(
     trade_repo: TradeRepo,
     action_repo: ActionRepo | None,
     with_actions: bool,
+    csv_path: str,
 ) -> int:
     """
     写入 trades 表（+ 可选 action_log）。
 
     逻辑：
-    1. 过滤 is_valid 的记录
-    2. 构造 Trade 对象，写入 trade_repo
-    3. 如果 with_actions=True，补录 action_log
+    1. confirmed 记录：is_ready_for_confirm（有 NAV + 有份额）
+    2. pending 记录：is_valid（有 fund_code + market）
+    3. 构造 Trade 对象，写入 trade_repo
+    4. 如果 with_actions=True，补录 action_log
 
-    TODO: 实现写入逻辑
+    Args:
+        records: ImportRecord 列表。
+        trade_repo: 交易仓储。
+        action_repo: 行为日志仓储（可选）。
+        with_actions: 是否补录 ActionLog。
+        csv_path: CSV 文件路径（用于 ActionLog.note）。
+
+    Returns:
+        成功写入的交易数量。
     """
-    raise NotImplementedError
+    from pathlib import Path
+
+    from src.core.models.action import ActionLog
+    from src.core.models.trade import Trade
+
+    succeeded = 0
+    csv_name = Path(csv_path).name
+
+    for record in records:
+        # 判断是否可以写入
+        if record.target_status == "confirmed":
+            # confirmed 记录需要 is_ready_for_confirm
+            if not record.is_ready_for_confirm:
+                continue
+        else:
+            # pending 记录只需要 is_valid
+            if not record.is_valid:
+                continue
+
+        # 构造 Trade 对象
+        trade = Trade(
+            id=None,
+            fund_code=record.fund_code,  # type: ignore[arg-type]
+            type=record.trade_type,
+            amount=record.amount,
+            trade_date=record.trade_date,
+            status=record.target_status,
+            market=record.market,  # type: ignore[arg-type]
+            shares=record.shares,  # confirmed 有值，pending 为 None
+            remark=f"导入自 {record.source}（{csv_name}）",
+        )
+
+        # 写入 trades 表
+        saved_trade = trade_repo.add(trade)
+        succeeded += 1
+
+        # 补录 ActionLog
+        if with_actions and action_repo is not None:
+            action_log = ActionLog(
+                id=None,
+                action=record.trade_type,  # buy / sell
+                actor="human",
+                acted_at=record.trade_time,
+                trade_id=saved_trade.id,
+                intent="planned",  # 历史行为无法判断，默认 planned
+                note=f"导入自{record.source}账单（{csv_name}）",
+            )
+            action_repo.add(action_log)
+
+    return succeeded
 
 
-def _build_result(records: list[ImportRecord]) -> ImportResult:
+def _build_result(records: list[ImportRecord], succeeded: int) -> ImportResult:
     """
     根据处理后的 records 构建 ImportResult。
 
-    TODO: 实现统计逻辑
+    统计逻辑：
+    - total: 所有记录数（包括错误记录）
+    - succeeded: 成功写入的记录数（由 _write_trades 返回）
+    - failed: 有错误的记录数
+    - skipped: 重复记录数（error_type="duplicate"）
+
+    Args:
+        records: ImportRecord 列表。
+        succeeded: 成功写入的交易数量。
+
+    Returns:
+        ImportResult 统计结果。
     """
-    raise NotImplementedError
+    total = len(records)
+    failed_records = [r for r in records if r.error_type is not None]
+    failed = len(failed_records)
+    skipped = len([r for r in failed_records if r.error_type == "duplicate"])
+
+    return ImportResult(
+        total=total,
+        succeeded=succeeded,
+        failed=failed - skipped,  # 失败数不含跳过
+        skipped=skipped,
+        failed_records=failed_records,
+    )
