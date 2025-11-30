@@ -139,3 +139,46 @@ SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 - ✅ 多环境部署（开发/测试/生产）
 
 **当前状态**：纯开发阶段，以上条件均不满足 ❌
+
+---
+
+## v0.4.2 规划（历史导入支持）
+
+> **状态**：设计完成，待实现
+
+### funds 表扩展
+
+```sql
+-- 新增 alias 字段：存储支付宝/天天基金等平台的完整基金名称
+ALTER TABLE funds ADD COLUMN alias TEXT;
+```
+
+**用途**：历史账单导入时，根据 `alias` 匹配基金代码
+
+**示例**：
+
+| fund_code | name | alias |
+|-----------|------|-------|
+| 016057 | 嘉实纳指A | 嘉实纳斯达克100ETF联接(QDII)A |
+| 001551 | 天弘纳指C | 天弘纳斯达克100指数(QDII)C |
+
+### trades 表扩展（可选）
+
+```sql
+-- 新增 source 字段：标识交易来源
+ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'manual';
+-- 可选值: manual / alipay / ttjj / dca
+
+-- 新增 external_id 字段：外部流水号，用于去重
+ALTER TABLE trades ADD COLUMN external_id TEXT;
+```
+
+**用途**：
+- `source`：区分手动录入 vs 导入 vs DCA 自动创建
+- `external_id`：存储支付宝交易号，防止重复导入
+
+**去重逻辑**：`(source, external_id)` 组合唯一
+
+### 详细设计
+
+见 `docs/history-import.md`

@@ -5,6 +5,64 @@
 
 ---
 
+## 2025-11-30 v0.4.2 历史账单导入（设计阶段）
+
+### 背景
+
+用户需要导入支付宝历史交易记录，补全历史数据。支付宝账单只有金额，没有基金代码、份额、净值。
+
+### 设计决策
+
+**1. 支付宝账单格式分析**：
+- 编码：GBK
+- 头部：5 行元数据，第 6 行开始是数据
+- 基金特征：`交易对方="蚂蚁财富-..."` + `资金状态="资金转移"`
+- 可用字段：交易号、交易时间、金额、商品名称（含基金名称 + 买入/卖出）
+- 缺失字段：基金代码、份额、净值
+
+**2. 基金名称映射策略**：
+- 选择 `funds.alias` 字段（而非复用 `name`）
+- 理由：`name` 保持用户友好的简称，`alias` 存储平台完整名称
+- 映射逻辑：`SELECT fund_code FROM funds WHERE alias = ?`
+
+**3. 自动补充净值/份额**：
+- 净值：调用 `EastmoneyNavService.get_nav(fund_code, trade_date)`
+- 份额：`shares = amount / nav`
+- 导入后状态：`confirmed`（有 NAV）或 `pending`（无 NAV）
+
+**4. ActionLog 补录**：
+- 每笔导入交易补一条 action_log
+- `action=buy/sell`, `actor=human`, `note="导入自支付宝账单"`
+- `acted_at` 使用 CSV 中的交易时间
+
+**5. Schema 扩展规划（待实现）**：
+```sql
+ALTER TABLE funds ADD COLUMN alias TEXT;
+ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'manual';
+ALTER TABLE trades ADD COLUMN external_id TEXT;
+```
+
+### 本次完成（骨架）
+
+**文档**：
+- `docs/history-import.md`：完整设计文档
+- `docs/sql-schema.md`：v0.4.2 规划小节
+- `docs/roadmap.md`：v0.4.2 版本说明
+
+**代码占位**：
+- `src/core/models/history_import.py`：数据类定义
+- `src/flows/history_import.py`：Flow 函数签名 + TODO
+- `src/cli/history_import.py`：CLI 入口 + 参数解析
+
+### 待实现
+
+- [ ] `funds.alias` 字段 + `FundRepo.find_by_alias()`
+- [ ] CSV 解析器（GBK + 基金过滤）
+- [ ] 历史 NAV 批量抓取
+- [ ] 份额计算 + 事务写入
+
+---
+
 ## 2025-11-26 v0.4 行为数据（action_log）
 
 ### 背景
