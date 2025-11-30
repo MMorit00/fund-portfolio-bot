@@ -2,12 +2,14 @@
 
 v0.4.2 新增：支持从支付宝等平台导入历史基金交易。
 详细设计见 docs/history-import.md
-
-当前状态：骨架实现，核心逻辑待完成。
 """
 
 from __future__ import annotations
 
+import csv
+import re
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 from src.core.dependency import dependency
@@ -16,11 +18,21 @@ from src.core.models.history_import import (
     ImportResult,
     ImportSource,
 )
+from src.core.models.trade import TradeStatus, TradeType
 from src.data.client.eastmoney import EastmoneyNavService
 from src.data.db.action_repo import ActionRepo
 from src.data.db.fund_repo import FundRepo
 from src.data.db.nav_repo import NavRepo
 from src.data.db.trade_repo import TradeRepo
+
+# 支付宝 CSV 常量
+_ALIPAY_ENCODING = "gbk"
+_ALIPAY_SKIP_ROWS = 5
+_ALIPAY_FUND_COUNTERPARTY = "蚂蚁财富-蚂蚁（杭州）基金销售有限公司"
+_ALIPAY_FUND_STATUS = "资金转移"
+
+# 商品名称正则：蚂蚁财富-{基金名称}-{买入/卖出}
+_ALIPAY_PRODUCT_PATTERN = re.compile(r"^蚂蚁财富-(.+)-(买入|卖出)$")
 
 # 导入模式
 ImportMode = Literal["dry_run", "apply"]
@@ -107,9 +119,165 @@ def _parse_csv(csv_path: str, source: ImportSource) -> list[ImportRecord]:
     - 从商品名称解析：基金名称 + 交易类型（买入/卖出）
     - 状态映射：交易成功→confirmed，份额确认中→pending，交易关闭→跳过
 
-    TODO: 实现解析逻辑
+    Args:
+        csv_path: CSV 文件路径。
+        source: 来源平台。
+
+    Returns:
+        解析后的 ImportRecord 列表。
     """
-    raise NotImplementedError
+    if source == "alipay":
+        return _parse_alipay_csv(csv_path)
+    # ttjj 等其他平台预留
+    raise ValueError(f"不支持的导入来源：{source}")
+
+
+def _parse_alipay_csv(csv_path: str) -> list[ImportRecord]:
+    """
+    解析支付宝账单 CSV。
+
+    CSV 列结构（16 列）：
+    0: 交易号, 2: 交易创建时间, 7: 交易对方, 8: 商品名称,
+    9: 金额（元）, 11: 交易状态, 15: 资金状态
+    """
+    records: list[ImportRecord] = []
+
+    with open(csv_path, encoding=_ALIPAY_ENCODING, newline="") as f:
+        # 跳过头部行
+        for _ in range(_ALIPAY_SKIP_ROWS):
+            f.readline()
+
+        reader = csv.reader(f)
+        for row_num, row in enumerate(reader, start=_ALIPAY_SKIP_ROWS + 1):
+            # 跳过空行或列数不足的行
+            if len(row) < 16:
+                continue
+
+            # 清理每列首尾空白和制表符
+            row = [col.strip() for col in row]
+
+            # 过滤基金交易：交易对方 + 资金状态
+            counterparty = row[7]
+            fund_status = row[15]
+            if counterparty != _ALIPAY_FUND_COUNTERPARTY:
+                continue
+            if fund_status != _ALIPAY_FUND_STATUS:
+                continue
+
+            # 解析交易状态，跳过"交易关闭"
+            alipay_status = row[11]
+            target_status = _map_alipay_status(alipay_status)
+            if target_status is None:
+                continue  # 交易关闭，跳过
+
+            # 解析商品名称 → 基金名称 + 交易类型
+            product_name = row[8]
+            parsed = _parse_alipay_product(product_name)
+            if parsed is None:
+                # 商品名称格式异常，创建错误记录
+                records.append(
+                    ImportRecord(
+                        source="alipay",
+                        external_id=row[0],
+                        original_fund_name=product_name,
+                        trade_type="buy",  # 占位
+                        trade_time=datetime.now(),  # 占位
+                        amount=Decimal("0"),
+                        target_status="pending",
+                        error_type="parse_error",
+                        error_message=f"商品名称格式异常：{product_name}",
+                    )
+                )
+                continue
+
+            fund_name, trade_type = parsed
+
+            # 解析交易时间
+            try:
+                trade_time = datetime.strptime(row[2], "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                records.append(
+                    ImportRecord(
+                        source="alipay",
+                        external_id=row[0],
+                        original_fund_name=fund_name,
+                        trade_type=trade_type,
+                        trade_time=datetime.now(),
+                        amount=Decimal("0"),
+                        target_status=target_status,
+                        error_type="parse_error",
+                        error_message=f"交易时间格式异常：{row[2]}",
+                    )
+                )
+                continue
+
+            # 解析金额
+            try:
+                amount = Decimal(row[9])
+                if amount <= 0:
+                    raise InvalidOperation("金额必须为正数")
+            except InvalidOperation:
+                records.append(
+                    ImportRecord(
+                        source="alipay",
+                        external_id=row[0],
+                        original_fund_name=fund_name,
+                        trade_type=trade_type,
+                        trade_time=trade_time,
+                        amount=Decimal("0"),
+                        target_status=target_status,
+                        error_type="invalid_data",
+                        error_message=f"金额异常：{row[9]}",
+                    )
+                )
+                continue
+
+            # 创建有效记录
+            records.append(
+                ImportRecord(
+                    source="alipay",
+                    external_id=row[0],
+                    original_fund_name=fund_name,
+                    trade_type=trade_type,
+                    trade_time=trade_time,
+                    amount=amount,
+                    target_status=target_status,
+                )
+            )
+
+    return records
+
+
+def _map_alipay_status(alipay_status: str) -> TradeStatus | None:
+    """
+    映射支付宝交易状态到 TradeStatus。
+
+    Returns:
+        TradeStatus 或 None（交易关闭时返回 None 表示跳过）。
+    """
+    if alipay_status == "交易成功":
+        return "confirmed"
+    if alipay_status == "付款成功，份额确认中":
+        return "pending"
+    # 交易关闭或其他状态 → 跳过
+    return None
+
+
+def _parse_alipay_product(product_name: str) -> tuple[str, TradeType] | None:
+    """
+    解析支付宝商品名称。
+
+    格式：蚂蚁财富-{基金名称}-{买入/卖出}
+
+    Returns:
+        (基金名称, 交易类型) 或 None（格式异常）。
+    """
+    match = _ALIPAY_PRODUCT_PATTERN.match(product_name)
+    if not match:
+        return None
+    fund_name = match.group(1)
+    trade_type: TradeType = "buy" if match.group(2) == "买入" else "sell"
+    return fund_name, trade_type
 
 
 def _map_funds(records: list[ImportRecord], fund_repo: FundRepo) -> None:
