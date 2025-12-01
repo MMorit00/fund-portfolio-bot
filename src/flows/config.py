@@ -23,6 +23,7 @@ def add_fund(
     name: str,
     asset_class: AssetClass,
     market: str,
+    alias: str | None = None,
     fund_repo: FundRepo | None = None,
 ) -> None:
     """
@@ -33,12 +34,13 @@ def add_fund(
         name: 基金名称。
         asset_class: 资产类别（AssetClass 枚举）。
         market: 市场类型（CN_A/US_NYSE 等）。
+        alias: 平台完整基金名称（可选，用于导入时匹配）。
         fund_repo: 基金仓储（可选，自动注入）。
 
     副作用：
         幂等插入或更新 funds 表。
     """
-    fund_repo.add(fund_code, name, asset_class, market)
+    fund_repo.add(fund_code, name, asset_class, market, alias)
 
 
 @dependency

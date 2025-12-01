@@ -13,6 +13,8 @@ from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 from src.core.dependency import dependency
+from src.core.log import log
+from src.core.models.asset_class import AssetClass
 from src.core.models.history_import import (
     ImportRecord,
     ImportResult,
@@ -20,7 +22,7 @@ from src.core.models.history_import import (
 )
 from src.core.models.trade import TradeStatus, TradeType
 from src.core.rules.settlement import calc_pricing_date, default_policy
-from src.data.client.eastmoney import EastmoneyNavService
+from src.data.client.eastmoney import EastmoneyClient
 from src.data.db.action_repo import ActionRepo
 from src.data.db.calendar import CalendarService
 from src.data.db.fund_repo import FundRepo
@@ -51,7 +53,7 @@ def import_trades_from_csv(
     trade_repo: TradeRepo | None = None,
     nav_repo: NavRepo | None = None,
     action_repo: ActionRepo | None = None,
-    eastmoney_service: EastmoneyNavService | None = None,
+    eastmoney_service: EastmoneyClient | None = None,
     calendar_service: CalendarService | None = None,
 ) -> ImportResult:
     """
@@ -60,7 +62,7 @@ def import_trades_from_csv(
     导入流程：
     1. 解析 CSV（GBK 编码）→ 过滤基金交易 → 生成 ImportRecord
     2. 映射 fund_code + market（通过 funds.alias 查询）
-    3. 抓取历史 NAV（通过 EastmoneyNavService）
+    3. 抓取历史 NAV（通过 EastmoneyClient）
     4. 计算份额（amount / nav）
     5. 写入 trades 表（mode=apply 时）
     6. 补录 action_log（with_actions=True 时）
@@ -100,18 +102,27 @@ def import_trades_from_csv(
     # 步骤 1: 解析 CSV
     records = _parse_csv(csv_path, source)
 
-    # 步骤 2: 映射 fund_code + market
+    # 步骤 2: 自动解析基金（仅 apply 模式，v0.4.2 修复）
+    # 原因：dry-run 不应写入数据库，apply 时才自动创建基金记录
+    if mode == "apply" and fund_repo is not None and eastmoney_service is not None:
+        _auto_resolve_funds(records, fund_repo, eastmoney_service)
+
+    # 步骤 3: 映射 fund_code + market
     if fund_repo is not None:
         _map_funds(records, fund_repo)
 
-    # 步骤 3: 抓取历史 NAV（使用定价日而非下单日）
+    # 步骤 4: 抓取历史 NAV（使用定价日而非下单日）
     if eastmoney_service is not None and nav_repo is not None and calendar_service is not None:
         _fetch_navs(records, eastmoney_service, nav_repo, calendar_service)
 
-    # 步骤 4: 计算份额
+    # 步骤 5: 计算份额
     _calculate_shares(records)
 
-    # 步骤 5: 写入数据库（apply 模式）
+    # 步骤 6: 去重检查（标记已存在的记录）
+    if trade_repo is not None:
+        _check_duplicates(records, trade_repo)
+
+    # 步骤 7: 写入数据库（apply 模式）
     succeeded = 0
     if mode == "apply" and trade_repo is not None:
         succeeded = _write_trades(
@@ -120,13 +131,15 @@ def import_trades_from_csv(
     elif mode == "dry_run":
         # dry_run 模式：统计可导入数量（不实际写入）
         for record in records:
+            if record.error_type == "duplicate":
+                continue  # 跳过重复记录
             if record.target_status == "confirmed":
                 if record.is_ready_for_confirm:
                     succeeded += 1
             elif record.is_valid:
                 succeeded += 1
 
-    # 步骤 6: 构建结果
+    # 步骤 7: 构建结果
     return _build_result(records, succeeded)
 
 
@@ -254,11 +267,11 @@ def _parse_alipay_csv(csv_path: str) -> list[ImportRecord]:
                 )
                 continue
 
-            # 创建有效记录
+            # 创建有效记录（使用支付宝订单号作为 external_id）
             records.append(
                 ImportRecord(
                     source="alipay",
-                    external_id=row[0],
+                    external_id=row[0],  # 支付宝订单号
                     original_fund_name=fund_name,
                     trade_type=trade_type,
                     trade_time=trade_time,
@@ -300,6 +313,99 @@ def _parse_alipay_product(product_name: str) -> tuple[str, TradeType] | None:
     fund_name = match.group(1)
     trade_type: TradeType = "buy" if match.group(2) == "买入" else "sell"
     return fund_name, trade_type
+
+
+def _auto_resolve_funds(
+    records: list[ImportRecord],
+    fund_repo: FundRepo,
+    eastmoney_client: EastmoneyClient,
+) -> None:
+    """
+    自动解析并创建基金记录。
+
+    流程：
+    1. 收集所有唯一的基金名称
+    2. 跳过已存在的基金（通过 alias 查询）
+    3. 调用东方财富 API 搜索未知基金
+    4. 自动创建 funds 表记录（含 alias 用于后续匹配）
+
+    Args:
+        records: ImportRecord 列表。
+        fund_repo: 基金仓储。
+        eastmoney_client: 东方财富客户端。
+
+    副作用：
+        首次遇到新基金时，自动创建 funds 表记录。
+        解析失败的基金会在后续 _map_funds 中被标记为 error。
+    """
+
+    # 收集所有唯一的基金名称
+    unique_fund_names = {
+        record.original_fund_name
+        for record in records
+        if record.error_type is None
+    }
+
+    if not unique_fund_names:
+        return
+
+    log(f"[Flow:HistoryImport] 自动解析基金（共 {len(unique_fund_names)} 只）...")
+
+    resolved_count = 0
+    for fund_name in unique_fund_names:
+        # 步骤 1: 检查本地是否已存在
+        if fund_repo.find_by_alias(fund_name) is not None:
+            resolved_count += 1
+            continue
+
+        # 步骤 2: 调用东方财富搜索 API
+        search_result = eastmoney_client.search_fund(fund_name)
+        if search_result is None:
+            log(f"[Flow:HistoryImport] 未找到匹配基金：{fund_name}")
+            continue
+
+        # 步骤 3: 创建基金记录
+        fund_code = search_result["fund_code"]
+        name = search_result["name"]
+        market = search_result["market"]
+        asset_class = _infer_asset_class(search_result)
+
+        log(f"[Flow:HistoryImport] 创建基金：{fund_name} → {fund_code} ({asset_class.value})")
+        fund_repo.add(fund_code, name, asset_class, market, alias=fund_name)
+        resolved_count += 1
+
+    log(f"[Flow:HistoryImport] 成功解析 {resolved_count}/{len(unique_fund_names)} 只基金")
+
+
+def _infer_asset_class(fund_info: dict) -> AssetClass:
+    """
+    根据基金信息推断 asset_class。
+
+    推断规则：
+    1. 债券型 → CGB_3_5Y
+    2. QDII/海外 → US_QDII
+    3. 其他 → CSI300（默认）
+
+    Args:
+        fund_info: search_fund() 返回的基金信息字典。
+
+    Returns:
+        AssetClass 枚举值。
+    """
+    ftype = fund_info.get("ftype", "")
+    name = fund_info.get("name", "")
+    market = fund_info.get("market", "CN_A")
+
+    # 规则 1：债券型
+    if "债券" in ftype or "债" in ftype:
+        return AssetClass.CGB_3_5Y
+
+    # 规则 2：QDII/海外
+    if market == "US_NYSE" or "QDII" in ftype or "QDII" in name or "海外" in ftype:
+        return AssetClass.US_QDII
+
+    # 规则 3：默认
+    return AssetClass.CSI300
 
 
 def _map_funds(records: list[ImportRecord], fund_repo: FundRepo) -> None:
@@ -349,7 +455,7 @@ def _map_funds(records: list[ImportRecord], fund_repo: FundRepo) -> None:
 
 def _fetch_navs(
     records: list[ImportRecord],
-    eastmoney_service: EastmoneyNavService,
+    eastmoney_client: EastmoneyClient,
     nav_repo: NavRepo,
     calendar_service: CalendarService,
 ) -> None:
@@ -363,7 +469,7 @@ def _fetch_navs(
 
     逻辑：
     1. 根据 market 获取结算策略，计算 pricing_date
-    2. 调用 eastmoney_service.get_nav(fund_code, pricing_date)
+    2. 调用 eastmoney_client.get_nav(fund_code, pricing_date)
     3. 抓取成功则填充 record.nav
     4. 抓取失败且 target_status="confirmed" 则标记 error_type="nav_missing"
     5. 抓取失败且 target_status="pending" 则跳过（后续正常确认流程处理）
@@ -372,7 +478,7 @@ def _fetch_navs(
 
     Args:
         records: ImportRecord 列表（原地修改）。
-        eastmoney_service: 东方财富服务。
+        eastmoney_client: 东方财富客户端。
         nav_repo: 净值仓储（缓存查询）。
         calendar_service: 日历服务（用于计算定价日）。
     """
@@ -408,7 +514,7 @@ def _fetch_navs(
             nav = nav_repo.get(fund_code, pricing_date)
             if nav is None:
                 # 调用东方财富 API
-                nav = eastmoney_service.get_nav(fund_code, pricing_date)
+                nav = eastmoney_client.get_nav(fund_code, pricing_date)
                 # 如果抓取成功，存入本地缓存
                 if nav is not None:
                     nav_repo.upsert(fund_code, pricing_date, nav)
@@ -448,6 +554,54 @@ def _calculate_shares(records: list[ImportRecord]) -> None:
         record.shares = shares
 
 
+def _check_duplicates(records: list[ImportRecord], trade_repo: TradeRepo) -> None:
+    """
+    检查并标记重复记录（v0.4.2 新增）。
+
+    逻辑：
+    1. 维护内存 set 追踪 CSV 内部重复
+    2. 遍历所有记录：
+       a. 先检查 CSV 内部重复（set）
+       b. 再检查数据库重复（trade_repo）
+    3. 重复记录标记为 error_type="duplicate"
+
+    Args:
+        records: ImportRecord 列表（原地修改）。
+        trade_repo: 交易仓储（用于查询已存在的 external_id）。
+    """
+    duplicate_count = 0
+    seen_external_ids: set[str] = set()  # 追踪 CSV 内部已见的 external_id
+
+    for record in records:
+        # 跳过已有错误的记录
+        if record.error_type is not None:
+            continue
+
+        # 跳过无 external_id 的记录
+        if not record.external_id:
+            continue
+
+        # 检查1：CSV 内部重复
+        if record.external_id in seen_external_ids:
+            record.error_type = "duplicate"
+            record.error_message = f"CSV 内部重复：{record.external_id}"
+            duplicate_count += 1
+            continue
+
+        # 检查2：数据库重复
+        if trade_repo.exists_by_external_id(record.external_id):
+            record.error_type = "duplicate"
+            record.error_message = f"订单已存在：{record.external_id}"
+            duplicate_count += 1
+            continue
+
+        # 记录已见 external_id
+        seen_external_ids.add(record.external_id)
+
+    if duplicate_count > 0:
+        log(f"[Flow:HistoryImport] 检测到 {duplicate_count} 笔重复记录，已跳过")
+
+
 def _write_trades(
     records: list[ImportRecord],
     trade_repo: TradeRepo,
@@ -483,6 +637,10 @@ def _write_trades(
     csv_name = Path(csv_path).name
 
     for record in records:
+        # 跳过重复记录
+        if record.error_type == "duplicate":
+            continue
+
         # 判断是否可以写入
         if record.target_status == "confirmed":
             # confirmed 记录需要 is_ready_for_confirm
@@ -493,7 +651,7 @@ def _write_trades(
             if not record.is_valid:
                 continue
 
-        # 构造 Trade 对象
+        # 构造 Trade 对象（nav 已存入 navs 表，不冗余存储到 trades）
         trade = Trade(
             id=None,
             fund_code=record.fund_code,  # type: ignore[arg-type]
@@ -504,6 +662,7 @@ def _write_trades(
             market=record.market,  # type: ignore[arg-type]
             shares=record.shares,  # confirmed 有值，pending 为 None
             remark=f"导入自 {record.source}（{csv_name}）",
+            external_id=record.external_id,
         )
 
         # 写入 trades 表

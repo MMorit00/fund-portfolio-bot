@@ -17,7 +17,7 @@ from src.core.rules.rebalance import (
     build_rebalance_advice,
     calc_weight_diff,
 )
-from src.data.client.discord import DiscordReportService
+from src.data.client.discord import DiscordClient
 from src.data.client.local_nav import LocalNavService
 from src.data.db.alloc_config_repo import AllocConfigRepo
 from src.data.db.calendar import CalendarService
@@ -157,7 +157,7 @@ def send_daily_report(
     *,
     mode: ReportMode = "market",
     as_of: date | None = None,
-    discord_service: DiscordReportService | None = None,
+    discord_service: DiscordClient | None = None,
 ) -> bool:
     """
     发送日报（默认市值模式）。
@@ -165,7 +165,7 @@ def send_daily_report(
     Args:
         mode: 视图模式，`market` 或 `shares`。
         as_of: 展示日（通常为上一交易日）。
-        discord_service: Discord 推送服务（可选，自动注入）。
+        discord_service: Discord 客户端（可选，自动注入）。
 
     Returns:
         发送是否成功。

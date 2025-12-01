@@ -36,8 +36,8 @@ from __future__ import annotations
 import sqlite3
 
 from src.core.dependency import register
-from src.data.client.discord import DiscordReportService
-from src.data.client.eastmoney import EastmoneyNavService
+from src.data.client.discord import DiscordClient
+from src.data.client.eastmoney import EastmoneyClient
 from src.data.client.local_nav import LocalNavService
 from src.data.db.action_repo import ActionRepo
 from src.data.db.alloc_config_repo import AllocConfigRepo
@@ -175,29 +175,29 @@ def get_local_nav_service() -> LocalNavService:
 
 
 @register("eastmoney_service")
-def get_eastmoney_nav_service() -> EastmoneyNavService:
+def get_eastmoney_client() -> EastmoneyClient:
     """
-    获取东方财富净值抓取服务。
+    获取东方财富 API 客户端。
 
     Returns:
-        东方财富净值服务实例。
+        东方财富客户端实例。
 
     注册名：eastmoney_service
     """
-    return EastmoneyNavService()
+    return EastmoneyClient()
 
 
 @register("discord_service")
-def get_discord_report_service() -> DiscordReportService:
+def get_discord_client() -> DiscordClient:
     """
-    获取 Discord 日报推送服务。
+    获取 Discord 客户端。
 
     Returns:
-        Discord 推送服务实例。
+        Discord 客户端实例。
 
     注册名：discord_service
     """
-    return DiscordReportService()
+    return DiscordClient()
 
 
 @register("alloc_config_repo")

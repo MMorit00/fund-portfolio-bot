@@ -6,7 +6,7 @@ from typing import Optional
 
 from src.core.config import enable_sql_debug, get_db_path
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 8
 
 SCHEMA_DDL = """
 CREATE TABLE IF NOT EXISTS funds (
@@ -26,13 +26,13 @@ CREATE TABLE IF NOT EXISTS trades (
     status TEXT NOT NULL,
     market TEXT NOT NULL,
     shares TEXT,
-    nav TEXT,
     remark TEXT,
     pricing_date TEXT NOT NULL,
     confirm_date TEXT NOT NULL,
     confirmation_status TEXT DEFAULT 'normal',
     delayed_reason TEXT,
-    delayed_since TEXT
+    delayed_since TEXT,
+    external_id TEXT UNIQUE
 );
 
 CREATE TABLE IF NOT EXISTS navs (
@@ -123,6 +123,14 @@ class DbHelper:
                     "INSERT INTO meta(key, value) VALUES (?, ?)",
                     ("schema_version", str(SCHEMA_VERSION)),
                 )
+            else:
+                # 开发阶段：版本不匹配时提示重建数据库
+                current_version = int(row["value"])
+                if current_version < SCHEMA_VERSION:
+                    raise RuntimeError(
+                        f"[DbHelper] Schema 版本过旧（当前 v{current_version}，需要 v{SCHEMA_VERSION}）。"
+                        f"开发阶段请删除 {self.db_path} 后重新运行。"
+                    )
 
     def close(self) -> None:
         """关闭连接并释放引用。"""

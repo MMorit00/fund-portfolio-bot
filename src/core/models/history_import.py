@@ -99,13 +99,7 @@ class ImportRecord:
 
     @property
     def is_valid(self) -> bool:
-        """
-        是否可以导入（无错误 + 必要字段齐全）。
-
-        注意：此属性只检查基础映射是否完成，不区分 target_status。
-        - pending 记录：is_valid=True 即可写入（后续正常确认流程补 NAV）
-        - confirmed 记录：应使用 is_ready_for_confirm 检查 NAV 和份额是否齐全
-        """
+        """是否可以导入（无错误 + 必要字段齐全）。"""
         return (
             self.error_type is None
             and self.fund_code is not None

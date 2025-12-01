@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from src.core.dependency import dependency
 from src.core.log import log
-from src.data.client.eastmoney import EastmoneyNavService
+from src.data.client.eastmoney import EastmoneyClient
 from src.data.db.calendar import CalendarService
 from src.data.db.fund_repo import FundRepo
 from src.data.db.nav_repo import NavRepo
@@ -39,7 +39,7 @@ def fetch_navs(
     fund_codes: list[str] | None = None,
     fund_repo: FundRepo | None = None,
     nav_repo: NavRepo | None = None,
-    eastmoney_service: EastmoneyNavService | None = None,
+    eastmoney_service: EastmoneyClient | None = None,
     calendar_service: CalendarService | None = None,
 ) -> FetchNavsResult:
     """
@@ -110,7 +110,7 @@ def fetch_missing_navs(
     days: int = 30,
     trade_repo: TradeRepo | None = None,
     nav_repo: NavRepo | None = None,
-    eastmoney_service: EastmoneyNavService | None = None,
+    eastmoney_service: EastmoneyClient | None = None,
 ) -> FetchNavsResult:
     """
     自动检测延迟交易的缺失 NAV 并补抓。

@@ -152,7 +152,7 @@ def confirm_trades(
         if nav is not None and nav > Decimal("0"):
             # 正常确认（confirm 方法已包含重置延迟标记）
             shares = quantize_shares(t.amount / nav)
-            trade_repo.confirm(t.id or 0, shares, nav)
+            trade_repo.confirm(t.id or 0, shares)
             confirmed_count += 1
         else:
             # NAV 缺失
@@ -290,4 +290,4 @@ def confirm_trade_manual(
         raise ValueError(f"只能确认 pending 交易：trade_id={trade_id}，当前状态={trade.status}")
 
     # 使用 confirm 方法确认交易（会自动重置延迟标记）
-    trade_repo.confirm(trade_id, shares, nav)
+    trade_repo.confirm(trade_id, shares)

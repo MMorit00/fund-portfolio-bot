@@ -1,25 +1,28 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from time import sleep
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 
+from src.core.log import log
 
-class EastmoneyNavService:
+
+class EastmoneyClient:
     """
-    东方财富 NAV 数据源服务（骨架实现）。
+    东方财富 API 客户端。
+
+    职责：
+    - 获取基金净值（get_nav）
+    - 搜索基金信息（search_fund）
 
     设计原则：
-    - 仅负责"单只基金单日 NAV 的 HTTP 获取与解析"，不直接落库；
+    - 仅负责 HTTP 请求与响应解析，不直接落库；
     - 所有网络/解析异常均被捕获并记录，返回 None，由上层决定是否重试/告警；
     - 使用 httpx 同步 Client，支持超时与有限重试（指数退避）。
-
-    说明：
-    - 当前版本仅提供结构化骨架，具体 API URL 与字段解析留待后续实现；
-    - 真实接入时建议参考东方财富公开接口，填充 `_build_url` 与 `_parse_nav`。
     """
 
     def __init__(
@@ -32,7 +35,7 @@ class EastmoneyNavService:
         backoff_base: float = 0.2,
     ) -> None:
         """
-        初始化东方财富 NAV Provider。
+        初始化东方财富客户端。
 
         Args:
             timeout: 单次请求超时时间（秒）。
@@ -88,16 +91,12 @@ class EastmoneyNavService:
                     return None
                 nav = self._parse_nav(data)
                 if nav is None or nav <= Decimal("0"):
-                    print(
-                        f"[EastmoneyNav] 无效 NAV 数据：fund={fund_code} day={day} data={data!r}"
-                    )
+                    log(f"[EastmoneyNav] 无效 NAV 数据：fund={fund_code} day={day}")
                     return None
                 return nav
             except Exception as err:  # noqa: BLE001
                 # 防御性兜底：不向上抛异常，避免打断批量任务
-                print(
-                    f"[EastmoneyNav] 获取 NAV 失败：fund={fund_code} day={day} attempt={attempt} err={err}"
-                )
+                log(f"[EastmoneyNav] 获取 NAV 失败：fund={fund_code} day={day} err={err}")
                 if attempt >= self.retries:
                     return None
                 attempt += 1
@@ -135,14 +134,12 @@ class EastmoneyNavService:
             if resp.status_code >= 500 or resp.status_code == 429:
                 resp.raise_for_status()
             if resp.status_code != 200:
-                print(
-                    f"[EastmoneyNav] HTTP 状态异常：status={resp.status_code} url={url}"
-                )
+                log(f"[EastmoneyNav] HTTP 状态异常：status={resp.status_code}")
                 return None
             try:
                 return resp.json()
             except ValueError as err:
-                print(f"[EastmoneyNav] JSON 解析失败：url={url} err={err}")
+                log(f"[EastmoneyNav] JSON 解析失败：url={url} err={err}")
                 return None
 
     def _parse_nav(self, raw: dict) -> Decimal | None:
@@ -177,3 +174,229 @@ class EastmoneyNavService:
             return Decimal(str(nav_str))
         except (InvalidOperation, TypeError):
             return None
+
+    def search_fund(self, fund_name: str) -> dict | None:
+        """
+        根据基金名称搜索基金信息。
+
+        搜索策略（三级降级）：
+        1. 先尝试完整名称搜索
+        2. 若失败，提取核心关键词（去掉括号后缀）重新搜索
+        3. 若仍失败，进一步简化（去掉 ETF联接/指数 等后缀）
+
+        份额类型匹配：
+        - 从原始名称提取份额类型（A/C/E 等）
+        - 遍历搜索结果，优先选择匹配的份额类型
+
+        Args:
+            fund_name: 基金名称（支持模糊搜索）。
+
+        Returns:
+            基金信息字典 {fund_code, name, market, ftype} 或 None。
+        """
+        # 提取份额类型（A/C/E 等）
+        share_class = self._extract_share_class(fund_name)
+
+        # 策略1：先尝试完整名称
+        result = self._do_search(fund_name, share_class=share_class)
+        if result is not None:
+            return result
+
+        # 策略2：提取核心关键词（去掉括号后缀）重试
+        core_name = self._extract_core_name(fund_name)
+        if core_name and core_name != fund_name:
+            log(f"[EastmoneyNav] 完整名称搜索失败，尝试核心关键词：{core_name}")
+            result = self._do_search(core_name, share_class=share_class)
+            if result is not None:
+                return result
+
+        # 策略3：进一步简化（去掉 ETF联接/指数 等后缀）
+        simple_name = self._simplify_name(core_name or fund_name)
+        if simple_name and simple_name != core_name and simple_name != fund_name:
+            log(f"[EastmoneyNav] 核心关键词搜索失败，尝试简化名称：{simple_name}")
+            result = self._do_search(simple_name, share_class=share_class)
+            if result is not None:
+                return result
+
+        return None
+
+    def _do_search(self, keyword: str, *, share_class: str | None = None) -> dict | None:
+        """
+        执行单次搜索（内部方法）。
+
+        Args:
+            keyword: 搜索关键词。
+            share_class: 期望的份额类型（A/C/E 等），用于在多个结果中选择。
+        """
+        url = f"https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key={quote(keyword)}"
+        headers = {
+            "User-Agent": self.user_agent,
+            "Referer": "https://fund.eastmoney.com/",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+        }
+
+        try:
+            data = self._fetch_raw_json(url, headers=headers)
+            if data is None:
+                return None
+            result = self._parse_search_result(data, query=keyword, share_class=share_class)
+            if result is None:
+                return None
+
+            # 过滤明显不匹配的结果（避免 F0xxxx 等误匹配）
+            code = result.get("fund_code")
+            name = result.get("name", "")
+            if code is None or len(code) != 6 or not str(code).isdigit():
+                return None
+
+            # 宽松的关键词匹配
+            if not self._is_name_match(keyword, name):
+                return None
+
+            return result
+        except Exception as err:  # noqa: BLE001
+            log(f"[EastmoneyNav] 搜索基金失败：keyword={keyword} err={err}")
+            return None
+
+    @staticmethod
+    def _extract_share_class(fund_name: str) -> str | None:
+        """
+        从基金名称中提取份额类型（A/C/E/H/I 等）。
+
+        示例：
+        - 「易方达纳斯达克100ETF联接(QDII-LOF)A」→「A」
+        - 「易方达纳斯达克100ETF联接(QDII-LOF)C(人民币)」→「C」
+        - 「嘉实纳斯达克100ETF发起联接(QDII)A人民币」→「A」
+        - 「大成纳斯达克100ETF联接(QDII)C」→「C」
+        - 「xxx指数」→ None
+
+        Args:
+            fund_name: 基金名称。
+
+        Returns:
+            份额类型字母或 None。
+        """
+        # 在末尾附近查找份额类型：要求前后都不是字母，以避免命中 ETF/QDII/LOF 中的字母
+        matches = re.findall(r"(?<![A-Za-z])([A-IY])(?=$|[^A-Za-z])", fund_name)
+        if matches:
+            return matches[-1]  # 取最末尾的匹配
+        return None
+
+    @staticmethod
+    def _extract_core_name(fund_name: str) -> str:
+        """提取基金名称的核心部分（去掉括号后缀）。"""
+        match = re.match(r"^([^(（]+)", fund_name)
+        if match:
+            return match.group(1).strip()
+        return fund_name
+
+    @staticmethod
+    def _simplify_name(fund_name: str) -> str:
+        """进一步简化基金名称（去掉 ETF联接/指数 等后缀）。"""
+        suffixes = ["ETF联接", "ETF发起联接", "发起联接", "联接", "指数", "ETF"]
+        result = fund_name
+        for suffix in suffixes:
+            if result.endswith(suffix):
+                result = result[: -len(suffix)]
+                break
+        result = re.sub(r"(ETF)?联接$", "", result)
+        result = re.sub(r"指数$", "", result)
+        return result.strip()
+
+    def _is_name_match(self, query: str, result_name: str) -> bool:
+        """判断搜索结果名称是否与查询匹配（宽松匹配）。"""
+        q_core = self._extract_keywords(query)
+        r_core = self._extract_keywords(result_name)
+        if not q_core or not r_core:
+            return False
+        return q_core in r_core or r_core in q_core
+
+    @staticmethod
+    def _extract_keywords(name: str) -> str:
+        """提取基金名称的核心关键词（去掉修饰词）。"""
+        core = re.sub(r"[（(].*$", "", name)
+        modifiers = ["发起", "人民币", "美元", "港币", "增强", "增强型"]
+        for mod in modifiers:
+            core = core.replace(mod, "")
+        return core.replace(" ", "").replace("\t", "").lower()
+
+    def _parse_search_result(
+        self, raw: dict, *, query: str, share_class: str | None = None
+    ) -> dict | None:
+        """
+        从东方财富搜索响应中解析基金信息。
+
+        Args:
+            raw: 搜索接口返回的 JSON 数据。
+            query: 搜索关键词（未使用，保留兼容）。
+            share_class: 期望的份额类型（A/C/E 等），优先选择匹配的结果。
+
+        Returns:
+            基金信息字典或 None（解析失败或无结果）。
+        """
+        datas = raw.get("Datas")
+        if not isinstance(datas, list) or not datas:
+            return None
+
+        # 如果指定了份额类型，遍历结果找匹配的；否则取第一个
+        selected_item = None
+        fallback_item = None  # 后备：第一个有效结果
+        for item in datas:
+            if not isinstance(item, dict):
+                continue
+            code = item.get("CODE")
+            name = item.get("NAME")
+            if not code or not name:
+                continue
+            # 过滤非标准基金代码
+            if len(code) != 6 or not code.isdigit():
+                continue
+
+            # 记录第一个有效结果作为后备
+            if fallback_item is None:
+                fallback_item = item
+
+            # 如果指定了份额类型，检查是否匹配
+            if share_class:
+                item_class = self._extract_share_class(name)
+                if item_class == share_class:
+                    selected_item = item
+                    break  # 找到匹配的份额类型
+            else:
+                selected_item = item
+                break  # 不指定份额类型，取第一个有效结果
+
+        # 如果没有精确匹配，使用后备
+        if selected_item is None:
+            selected_item = fallback_item
+
+        if selected_item is None:
+            return None
+
+        fund_code = selected_item.get("CODE")
+        name = selected_item.get("NAME")
+        base_info = selected_item.get("FundBaseInfo")
+
+        # 解析 market 和基金类型信息
+        market = "CN_A"  # 默认境内基金
+        ftype = ""
+        fund_type_code = ""
+
+        if isinstance(base_info, dict):
+            ftype = base_info.get("FTYPE", "")
+            fund_type_code = base_info.get("FUNDTYPE", "")
+            if "QDII" in ftype or "海外" in ftype:
+                market = "US_NYSE"
+        elif isinstance(base_info, str):
+            parts = base_info.split("|")
+            if len(parts) > 0 and "QDII" in parts[0].upper():
+                market = "US_NYSE"
+
+        return {
+            "fund_code": fund_code,
+            "name": name,
+            "market": market,
+            "ftype": ftype,
+            "fund_type_code": fund_type_code,
+        }
+

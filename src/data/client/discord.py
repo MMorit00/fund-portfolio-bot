@@ -3,10 +3,11 @@ from __future__ import annotations
 import os
 
 
-class DiscordReportService:
+class DiscordClient:
     """
-    Discord 报告发送服务（占位）。
-    MVP 阶段可使用 requests/httpx 发送文本消息。
+    Discord Webhook 客户端。
+
+    职责：发送消息到 Discord Webhook。
     """
 
     def __init__(self, webhook_url: str | None = None) -> None:

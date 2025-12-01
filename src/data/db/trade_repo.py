@@ -30,8 +30,9 @@ class TradeRepo:
         with self.conn:
             cursor = self.conn.execute(
                 (
-                    "INSERT INTO trades (fund_code, type, amount, trade_date, status, market, "  # noqa: E501
-                    "shares, nav, remark, pricing_date, confirm_date, confirmation_status, delayed_reason, delayed_since) "  # noqa: E501
+                    "INSERT INTO trades (fund_code, type, amount, trade_date, status, market, "
+                    "shares, remark, pricing_date, confirm_date, confirmation_status, "
+                    "delayed_reason, delayed_since, external_id) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 ),
                 (
@@ -42,13 +43,13 @@ class TradeRepo:
                     trade.status,
                     trade.market,
                     _decimal_to_str(trade.shares),
-                    None,
                     trade.remark,
                     pricing_day.isoformat(),
                     confirm_day.isoformat(),
                     trade.confirmation_status,
                     trade.delayed_reason,
                     trade.delayed_since.isoformat() if trade.delayed_since else None,
+                    trade.external_id,
                 ),
             )
             trade_id = cursor.lastrowid or 0
@@ -67,6 +68,7 @@ class TradeRepo:
             confirmation_status=trade.confirmation_status,
             delayed_reason=trade.delayed_reason,
             delayed_since=trade.delayed_since,
+            external_id=trade.external_id,
         )
 
     def list_pending(self, confirm_date: date) -> list[Trade]:  # type: ignore[override]
@@ -81,15 +83,18 @@ class TradeRepo:
         ).fetchall()
         return [_row_to_trade(r) for r in rows]
 
-    def confirm(self, trade_id: int, shares: Decimal, nav: Decimal) -> None:  # type: ignore[override]
-        """将指定交易标记为已确认，并写入份额与确认用 NAV（v0.2.1：重置延迟标记）。"""
+    def confirm(self, trade_id: int, shares: Decimal) -> None:  # type: ignore[override]
+        """
+        将指定交易标记为已确认，写入份额（v0.2.1：重置延迟标记）。
+
+        注意：nav 归一化存储于 navs 表，confirm 不需要 nav 参数。
+        """
         with self.conn:
             self.conn.execute(
                 """
                 UPDATE trades SET
                     status = ?,
                     shares = ?,
-                    nav = ?,
                     confirmation_status = 'normal',
                     delayed_reason = NULL,
                     delayed_since = NULL
@@ -98,7 +103,6 @@ class TradeRepo:
                 (
                     "confirmed",
                     _decimal_to_str(shares),
-                    format(nav, "f"),
                     trade_id,
                 ),
             )
@@ -225,6 +229,22 @@ class TradeRepo:
             raise ValueError(f"交易不存在或不可取消（仅支持 pending 状态）：trade_id={trade_id}")
         self.conn.commit()
 
+    def exists_by_external_id(self, external_id: str) -> bool:
+        """
+        检查指定 external_id 是否已存在（v0.4.2 新增）。
+
+        Args:
+            external_id: 外部唯一标识。
+
+        Returns:
+            True 表示已存在，False 表示不存在。
+        """
+        row = self.conn.execute(
+            "SELECT 1 FROM trades WHERE external_id = ? LIMIT 1",
+            (external_id,),
+        ).fetchone()
+        return row is not None
+
 
 def _decimal_to_str(value: Decimal | None) -> str | None:
     """将 Decimal 转换为字符串格式，None 原样返回。"""
@@ -254,4 +274,5 @@ def _row_to_trade(row: sqlite3.Row) -> Trade:
         confirmation_status=row["confirmation_status"] or "normal",
         delayed_reason=row["delayed_reason"],
         delayed_since=date.fromisoformat(delayed_since_str) if delayed_since_str else None,
+        external_id=row["external_id"],
     )

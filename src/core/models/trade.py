@@ -39,3 +39,6 @@ class Trade:
     confirmation_status: str = "normal"      # normal / delayed
     delayed_reason: str | None = None        # nav_missing / unknown
     delayed_since: date | None = None        # 首次延迟日期
+
+    # v0.4.2: 历史导入去重
+    external_id: str | None = None           # 外部唯一标识（支付宝订单号等）
