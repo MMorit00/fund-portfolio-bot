@@ -7,8 +7,8 @@
 
 ## 当前版本
 
-- Schema Version: **8** (SCHEMA_VERSION = 8)
-- 最后更新: 2025-12-01
+- Schema Version: **9** (SCHEMA_VERSION = 9)
+- 最后更新: 2025-12-02
 
 ## 核心表结构
 
@@ -18,7 +18,7 @@
 
 | 表名 | 作用 | 关键字段 |
 |------|------|---------|
-| `funds` | 基金基础信息 | fund_code, name, asset_class, market, alias |
+| `funds` | 基金基础信息 | fund_code, name, asset_class, market, alias, 费率字段 |
 | `trades` | 交易记录 | id, fund_code, trade_date, pricing_date, confirm_date, confirmation_status |
 | `navs` | 净值数据 | fund_code, day, nav |
 | `trading_calendar` | 交易日历 | market, day, is_trading_day |
@@ -131,6 +131,7 @@ SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 - **v0.4** (2025-11-26): 新增 `action_log` 表，用户行为日志
 - **v0.4.2** (2025-11-30): `funds` 表增加 `alias` 字段，`trades` 表增加 `external_id` 字段（历史导入去重）
 - **v0.4.2+** (2025-12-01): 移除 `trades` 表的 `nav` 字段（数据规范化，nav 归一化存储于 navs 表）
+- **v0.4.3** (2025-12-02): `funds` 表增加费率字段（management_fee, custody_fee, service_fee, purchase_fee, purchase_fee_discount）
 
 ## 何时需要迁移文档？
 

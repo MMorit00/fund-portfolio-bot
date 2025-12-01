@@ -24,7 +24,7 @@ SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 ```
 
 **Schema 管理**：
-- 当前版本：`SCHEMA_VERSION = 4`（详见 `docs/sql-schema.md`）
+- 当前版本：以 `docs/sql-schema.md` 为准（开发阶段每次 Schema 变更建议删库重建）
 - 开发阶段直接删除重建，无需迁移脚本
 
 ## 日常运维流程（推荐）
@@ -74,6 +74,24 @@ python -m src.cli.fund add --code 161125 --name "标普500" --class US_QDII --ma
 # 查看所有基金
 python -m src.cli.fund list
 ```
+
+### 基金费率管理（v0.4.3+）
+
+```bash
+# 同步所有基金费率（从东方财富抓取）
+python -m src.cli.fund sync-fees
+
+# 同步单只基金费率
+python -m src.cli.fund sync-fees --code 110022
+
+# 查看基金费率
+python -m src.cli.fund fees --code 110022
+```
+
+**费率字段说明**：
+- 管理费率/托管费率/销售服务费率：年化费率，从净值中每日扣除，无需另行支付
+- 申购费率（原）：基金公司标准费率
+- 申购费率（折扣）：天天基金平台优惠费率
 
 ### 定投计划管理
 

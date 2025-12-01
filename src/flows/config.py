@@ -12,6 +12,7 @@ from src.data.db.action_repo import ActionRepo
 from src.data.db.alloc_config_repo import AllocConfigRepo
 from src.data.db.dca_plan_repo import DcaPlanRepo
 from src.data.db.fund_repo import FundRepo
+from src.flows.fund_fees import sync_fund_fees
 
 # ==================== 基金管理 ====================
 
@@ -24,10 +25,11 @@ def add_fund(
     asset_class: AssetClass,
     market: str,
     alias: str | None = None,
+    sync_fees: bool = True,
     fund_repo: FundRepo | None = None,
 ) -> None:
     """
-    添加或更新基金信息（v0.3.2）。
+    添加或更新基金信息（v0.4.3）。
 
     Args:
         fund_code: 基金代码（6 位数字）。
@@ -35,12 +37,17 @@ def add_fund(
         asset_class: 资产类别（AssetClass 枚举）。
         market: 市场类型（CN_A/US_NYSE 等）。
         alias: 平台完整基金名称（可选，用于导入时匹配）。
+        sync_fees: 是否自动同步费率（默认 True）。
         fund_repo: 基金仓储（可选，自动注入）。
 
     副作用：
-        幂等插入或更新 funds 表。
+        幂等插入或更新 funds 表，sync_fees=True 时自动抓取费率入库。
     """
     fund_repo.add(fund_code, name, asset_class, market, alias)
+
+    # 自动抓取费率（v0.4.3 新增）
+    if sync_fees:
+        sync_fund_fees(fund_code, skip_if_exists=True)
 
 
 @dependency

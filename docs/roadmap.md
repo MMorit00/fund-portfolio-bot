@@ -484,7 +484,9 @@ CLI → Flows (纯函数 + @dependency) → Data (通过装饰器注入)
 - [ ] NAV 自动回填（检测缺失并补抓）
 - [ ] 冷却期机制（防止频繁交易）
 - [ ] 分红再投追踪
-- [ ] 费率计算与展示
+- [x] 费率计算与展示（v0.4.3 已实现）
+- [ ] 费率抓取鲁棒性优化（用 BeautifulSoup/lxml 替代硬编码正则，当前 HTML 解析脆弱）
+- [ ] 费率模型演进（如需按时间版本管理或多渠道费率，考虑拆分到独立表）
 
 ---
 
@@ -674,6 +676,10 @@ v1.1+ (AI 进阶功能)
   - `src.cli.fund add --code 000001 --name "华夏成长" --class CSI300 --market CN_A`
 - `查看基金`(`list_funds`)
   - `src.cli.fund list`
+- `同步费率`(`sync_fund_fees`)（v0.4.3+）
+  - `python -m src.cli.fund sync-fees [--code 000001]`
+- `查看费率`(`get_fund_fees`)（v0.4.3+）
+  - `python -m src.cli.fund fees --code 000001`
 - `添加定投`(`add_dca_plan`)
   - `src.cli.dca_plan add --fund 000001 --amount 1000 --freq weekly --rule MON`
 - `查看定投`(`list_dca_plans`)

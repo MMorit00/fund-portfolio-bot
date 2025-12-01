@@ -461,3 +461,113 @@ class EastmoneyClient:
             log(f"[EastmoneyClient] 获取 {fund_code} 估值失败: {e}")
             return None
 
+    def get_fund_fees(self, fund_code: str) -> dict[str, Decimal] | None:
+        """
+        获取基金费率信息。
+
+        数据源：东方财富基金费率页面
+
+        返回字典包含：
+        - management_fee: 管理费率（年化百分比）
+        - custody_fee: 托管费率（年化百分比）
+        - service_fee: 销售服务费率（年化百分比）
+        - purchase_fee: 申购费率原费率（百分比）
+        - purchase_fee_discount: 申购费率折扣后费率（百分比）
+
+        Args:
+            fund_code: 基金代码（6 位数字）
+
+        Returns:
+            费率字典或 None（获取失败）
+        """
+        url = f"http://fundf10.eastmoney.com/jjfl_{fund_code}.html"
+        headers = {
+            "User-Agent": self.user_agent,
+            "Referer": "http://fund.eastmoney.com/",
+        }
+
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                resp = client.get(url, headers=headers)
+                if resp.status_code != 200:
+                    log(f"[EastmoneyClient] 获取 {fund_code} 费率失败: HTTP {resp.status_code}")
+                    return None
+
+                html = resp.text
+                fees: dict[str, Decimal] = {}
+
+                # 解析运作费用
+                # 管理费率：0.50%（每年）
+                m = re.search(r"管理费率</td><td[^>]*>(\d+\.?\d*)%", html)
+                if m:
+                    fees["management_fee"] = Decimal(m.group(1))
+
+                # 托管费率：0.10%（每年）
+                m = re.search(r"托管费率</td><td[^>]*>(\d+\.?\d*)%", html)
+                if m:
+                    fees["custody_fee"] = Decimal(m.group(1))
+
+                # 销售服务费率：0.00%（每年）或 ---（无此费用）
+                m = re.search(r"销售服务费率</td><td[^>]*>(\d+\.?\d*)%", html)
+                if m:
+                    fees["service_fee"] = Decimal(m.group(1))
+                elif re.search(r"销售服务费率</td><td[^>]*>---", html):
+                    fees["service_fee"] = Decimal("0")
+
+                # 解析申购费率（从第一档提取）
+                # 格式：<strike class='gray'>1.00%</strike>&nbsp;|&nbsp;0.10%
+                m = re.search(
+                    r"<strike[^>]*>(\d+\.?\d*)%</strike>.*?\|.*?(\d+\.?\d*)%",
+                    html,
+                )
+                if m:
+                    fees["purchase_fee"] = Decimal(m.group(1))
+                    fees["purchase_fee_discount"] = Decimal(m.group(2))
+                else:
+                    # 备用：从 pingzhongdata.js 获取
+                    fees_from_js = self._get_fees_from_js(fund_code)
+                    if fees_from_js:
+                        fees.update(fees_from_js)
+
+                if not fees:
+                    log(f"[EastmoneyClient] 获取 {fund_code} 费率失败: 无法解析费率数据")
+                    return None
+
+                return fees
+
+        except Exception as e:
+            log(f"[EastmoneyClient] 获取 {fund_code} 费率失败: {e}")
+            return None
+
+    def _get_fees_from_js(self, fund_code: str) -> dict[str, Decimal] | None:
+        """从 pingzhongdata.js 获取申购费率（备用方案）。"""
+        url = f"http://fund.eastmoney.com/pingzhongdata/{fund_code}.js"
+        headers = {
+            "User-Agent": self.user_agent,
+            "Referer": "http://fund.eastmoney.com/",
+        }
+
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                resp = client.get(url, headers=headers)
+                if resp.status_code != 200:
+                    return None
+
+                js_content = resp.text
+                fees: dict[str, Decimal] = {}
+
+                # var fund_sourceRate="1.00"
+                m = re.search(r'fund_sourceRate="(\d+\.?\d*)"', js_content)
+                if m:
+                    fees["purchase_fee"] = Decimal(m.group(1))
+
+                # var fund_Rate="0.10"
+                m = re.search(r'fund_Rate="(\d+\.?\d*)"', js_content)
+                if m:
+                    fees["purchase_fee_discount"] = Decimal(m.group(1))
+
+                return fees if fees else None
+
+        except Exception:
+            return None
+

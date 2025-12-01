@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import sqlite3
+from decimal import Decimal
 
 from src.core.models.asset_class import AssetClass
-from src.core.models.fund import FundInfo
+from src.core.models.fund import FundFees, FundInfo
 
 
 class FundRepo:
@@ -112,6 +113,40 @@ class FundRepo:
             raise ValueError(f"基金不存在：{fund_code}")
         self.conn.commit()
 
+    def update_fees(self, fund_code: str, fees: FundFees) -> None:
+        """
+        更新基金费率信息（v0.4.3 新增）。
+
+        Args:
+            fund_code: 基金代码。
+            fees: 费率信息。
+
+        Raises:
+            ValueError: 基金不存在时抛出。
+        """
+        cursor = self.conn.execute(
+            """UPDATE funds SET
+                management_fee = ?,
+                custody_fee = ?,
+                service_fee = ?,
+                purchase_fee = ?,
+                purchase_fee_discount = ?
+            WHERE fund_code = ?""",
+            (
+                str(fees.management_fee) if fees.management_fee is not None else None,
+                str(fees.custody_fee) if fees.custody_fee is not None else None,
+                str(fees.service_fee) if fees.service_fee is not None else None,
+                str(fees.purchase_fee) if fees.purchase_fee is not None else None,
+                str(fees.purchase_fee_discount)
+                if fees.purchase_fee_discount is not None
+                else None,
+                fund_code,
+            ),
+        )
+        if cursor.rowcount == 0:
+            raise ValueError(f"基金不存在：{fund_code}")
+        self.conn.commit()
+
 
 def _row_to_fund_info(row: sqlite3.Row) -> FundInfo:
     """将 SQLite Row 转换为 FundInfo 对象。"""
@@ -121,4 +156,13 @@ def _row_to_fund_info(row: sqlite3.Row) -> FundInfo:
         asset_class=AssetClass(row["asset_class"]),
         market=row["market"],
         alias=row["alias"],
+        management_fee=Decimal(row["management_fee"])
+        if row["management_fee"]
+        else None,
+        custody_fee=Decimal(row["custody_fee"]) if row["custody_fee"] else None,
+        service_fee=Decimal(row["service_fee"]) if row["service_fee"] else None,
+        purchase_fee=Decimal(row["purchase_fee"]) if row["purchase_fee"] else None,
+        purchase_fee_discount=Decimal(row["purchase_fee_discount"])
+        if row["purchase_fee_discount"]
+        else None,
     )

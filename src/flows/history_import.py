@@ -28,6 +28,7 @@ from src.data.db.calendar import CalendarService
 from src.data.db.fund_repo import FundRepo
 from src.data.db.nav_repo import NavRepo
 from src.data.db.trade_repo import TradeRepo
+from src.flows.fund_fees import sync_fund_fees
 
 # 支付宝 CSV 常量
 _ALIPAY_ENCODING = "gbk"
@@ -372,6 +373,10 @@ def _auto_resolve_funds(
 
         log(f"[Flow:HistoryImport] 创建基金：{fund_name} → {fund_code} ({asset_class.value})")
         fund_repo.add(fund_code, name, asset_class, market, alias=fund_name)
+
+        # 自动抓取费率（v0.4.3 新增）
+        sync_fund_fees(fund_code)
+
         resolved_count += 1
 
     log(f"[Flow:HistoryImport] 成功解析 {resolved_count}/{len(unique_fund_names)} 只基金")

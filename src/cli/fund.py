@@ -6,12 +6,13 @@ import sys
 from src.core.log import log
 from src.core.models.asset_class import AssetClass
 from src.flows.config import add_fund, list_funds, remove_fund
+from src.flows.fund_fees import get_fund_fees, sync_fund_fees
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="python -m src.cli.fund",
-        description="基金配置管理（v0.3.2）",
+        description="基金配置管理（v0.4.3）",
     )
     subparsers = parser.add_subparsers(dest="command", required=True, help="子命令")
 
@@ -44,6 +45,14 @@ def _parse_args() -> argparse.Namespace:
     # ========== remove 子命令 ==========
     remove_parser = subparsers.add_parser("remove", help="删除基金")
     remove_parser.add_argument("--code", required=True, help="基金代码（6位数字）")
+
+    # ========== fees 子命令 ==========
+    fees_parser = subparsers.add_parser("fees", help="查看基金费率")
+    fees_parser.add_argument("--code", required=True, help="基金代码（6位数字）")
+
+    # ========== sync-fees 子命令 ==========
+    sync_fees_parser = subparsers.add_parser("sync-fees", help="同步基金费率（从东方财富抓取）")
+    sync_fees_parser.add_argument("--code", help="基金代码（不指定则同步全部）")
 
     return parser.parse_args()
 
@@ -107,9 +116,83 @@ def _do_list(_args: argparse.Namespace) -> int:
         return 5
 
 
+def _do_fees(args: argparse.Namespace) -> int:
+    """执行 fees 命令：查看基金费率。"""
+    try:
+        fund = get_fund_fees(args.code)
+        if fund is None:
+            log(f"❌ 基金不存在：{args.code}")
+            return 4
+
+        print(f"\n📊 {fund.name} ({fund.fund_code}) 费率信息\n")
+
+        # 运作费用（注意：Decimal("0") 是 falsy，需要用 is not None 判断）
+        print("运作费用（年化，从净值中扣除）：")
+        print(f"  管理费率: {fund.management_fee}%" if fund.management_fee is not None else "  管理费率: 未知")
+        print(f"  托管费率: {fund.custody_fee}%" if fund.custody_fee is not None else "  托管费率: 未知")
+        print(f"  销售服务费率: {fund.service_fee}%" if fund.service_fee is not None else "  销售服务费率: 未知")
+
+        # 交易费用
+        print("\n交易费用：")
+        if fund.purchase_fee:
+            print(f"  申购费率（原）: {fund.purchase_fee}%")
+        if fund.purchase_fee_discount:
+            print(f"  申购费率（折扣）: {fund.purchase_fee_discount}%")
+
+        # 检查费率是否完整
+        has_operating_fees = fund.management_fee or fund.custody_fee
+        has_trading_fees = fund.purchase_fee or fund.purchase_fee_discount
+        if not has_operating_fees and not has_trading_fees:
+            print("\n⚠️  费率信息未同步，请运行 sync-fees 命令")
+        elif not has_operating_fees or not has_trading_fees:
+            print("\n⚠️  费率信息不完整，建议运行 sync-fees 命令补全")
+
+        print()
+        return 0
+    except Exception as err:  # noqa: BLE001
+        log(f"❌ 查询费率失败：{err}")
+        return 5
+
+
+def _do_sync_fees(args: argparse.Namespace) -> int:
+    """执行 sync-fees 命令：同步基金费率。"""
+    try:
+        result = sync_fund_fees(args.code)
+
+        if not result.details:
+            log("（无基金配置）")
+            return 0
+
+        if args.code:
+            # 单只基金
+            _, name, success = result.details[0]
+            if success:
+                log(f"✅ {args.code} {name} 费率同步成功")
+            else:
+                log(f"❌ {args.code} {name} 费率同步失败")
+                return 5
+        else:
+            # 全部基金
+            log(f"同步 {len(result.details)} 个基金费率...")
+            for fund_code, name, success in result.details:
+                if success:
+                    log(f"  ✅ {fund_code} {name}")
+                else:
+                    log(f"  ❌ {fund_code} {name}")
+            log(f"\n同步完成：成功 {result.success}，失败 {result.failed}")
+
+        return 0
+    except ValueError as err:
+        log(f"❌ {err}")
+        return 4
+    except Exception as err:  # noqa: BLE001
+        log(f"❌ 同步费率失败：{err}")
+        return 5
+
+
 def main() -> int:
     """
-    基金配置管理 CLI（v0.3.4）。
+    基金配置管理 CLI（v0.4.3）。
 
     Returns:
         退出码：0=成功；4=参数错误；5=其他失败。
@@ -122,6 +205,10 @@ def main() -> int:
         return _do_list(args)
     elif args.command == "remove":
         return _do_remove(args)
+    elif args.command == "fees":
+        return _do_fees(args)
+    elif args.command == "sync-fees":
+        return _do_sync_fees(args)
     else:
         log(f"❌ 未知命令：{args.command}")
         return 1
