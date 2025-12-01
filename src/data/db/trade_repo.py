@@ -158,18 +158,56 @@ class TradeRepo:
         ).fetchall()
         return [_row_to_trade(r) for r in rows]
 
-    def position_shares(self) -> dict[str, Decimal]:  # type: ignore[override]
-        """按基金代码聚合已确认交易，返回净持仓份额（买入为正，卖出为负）。"""
-        rows = self.conn.execute(
-            "SELECT fund_code, type, shares FROM trades WHERE status = 'confirmed' AND shares IS NOT NULL"
-        ).fetchall()
+    def get_position(self, up_to: date | None = None) -> dict[str, Decimal]:
+        """
+        按基金代码聚合已确认交易，返回净持仓份额。
+
+        Args:
+            up_to: 截止日期，None 表示全部。
+
+        Returns:
+            {fund_code: shares} 字典，仅包含正持仓。
+        """
+        if up_to:
+            rows = self.conn.execute(
+                """SELECT fund_code, type, shares FROM trades
+                   WHERE status = 'confirmed' AND shares IS NOT NULL AND trade_date <= ?""",
+                (up_to.isoformat(),),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT fund_code, type, shares FROM trades WHERE status = 'confirmed' AND shares IS NOT NULL"
+            ).fetchall()
         position: dict[str, Decimal] = {}
         for row in rows:
             shares = Decimal(row["shares"])
             if row["type"] == "sell":
                 shares = -shares
             position[row["fund_code"]] = position.get(row["fund_code"], Decimal("0")) + shares
-        return position
+        return {k: v for k, v in position.items() if v > 0}
+
+    def get_pending_amount(self, up_to: date | None = None) -> Decimal:
+        """
+        统计待确认买入金额。
+
+        Args:
+            up_to: 截止日期，None 表示全部。
+
+        Returns:
+            待确认金额总和。
+        """
+        if up_to:
+            row = self.conn.execute(
+                """SELECT SUM(amount) as total FROM trades
+                   WHERE status = 'pending' AND type = 'buy' AND trade_date <= ?""",
+                (up_to.isoformat(),),
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT SUM(amount) as total FROM trades WHERE status = 'pending' AND type = 'buy'"
+            ).fetchone()
+        total = row["total"] if row and row["total"] is not None else "0"
+        return Decimal(str(total))
 
     def skip_dca_for_date(self, fund_code: str, day: date) -> int:  # type: ignore[override]
         """将指定日期的 pending 买入定投标记为 skipped，返回影响行数。"""

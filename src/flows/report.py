@@ -138,7 +138,7 @@ def make_daily_report(
         as_of = prev_day
 
     target_weights = alloc_config_repo.get_target_weights()
-    position_shares = trade_repo.position_shares()
+    position_shares = trade_repo.get_position()
 
     report_data = (
         _build_market_view(position_shares, target_weights, as_of, fund_repo, nav_service)
@@ -223,7 +223,7 @@ def make_rebalance_suggestion(
 
     target_weights = alloc_config_repo.get_target_weights()
     thresholds = alloc_config_repo.get_max_deviation()
-    position_shares = trade_repo.position_shares()
+    position_shares = trade_repo.get_position()
 
     # 聚合当日市值（使用 NAV 质量分级逻辑）
     class_values: dict[AssetClass, Decimal] = {}

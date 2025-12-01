@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -399,4 +400,64 @@ class EastmoneyClient:
             "ftype": ftype,
             "fund_type_code": fund_type_code,
         }
+
+    def get_estimated_nav(self, fund_code: str) -> tuple[Decimal, str] | None:
+        """
+        获取盘中估算净值（仅供展示验证，不用于核心计算）。
+
+        数据源：天天基金 fundgz 接口
+
+        返回：(估算净值, 更新时间) 或 None
+
+        ⚠️ 注意：
+        - QDII 基金估值可能不准确（时区、汇率差异）
+        - 仅用于最近几天的市值查询验证
+        - 不存储到数据库，不用于交易确认
+
+        Args:
+            fund_code: 基金代码（6 位数字）
+
+        Returns:
+            (估算净值, 估值时间) 或 None
+            估值时间格式：YYYY-MM-DD HH:MM
+        """
+        url = f"http://fundgz.1234567.com.cn/js/{fund_code}.js"
+        headers = {
+            "User-Agent": self.user_agent,
+            "Referer": "http://fund.eastmoney.com/",
+        }
+
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                resp = client.get(url, headers=headers)
+                if resp.status_code != 200:
+                    log(f"[EastmoneyClient] 获取 {fund_code} 估值失败: HTTP {resp.status_code}")
+                    return None
+
+                # 返回格式：jsonpgz({...});
+                m = re.search(r"\{.+\}", resp.text)
+                if not m:
+                    log(f"[EastmoneyClient] 获取 {fund_code} 估值失败: 无法解析响应")
+                    return None
+
+                data = json.loads(m.group(0))
+                gsz = data.get("gsz")  # 估算净值
+                gztime = data.get("gztime")  # 估值时间 "2025-11-28 15:00"
+
+                if not gsz or not gztime:
+                    log(f"[EastmoneyClient] 获取 {fund_code} 估值失败: 缺少必要字段")
+                    return None
+
+                nav = Decimal(str(gsz))
+                return nav, gztime
+
+        except json.JSONDecodeError as e:
+            log(f"[EastmoneyClient] 获取 {fund_code} 估值失败: JSON 解析错误 {e}")
+            return None
+        except (InvalidOperation, TypeError, ValueError) as e:
+            log(f"[EastmoneyClient] 获取 {fund_code} 估值失败: 数据转换错误 {e}")
+            return None
+        except Exception as e:
+            log(f"[EastmoneyClient] 获取 {fund_code} 估值失败: {e}")
+            return None
 

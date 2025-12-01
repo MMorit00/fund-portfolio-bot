@@ -428,12 +428,26 @@ CLI → Flows (纯函数 + @dependency) → Data (通过装饰器注入)
 - ✅ `src/flows/history_import.py`：Flow 函数签名
 - ✅ `src/cli/history_import.py`：CLI 入口
 
+### 已完成（v0.4.2+）
+
+**P4 - 市值验证工具**（✅ 2025-12-01 完成）：
+- ✅ `verify_import_market_value()`：计算导入账单后的总市值
+- ✅ `src/cli/verify_import.py`：独立验证 CLI
+- ✅ 净值回退策略（默认）：向前查找最近 7 个交易日的官方净值
+- ✅ 估值回退策略（`--estimate`）：使用盘中估值（仅限最近 3 天）
+- ✅ `EastmoneyClient.get_estimated_nav()`：获取盘中估值
+
+**功能定位**：
+- 仅用于验证导入账单后的总市值对齐
+- 不侵入核心功能（confirm_trades、rebalance 等仍只用官方净值）
+- 估值不存储到 navs 表，保持数据纯净
+
 ### 待实现
 
-- [ ] `funds.alias` 字段 + `FundRepo.find_by_alias()`
-- [ ] CSV 解析器（GBK + 基金交易过滤）
-- [ ] 历史 NAV 批量抓取
-- [ ] 份额计算 + 事务写入
+- [ ] `funds.alias` 字段 + `FundRepo.find_by_alias()`（✅ 部分完成）
+- [ ] CSV 解析器（GBK + 基金交易过滤）（✅ 部分完成）
+- [ ] 历史 NAV 批量抓取（✅ 部分完成）
+- [ ] 份额计算 + 事务写入（✅ 部分完成）
 - [ ] 进度条 + 错误报告
 
 ### 详细设计
@@ -700,6 +714,8 @@ v1.1+ (AI 进阶功能)
   - `python -m src.cli.report [--mode market/shares] [--as-of 2025-01-15]`
 - `再平衡建议`(`make_rebalance_suggestion`)
   - `python -m src.cli.rebalance [--as-of 2025-01-15]`（v0.3.3：独立 CLI + 基金建议）
+- `市值验证`(`verify_import_market_value`)（v0.4.2+）
+  - `python -m src.cli.verify_import [--as-of 2025-11-29] [--estimate]`
 
 ## 日历管理（v0.3.4+）
 - `刷新日历（CSV）`(`refresh_calendar`)

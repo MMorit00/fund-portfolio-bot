@@ -230,7 +230,7 @@ def main() -> None:
         print("[DevSeed] 注意：未为该基金添加定价日 NAV，确认时将被标记为延迟")
 
     # 打印当前状态
-    positions = trade_repo.position_shares()
+    positions = trade_repo.get_position()
     print(f"[DevSeed] 当前持仓: {dict(positions)}")
 
     target_weights = alloc_repo.get_target_weights()
