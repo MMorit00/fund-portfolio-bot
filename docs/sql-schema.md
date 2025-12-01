@@ -7,8 +7,8 @@
 
 ## 当前版本
 
-- Schema Version: **6** (SCHEMA_VERSION = 6)
-- 最后更新: 2025-11-30
+- Schema Version: **8** (SCHEMA_VERSION = 8)
+- 最后更新: 2025-12-01
 
 ## 核心表结构
 
@@ -37,6 +37,7 @@
 | `confirmation_status` | TEXT | 确认状态：normal / delayed | v0.2 |
 | `delayed_reason` | TEXT | 延迟原因：nav_missing / unknown | v0.2 |
 | `delayed_since` | DATE | 首次检测到延迟的日期 | v0.2 |
+| `external_id` | TEXT | 外部唯一标识（支付宝订单号等），用于历史导入去重 | v0.4.2 |
 
 **业务规则**：见 `docs/settlement-rules.md`
 
@@ -128,7 +129,8 @@ SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 - **v0.3.2** (2025-11-22): `dca_plans` 表增加 `status` 字段（active/disabled）
 - **v0.3.4** (2025-11-26): 月度定投短月顺延（逻辑变更，无 schema 变更）
 - **v0.4** (2025-11-26): 新增 `action_log` 表，用户行为日志
-- **v0.4.2** (2025-11-30): `funds` 表增加 `alias` 字段，支持历史账单导入
+- **v0.4.2** (2025-11-30): `funds` 表增加 `alias` 字段，`trades` 表增加 `external_id` 字段（历史导入去重）
+- **v0.4.2+** (2025-12-01): 移除 `trades` 表的 `nav` 字段（数据规范化，nav 归一化存储于 navs 表）
 
 ## 何时需要迁移文档？
 
@@ -145,7 +147,7 @@ SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 
 ## v0.4.2 实现（历史导入支持）
 
-> **状态**：Schema 已完成，Flow 逻辑开发中
+> **状态**：✅ 已完成
 
 ### funds 表扩展（✅ 已实现）
 
@@ -167,22 +169,20 @@ ALTER TABLE funds ADD COLUMN alias TEXT;
 - `FundRepo.find_by_alias(alias)` - 通过 alias 查找基金
 - `FundRepo.update_alias(fund_code, alias)` - 更新基金的 alias
 
-### trades 表扩展（待实现）
+### trades 表扩展（✅ 已实现）
 
 ```sql
--- 新增 source 字段：标识交易来源
-ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'manual';
--- 可选值: manual / alipay / ttjj / dca
-
 -- 新增 external_id 字段：外部流水号，用于去重
-ALTER TABLE trades ADD COLUMN external_id TEXT;
+ALTER TABLE trades ADD COLUMN external_id TEXT UNIQUE;
 ```
 
 **用途**：
-- `source`：区分手动录入 vs 导入 vs DCA 自动创建
-- `external_id`：存储支付宝交易号，防止重复导入
+- `external_id`：存储支付宝交易号/Alipay 订单号，防止重复导入
+- 数据库级唯一约束（UNIQUE）：自动防重
 
-**去重逻辑**：`(source, external_id)` 组合唯一
+**去重机制**：
+- 首次导入：写入 `external_id`
+- 重复导入：UNIQUE 约束触发，TradeRepo 捕获并跳过
 
 ### 详细设计
 

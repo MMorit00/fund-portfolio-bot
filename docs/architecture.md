@@ -64,9 +64,9 @@ scripts/       # 辅助脚本
 │ │   settlement, rebalance  │ │    │ │   CalendarService    │ │
 │ │ dependency.py            │ │    │ ├──────────────────────┤ │
 │ │   @dependency 装饰器     │ │    │ │ client/              │ │
-│ │   @register 装饰器       │ │    │ │   EastmoneyService   │ │
+│ │   @register 装饰器       │ │    │ │   EastmoneyClient    │ │
 │ │ container.py             │ │    │ │   LocalNavService    │ │
-│ │   依赖工厂函数集合        │ │    │ │   DiscordService     │ │
+│ │   依赖工厂函数集合        │ │    │ │   DiscordClient      │ │
 │ │   get_trade_repo() 等    │ │    │ └──────────────────────┘ │
 │ │ config.py, log.py        │ │    └────────────┬─────────────┘
 │ └──────────────────────────┘ │                 │
@@ -123,11 +123,16 @@ scripts/       # 辅助脚本
 | 数据层 | `src/data` | 数据库访问 + 外部客户端 |
 
 **命名约定**：
-- Repo 类：`TradeRepo`、`NavRepo`、`FundRepo`
-- Service 类：`CalendarService`、`EastmoneyNavService`、`LocalNavService`
+- Repo 类：`TradeRepo`、`NavRepo`、`FundRepo`（数据库访问）
+- Client 类：`EastmoneyClient`、`DiscordClient`（纯 I/O，无业务逻辑）
+- Service 类：`CalendarService`、`LocalNavService`（封装业务逻辑）
 - Flow 函数：`create_trade()`、`confirm_trades()`、`make_daily_report()`
 - Result 类：`ConfirmResult`、`ReportResult`、`FetchNavsResult`
 - 依赖注入：`@dependency`、`@register`
+
+**Client vs Service 区分**：
+- **Client**：只负责 I/O（HTTP 请求、Webhook 推送），不含业务逻辑
+- **Service**：在数据基础上封装业务逻辑（如 LocalNavService 提供运行时 NAV 查询接口）
 
 ## 核心模块
 
@@ -164,9 +169,9 @@ scripts/       # 辅助脚本
 - `calendar.py`：CalendarService
 
 ### 外部客户端（data/client/）
-- `eastmoney.py`：EastmoneyNavService（抓取净值）
-- `local_nav.py`：LocalNavService（本地净值查询）
-- `discord.py`：DiscordReportService（推送日报）
+- `eastmoney.py`：EastmoneyClient（东方财富 API 客户端：抓取净值、搜索基金）
+- `local_nav.py`：LocalNavService（本地净值查询服务）
+- `discord.py`：DiscordClient（Discord Webhook 客户端：推送消息）
 
 ## NAV 数据流
 
@@ -174,8 +179,8 @@ scripts/       # 辅助脚本
 外部抓取（CLI → Flow）:
   src/cli/fetch_navs.py: main()
     → src/flows/market.py: fetch_navs(day=day)
-      → EastmoneyNavService.get_nav()  # 自动注入
-      → NavRepo.upsert()               # 自动注入
+      → EastmoneyClient.get_nav()  # 自动注入
+      → NavRepo.upsert()           # 自动注入
       → SQLite navs 表
 
 本地查询（Flow → Service）:

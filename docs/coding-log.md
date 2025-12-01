@@ -5,6 +5,159 @@
 
 ---
 
+## 2025-12-01 v0.4.2+ 数据规范化与命名一致性重构
+
+### 背景
+
+历史导入功能开发过程中，代码审查发现以下问题：
+1. **数据冗余**：`Trade` 模型包含 `nav` 字段，与 `navs` 表重复存储
+2. **命名不一致**：`EastmoneyNavService`/`DiscordReportService` 实际只做 I/O，应命名为 Client
+3. **业务逻辑错位**：`infer_asset_class()` 在 client 层，应在 flow 层
+4. **死代码**：`flows/config.py` 中 `create_fund()` 和 `resolve_fund_by_name()` 职责不清且从未被调用
+5. **迁移逻辑冗余**：开发阶段不需要增量迁移，直接重建数据库即可
+
+### 技术决策
+
+**1. 数据规范化（移除 Trade.nav）**：
+- **决策**：删除 `Trade` 模型的 `nav` 字段
+- **理由**：
+  - nav 已在 `navs` 表规范化存储，通过 `LocalNavService` 查询
+  - Trade 存储 nav 是冗余，违反数据规范化原则
+  - 需要时通过 `(fund_code, pricing_date)` JOIN 或查询即可获得
+- **影响**：
+  - Schema v7 → v8（移除 `trades.nav` 列）
+  - Trade 模型删除 nav 字段
+  - 所有 SQL INSERT/UPDATE 语句移除 nav
+  - `confirm()` 方法不再接受 nav 参数
+  - 历史导入逻辑不需传递 nav 给 TradeRepo
+
+**2. 迁移逻辑简化**：
+- **决策**：删除 `_migrate_schema()` 方法，版本不匹配时抛出 RuntimeError 提示重建
+- **理由**：
+  - 开发阶段数据可随时重建，无需维护迁移脚本
+  - 减少复杂度，避免迁移逻辑出错
+  - 进入生产环境后再引入迁移
+- **实现**：
+```python
+if current_version < SCHEMA_VERSION:
+    raise RuntimeError(
+        f"[DbHelper] Schema 版本过旧（当前 v{current_version}，需要 v{SCHEMA_VERSION}）。"
+        f"开发阶段请删除 {self.db_path} 后重新运行。"
+    )
+```
+
+**3. Client vs Service 命名规范**：
+- **决策**：建立清晰的命名约定
+  - **Client**：只负责 I/O（HTTP 请求、Webhook），不含业务逻辑
+  - **Service**：在数据基础上封装业务逻辑
+- **变更**：
+  - `EastmoneyNavService` → `EastmoneyClient`
+  - `DiscordReportService` → `DiscordClient`
+  - `LocalNavService` 保持不变（封装业务逻辑）
+- **方法重命名**：
+  - `EastmoneyClient.search()` → `search_fund()`（更明确的语义）
+
+**4. 业务逻辑分层调整**：
+- **决策**：`infer_asset_class()` 从 data/client 移动到 flows 层
+- **理由**：
+  - 资产类别推断是业务规则，不是数据访问逻辑
+  - client 层应保持纯 I/O，不包含业务判断
+- **实现**：
+  - 删除 `EastmoneyClient.infer_asset_class()`
+  - 在 `flows/history_import.py` 新增 `_infer_asset_class()` 函数
+
+**5. 死代码清理**：
+- **决策**：删除 `flows/config.py` 中 92 行未使用代码
+- **删除内容**：
+  - `create_fund()`：从未被调用
+  - `resolve_fund_by_name()`：职责混乱（解析 + 创建 + 推断）
+- **替代方案**：逻辑内联到 `history_import.py:_auto_resolve_funds()`
+
+**6. URL 编码修复**：
+- **决策**：使用 `urllib.parse.quote()` 编码基金名称搜索关键词
+- **理由**：支持中文基金名称，避免 HTTP 请求错误
+
+### Schema 变更
+
+- `SCHEMA_VERSION`：6 → 8（跳过 v7）
+- **v7**（2025-11-30）：`funds.alias` + `trades.external_id`
+- **v8**（2025-12-01）：移除 `trades.nav`
+
+### 修改文件（14 个）
+
+**核心模型**：
+- `src/core/models/trade.py`：删除 `nav` 字段
+
+**数据库层**：
+- `src/data/db/db_helper.py`：
+  - 删除 `_migrate_schema()`
+  - SCHEMA_VERSION 6 → 8
+  - trades 表 DDL 移除 `nav TEXT,`
+- `src/data/db/trade_repo.py`：
+  - INSERT 语句移除 nav（15 → 14 个参数）
+  - `confirm()` 方法移除 nav 参数
+
+**客户端层**：
+- `src/data/client/eastmoney.py`：
+  - 类名：`EastmoneyNavService` → `EastmoneyClient`
+  - 方法：`search()` → `search_fund()`
+  - 删除：`infer_asset_class()`、`_normalize_name()`
+  - 新增：URL 编码 `quote(keyword)`
+- `src/data/client/discord.py`：
+  - 类名：`DiscordReportService` → `DiscordClient`
+
+**流程层**：
+- `src/flows/config.py`：删除 `create_fund()` 和 `resolve_fund_by_name()`（-92 行）
+- `src/flows/history_import.py`：
+  - 新增 `_infer_asset_class()` 函数
+  - 参数重命名：`eastmoney_service` → `eastmoney_client`
+  - 移除传递 nav 到 TradeRepo
+- `src/flows/trade.py`：参数重命名
+- `src/flows/market.py`：参数重命名
+- `src/flows/report.py`：类型注解更新
+
+**依赖注入**：
+- `src/core/container.py`：
+  - 工厂函数重命名：`get_eastmoney_client()`、`get_discord_client()`
+  - 返回类型更新
+
+**CLI**：
+- `src/cli/fund.py`：参数重命名
+
+**文档更新**：
+- `docs/sql-schema.md`：
+  - Schema v6 → v8
+  - 更新 trades 表字段说明（添加 external_id，删除 nav）
+  - 标记 v0.4.2 为已完成
+  - 更新 Schema 演进历史
+- `docs/architecture.md`：
+  - 更新类名引用
+  - 新增 Client vs Service 命名规范说明
+- `docs/coding-log.md`：本条记录
+
+### 代码质量
+
+- ✅ 净删除代码：~100 行（迁移逻辑 + 死代码）
+- ✅ Ruff 检查全部通过
+- ✅ 符合项目编码规范（类型注解、Decimal、docstring）
+
+### 设计原则验证
+
+- ✅ **语义清晰**：Client/Service 命名区分职责
+- ✅ **无冗余**：nav 归一化存储于 navs 表
+- ✅ **层次分明**：业务逻辑在 flow 层，I/O 在 client 层
+- ✅ **开发友好**：删除迁移复杂度，重建即可
+
+### 影响范围
+
+- 修改文件：14 个
+- Schema 变更：v6 → v8
+- 类重命名：2 个（EastmoneyClient, DiscordClient）
+- 方法重命名：1 个（search_fund）
+- 删除代码：~200 行（迁移 + 死代码 + 冗余字段）
+
+---
+
 ## 2025-11-30 v0.4.2 历史账单导入（设计阶段）
 
 ### 背景

@@ -1,7 +1,7 @@
 
 # 历史账单导入设计
 
-> **状态**：v0.4.2 规划中，骨架已完成，逻辑待实现
+> **状态**：v0.4.2 开发中（Schema 已实现，Flow 逻辑待完善）
 
 ## 概述
 
@@ -13,7 +13,7 @@
 |------|------|
 | 平台范围 | 只管支付宝，其他平台转换为统一 CSV 模板后导入 |
 | 输入方式 | 用户手工/脚本将支付宝原始导出清洗成统一 CSV |
-| 净值来源 | 自动调用 `EastmoneyNavService` 抓取历史净值 |
+| 净值来源 | 自动调用 `EastmoneyClient` 抓取历史净值 |
 | 份额计算 | `shares = amount / nav` |
 | ActionLog | 每笔交易补一条行为日志 |
 | 幂等策略 | 开发阶段可删库重建，生产阶段用 `external_id` 去重 |
@@ -192,26 +192,23 @@ NAV 抓取: 98/103 成功
 
 ---
 
-## Schema 扩展规划（v0.4.2）
+## Schema 扩展（v0.4.2）
 
-### funds 表
+### funds 表（✅ 已实现）
 
 ```sql
 -- 新增 alias 字段
 ALTER TABLE funds ADD COLUMN alias TEXT;
 ```
 
-### trades 表（可选，按需）
+### trades 表（✅ 已实现）
 
 ```sql
--- 新增 source 字段（标识交易来源）
-ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'manual';
--- 可选值: manual / alipay / ttjj / dca
-
 -- 新增 external_id 字段（外部流水号，用于去重）
-ALTER TABLE trades ADD COLUMN external_id TEXT;
--- 唯一约束: (source, external_id)
+ALTER TABLE trades ADD COLUMN external_id TEXT UNIQUE;
 ```
+
+**注**：`source` 字段已取消（不需要区分来源，`external_id` 足够用于去重）
 
 ### 导入批次表（远期，按需）
 
@@ -231,21 +228,29 @@ CREATE TABLE import_batches (
 
 ---
 
-## 待实现清单
+## 实现清单
 
-- [ ] `funds.alias` 字段实现
-- [ ] `FundRepo.find_by_alias()` 方法
-- [ ] CSV 解析器（GBK 编码 + 基金交易过滤）
-- [ ] 历史 NAV 批量抓取
-- [ ] 份额计算逻辑
-- [ ] 导入事务（批量写入 + 回滚）
-- [ ] CLI 参数解析
+**已完成**：
+- [x] `funds.alias` 字段实现
+- [x] `trades.external_id` 字段实现（去重）
+- [x] `FundRepo.find_by_alias()` 方法
+- [x] CSV 解析器（GBK 编码 + 基金交易过滤）
+- [x] 基金名称 → 代码映射逻辑
+- [x] 自动创建基金（apply 模式）
+- [x] 历史 NAV 批量抓取
+- [x] 份额计算逻辑
+- [x] CLI 参数解析（dry-run / apply）
+
+**待完善**：
+- [ ] 导入事务优化（批量写入性能）
 - [ ] 进度条显示
+- [ ] ActionLog 补录（可选）
+- [ ] 错误处理增强
 
 ---
 
 ## 参考
 
 - 支付宝账单导出：支付宝 App → 我的 → 账单 → 右上角导出
-- 东方财富 NAV API：`EastmoneyNavService.get_nav(fund_code, date)`
-- 现有确认流程：`src/flows/confirm.py`
+- 东方财富 NAV API：`EastmoneyClient.get_nav(fund_code, date)`
+- 现有确认流程：`src/flows/trade.py:confirm_trades()`
