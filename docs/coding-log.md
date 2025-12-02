@@ -573,7 +573,7 @@ return day.day == effective_day
 
 ### v0.3 日历与接口重构
 - 统一日历协议：`CalendarService`（严格 DB 模式）
-- SettlementPolicy 引入：三层日历组合（guard + pricing + lag_counting）
+- SettlementPolicy 引入：三层日历组合（guard_calendar_id + pricing_calendar_id + settlement_calendar_id）
 - pricing_date 持久化（Schema v3）
 
 ### v0.2.1 交易确认延迟追踪

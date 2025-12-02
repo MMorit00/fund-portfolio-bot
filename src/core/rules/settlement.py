@@ -12,17 +12,21 @@ def calc_pricing_date(trade_date: date, policy: SettlementPolicy, calendar: Cale
 
     参数：
         trade_date: 下单/约定日。
-        policy: 结算策略（含 guard 与定价/计数日历）。
+        policy: 结算日历策略（含 guard 与定价/计数日历）。
         calendar: 交易日历服务。
     """
-    effective = calendar.next_open(policy.guard_calendar, trade_date) if policy.guard_calendar else trade_date
-    return calendar.next_open(policy.pricing_calendar, effective)
+    effective = (
+        calendar.next_open(policy.guard_calendar_id, trade_date)
+        if policy.guard_calendar_id
+        else trade_date
+    )
+    return calendar.next_open(policy.pricing_calendar_id, effective)
 
 
 def calc_settlement_dates(trade_date: date, policy: SettlementPolicy, calendar: CalendarService) -> tuple[date, date]:
-    """返回 (pricing_date, confirm_date)，计数在 `lag_counting_calendar` 上进行。"""
+    """返回 (pricing_date, confirm_date)，计数在 settlement_calendar_id 对应的日历上进行。"""
     pricing = calc_pricing_date(trade_date, policy, calendar)
-    confirm = calendar.shift(policy.lag_counting_calendar, pricing, policy.settle_lag)
+    confirm = calendar.shift(policy.settlement_calendar_id, pricing, policy.settlement_lag)
     return pricing, confirm
 
 
@@ -49,16 +53,16 @@ def default_policy(market: MarketType) -> SettlementPolicy:
     """
     if market is MarketType.CN_A:
         return SettlementPolicy(
-            pricing_calendar=MarketType.CN_A.value,
-            settle_lag=1,
-            lag_counting_calendar=MarketType.CN_A.value,
-            guard_calendar=None,
+            pricing_calendar_id=MarketType.CN_A.value,
+            settlement_lag=1,
+            settlement_calendar_id=MarketType.CN_A.value,
+            guard_calendar_id=None,
         )
     if market is MarketType.US_NYSE:
         return SettlementPolicy(
-            pricing_calendar=MarketType.US_NYSE.value,
-            settle_lag=2,
-            lag_counting_calendar=MarketType.US_NYSE.value,
-            guard_calendar=MarketType.CN_A.value,
+            pricing_calendar_id=MarketType.US_NYSE.value,
+            settlement_lag=2,
+            settlement_calendar_id=MarketType.US_NYSE.value,
+            guard_calendar_id=MarketType.CN_A.value,
         )
     raise ValueError(f"不支持的市场类型：{market}（仅支持 CN_A / US_NYSE）")

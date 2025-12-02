@@ -37,7 +37,7 @@ class ImportRecord:
     导入记录（统一承载：解析 → 映射 → 补充 → 写库）。
 
     生命周期：
-    1. 解析阶段：填充原始字段（external_id, original_fund_name, ...）
+    1. 解析阶段：填充原始字段（external_id, raw_fund_name, ...）
     2. 映射阶段：填充 fund_code, market
     3. NAV 阶段：填充 nav, shares
     4. 写库阶段：根据 target_status 写入 trades
@@ -55,7 +55,7 @@ class ImportRecord:
     external_id: str
     """交易号，用于去重（trades.external_id 唯一约束）。"""
 
-    original_fund_name: str
+    raw_fund_name: str
     """
     原始基金名称，用于外部名称映射和调试。
 
@@ -115,7 +115,7 @@ class ImportRecord:
         )
 
     @property
-    def is_ready_for_confirm(self) -> bool:
+    def can_confirm(self) -> bool:
         """是否可以直接确认（有 NAV + 有份额）。"""
         return (
             self.is_valid
@@ -132,7 +132,7 @@ class ImportResult:
 
     只存储统计数据，不存储输入参数（mode/csv_path 等由调用者管理）。
     额外字段包括：
-    - downgraded_count: 因 NAV 缺失自动降级为 pending 的数量；
+    - downgraded: 因 NAV 缺失自动降级为 pending 的数量；
     - fund_mapping: 基金映射摘要；
     - error_summary: 错误分类统计。
     """
@@ -149,14 +149,14 @@ class ImportResult:
     skipped: int = 0
     """跳过（重复记录）。"""
 
-    downgraded_count: int = 0
+    downgraded: int = 0
     """因 NAV 缺失自动降级为 pending 的数量。"""
 
     failed_records: list[ImportRecord] = field(default_factory=list)
     """失败记录详情（用于错误报告，只存失败的）。"""
 
     fund_mapping: dict[str, tuple[str, str]] = field(default_factory=dict)
-    """基金映射摘要：{original_fund_name: (fund_code, fund_name)}。"""
+    """基金映射摘要：{raw_fund_name: (fund_code, fund_name)}。"""
 
     error_summary: dict[str, int] = field(default_factory=dict)
     """错误分类统计：{error_type: count}。"""

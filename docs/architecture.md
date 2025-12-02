@@ -141,7 +141,7 @@ scripts/       # 辅助脚本
 - `fund.py`：Fund 数据类
 - `dca_plan.py`：DcaPlan 数据类
 - `asset_class.py`：AssetClass 枚举
-- `policy.py`：SettlementPolicy 数据类
+- `policy.py`：SettlementPolicy 数据类（结算日历策略）
 
 ### 业务规则（core/rules/）
 - `settlement.py`：确认日期计算（T+N 规则）
@@ -192,7 +192,7 @@ scripts/       # 辅助脚本
 
 ## 日历与确认
 
-- **策略对象**：`core/models/policy.py` 的 `SettlementPolicy`
+- **结算日历策略对象**：`core/models/policy.py` 的 `SettlementPolicy`
 - **日历服务**：`data/db/calendar.py` 的 `CalendarService`
 - **日历数据**：存储在 `trading_calendar` 表
 - **确认规则**：`core/rules/settlement.py` 实现 T+N 计算

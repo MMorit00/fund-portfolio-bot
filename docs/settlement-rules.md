@@ -30,11 +30,11 @@
 
 ### QDII 特殊规则（SettlementPolicy）
 
-QDII 基金使用三层日历组合：
-- **guard_calendar**：`CN_A`（卫兵日历，过滤国内节假日）
-- **pricing_calendar**：`US_NYSE`（定价日历，决定 pricing_date）
-- **lag_counting_calendar**：`US_NYSE`（计数日历，决定 T+N 如何数）
-- **settle_lag**：2
+QDII 基金使用三层日历组合（字段名对应 SettlementPolicy）：
+- **guard_calendar_id**：`CN_A`（卫兵日历，过滤国内节假日）
+- **pricing_calendar_id**：`US_NYSE`（定价日历，决定 pricing_date）
+- **settlement_calendar_id**：`US_NYSE`（计数日历，决定 T+N 如何数）
+- **settlement_lag**：2
 
 示例：国庆期间下单（2025-10-01）
 - `CN_A` 卫兵放行日：2025-10-09（10-01..10-08 休市）

@@ -138,7 +138,7 @@ def import_trades_from_csv(
             if record.error_type == "duplicate":
                 continue  # 跳过重复记录
             if record.target_status == "confirmed":
-                if record.is_ready_for_confirm:
+                if record.can_confirm:
                     succeeded += 1
             elif record.is_valid:
                 succeeded += 1
@@ -218,7 +218,7 @@ def _parse_alipay_csv(csv_path: str) -> list[ImportRecord]:
                     ImportRecord(
                         source="alipay",
                         external_id=row[0],
-                        original_fund_name=product_name,
+                        raw_fund_name=product_name,
                         trade_type="buy",  # 占位
                         trade_time=datetime.now(),  # 占位
                         amount=Decimal("0"),
@@ -239,7 +239,7 @@ def _parse_alipay_csv(csv_path: str) -> list[ImportRecord]:
                     ImportRecord(
                         source="alipay",
                         external_id=row[0],
-                        original_fund_name=fund_name,
+                        raw_fund_name=fund_name,
                         trade_type=trade_type,
                         trade_time=datetime.now(),
                         amount=Decimal("0"),
@@ -260,7 +260,7 @@ def _parse_alipay_csv(csv_path: str) -> list[ImportRecord]:
                     ImportRecord(
                         source="alipay",
                         external_id=row[0],
-                        original_fund_name=fund_name,
+                        raw_fund_name=fund_name,
                         trade_type=trade_type,
                         trade_time=trade_time,
                         amount=Decimal("0"),
@@ -276,7 +276,7 @@ def _parse_alipay_csv(csv_path: str) -> list[ImportRecord]:
                 ImportRecord(
                     source="alipay",
                     external_id=row[0],  # 支付宝订单号
-                    original_fund_name=fund_name,
+                    raw_fund_name=fund_name,
                     trade_type=trade_type,
                     trade_time=trade_time,
                     amount=amount,
@@ -345,7 +345,7 @@ def _auto_resolve_funds(
 
     # 收集所有唯一的基金名称
     unique_fund_names = {
-        record.original_fund_name
+        record.raw_fund_name
         for record in records
         if record.error_type is None
     }
@@ -421,7 +421,7 @@ def _map_funds(records: list[ImportRecord], fund_repo: FundRepo) -> None:
     映射 fund_code 和 market。
 
     逻辑：
-    1. 根据 original_fund_name 查询外部名称映射（当前使用 funds.alias 字段）
+    1. 根据 raw_fund_name 查询外部名称映射（当前使用 funds.alias 字段）
     2. 找到匹配的 fund_code 和 market
     3. 映射失败的记录标记 error_type="fund_not_found"
 
@@ -440,7 +440,7 @@ def _map_funds(records: list[ImportRecord], fund_repo: FundRepo) -> None:
         if record.error_type is not None:
             continue
 
-        fund_name = record.original_fund_name
+        fund_name = record.raw_fund_name
 
         # 查缓存
         if fund_name in external_name_cache:
@@ -622,7 +622,7 @@ def _write_trades(
     写入 trades 表（+ 可选 action_log）。
 
     逻辑：
-    1. confirmed 记录：is_ready_for_confirm（有 NAV + 有份额）
+    1. confirmed 记录：can_confirm（有 NAV + 有份额）
     2. pending 记录：is_valid（有 fund_code + market）
     3. 构造 Trade 对象，写入 trade_repo
     4. 如果 with_actions=True，补录 action_log
@@ -652,8 +652,8 @@ def _write_trades(
 
         # 判断是否可以写入
         if record.target_status == "confirmed":
-            # confirmed 记录需要 is_ready_for_confirm
-            if not record.is_ready_for_confirm:
+            # confirmed 记录需要 can_confirm
+            if not record.can_confirm:
                 continue
         else:
             # pending 记录只需要 is_valid
