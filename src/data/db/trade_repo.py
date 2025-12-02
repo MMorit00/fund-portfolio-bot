@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 from src.core.models.trade import Trade
+from src.core.rules.precision import quantize_amount
 from src.core.rules.settlement import calc_settlement_dates, default_policy
 from src.data.db.calendar import CalendarService
 
@@ -25,6 +26,7 @@ class TradeRepo:
 
     def add(self, trade: Trade) -> Trade:  # type: ignore[override]
         """新增一条交易记录，并按策略写入定价日/确认日。"""
+        normalized_amount = quantize_amount(trade.amount)
         policy = default_policy(trade.market)
         pricing_day, confirm_day = calc_settlement_dates(trade.trade_date, policy, self.calendar)
         with self.conn:
@@ -38,7 +40,7 @@ class TradeRepo:
                 (
                     trade.fund_code,
                     trade.type,
-                    format(trade.amount, "f"),
+                    format(normalized_amount, "f"),
                     trade.trade_date.isoformat(),
                     trade.status,
                     trade.market,
@@ -57,7 +59,7 @@ class TradeRepo:
             id=int(trade_id),
             fund_code=trade.fund_code,
             type=trade.type,
-            amount=trade.amount,
+            amount=normalized_amount,
             trade_date=trade.trade_date,
             status=trade.status,
             market=trade.market,

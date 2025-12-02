@@ -4,6 +4,8 @@ import sqlite3
 from datetime import date
 from decimal import Decimal
 
+from src.core.rules.precision import quantize_nav
+
 
 class NavRepo:
     """
@@ -17,13 +19,14 @@ class NavRepo:
 
     def upsert(self, fund_code: str, day: date, nav: Decimal) -> None:  # type: ignore[override]
         """插入或更新某日净值（主键冲突时覆盖）。"""
+        normalized_nav = quantize_nav(nav)
         with self.conn:
             self.conn.execute(
                 (
                     "INSERT INTO navs(fund_code, day, nav) VALUES(?, ?, ?) "
                     "ON CONFLICT(fund_code, day) DO UPDATE SET nav=excluded.nav"
                 ),
-                (fund_code, day.isoformat(), format(nav, "f")),
+                (fund_code, day.isoformat(), format(normalized_nav, "f")),
             )
 
     def get(self, fund_code: str, day: date) -> Decimal | None:  # type: ignore[override]

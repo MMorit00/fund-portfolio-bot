@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 from src.core.models.dca_plan import DcaPlan
+from src.core.rules.precision import quantize_amount
 
 
 class DcaPlanRepo:
@@ -53,6 +54,8 @@ class DcaPlanRepo:
         副作用：
             按 (fund_code) 幂等插入或更新 dca_plans 表。
         """
+        normalized_amount = quantize_amount(amount)
+
         self.conn.execute(
             """
             INSERT INTO dca_plans (fund_code, amount, frequency, rule, status)
@@ -63,7 +66,7 @@ class DcaPlanRepo:
                 rule = excluded.rule,
                 status = excluded.status
             """,
-            (fund_code, str(amount), frequency, rule, status),
+            (fund_code, str(normalized_amount), frequency, rule, status),
         )
         self.conn.commit()
 

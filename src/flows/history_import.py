@@ -21,6 +21,7 @@ from src.core.models.history_import import (
     ImportSource,
 )
 from src.core.models.trade import TradeStatus, TradeType
+from src.core.rules.precision import quantize_shares
 from src.core.rules.settlement import calc_pricing_date, default_policy
 from src.data.client.eastmoney import EastmoneyClient
 from src.data.db.action_repo import ActionRepo
@@ -548,18 +549,13 @@ def _calculate_shares(records: list[ImportRecord]) -> None:
     Args:
         records: ImportRecord 列表（原地修改）。
     """
-    from decimal import ROUND_HALF_UP
-
     for record in records:
         # 跳过无 NAV 的记录
         if record.nav is None:
             continue
 
-        # 计算份额，保留 4 位小数
-        shares = (record.amount / record.nav).quantize(
-            Decimal("0.0001"), rounding=ROUND_HALF_UP
-        )
-        record.shares = shares
+        # 计算份额，统一使用精度工具函数
+        record.shares = quantize_shares(record.amount / record.nav)
 
 
 def _check_duplicates(records: list[ImportRecord], trade_repo: TradeRepo) -> None:

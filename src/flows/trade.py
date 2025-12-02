@@ -283,6 +283,8 @@ def confirm_trade_manual(
     if nav <= Decimal("0"):
         raise ValueError(f"净值必须大于 0：{nav}")
 
+    shares = quantize_shares(shares)
+
     trade = trade_repo.get(trade_id)
     if not trade:
         raise ValueError(f"交易不存在：trade_id={trade_id}")
