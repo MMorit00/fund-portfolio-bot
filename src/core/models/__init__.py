@@ -1,4 +1,4 @@
-from .action import ActionLog, ActionType, Actor, Intent
+from .action import ActionLog, ActionSource, ActionType, Actor, Intent
 from .alloc_config import AllocConfig
 from .asset_class import AssetClass
 from .dca_plan import DcaPlan, Frequency, Status
@@ -42,6 +42,7 @@ __all__ = [
     "SettlementPolicy",
     # 行为日志
     "ActionLog",
+    "ActionSource",
     "ActionType",
     "Actor",
     "Intent",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime
 
 from src.core.models.action import ActionLog, ActionType
 
@@ -21,13 +21,26 @@ class ActionRepo:
         with self.conn:
             cursor = self.conn.execute(
                 """
-                INSERT INTO action_log (action, actor, acted_at, trade_id, intent, note)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO action_log (
+                    action,
+                    actor,
+                    source,
+                    acted_at,
+                    fund_code,
+                    target_date,
+                    trade_id,
+                    intent,
+                    note
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     log.action,
                     log.actor,
+                    log.source,
                     log.acted_at.strftime("%Y-%m-%d %H:%M:%S"),  # SQLite datetime 兼容格式
+                    log.fund_code,
+                    log.target_date.isoformat() if log.target_date else None,
                     log.trade_id,
                     log.intent,
                     log.note,
@@ -38,7 +51,10 @@ class ActionRepo:
             id=int(log_id),
             action=log.action,
             actor=log.actor,
+            source=log.source,
             acted_at=log.acted_at,
+            fund_code=log.fund_code,
+            target_date=log.target_date,
             trade_id=log.trade_id,
             intent=log.intent,
             note=log.note,
@@ -75,11 +91,17 @@ class ActionRepo:
 
 def _row_to_action_log(row: sqlite3.Row) -> ActionLog:
     """将 action_log 表的 SQLite 行记录转换为 ActionLog 实体。"""
+    target_date_str = row["target_date"]
+    acted_at_str = row["acted_at"]
+
     return ActionLog(
         id=int(row["id"]),
         action=row["action"],
         actor=row["actor"],
-        acted_at=datetime.fromisoformat(row["acted_at"]),
+        source=row["source"],
+        acted_at=datetime.fromisoformat(acted_at_str),
+        fund_code=row["fund_code"],
+        target_date=date.fromisoformat(target_date_str) if target_date_str else None,
         trade_id=int(row["trade_id"]) if row["trade_id"] is not None else None,
         intent=row["intent"],
         note=row["note"],

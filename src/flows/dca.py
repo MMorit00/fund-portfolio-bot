@@ -90,7 +90,10 @@ def skip_dca(
                 id=None,
                 action="dca_skip",
                 actor="human",
+                source="manual",
                 acted_at=datetime.now(),
+                fund_code=fund_code,
+                target_date=day,
                 trade_id=None,  # 可能影响多条，不关联具体 trade
                 intent=None,
                 note=note or f"{fund_code} @ {day}",

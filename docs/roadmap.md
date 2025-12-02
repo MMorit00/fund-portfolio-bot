@@ -348,7 +348,7 @@ CLI → Flows (纯函数 + @dependency) → Data (通过装饰器注入)
 
 **Schema 变更**：
 - ✅ `SCHEMA_VERSION`：4 → 5
-- ✅ 新增 `action_log` 表（7 字段：id/action/actor/acted_at/trade_id/intent/note）
+- ✅ 新增 `action_log` 表（当前 10 字段：id/action/actor/source/acted_at/fund_code/target_date/trade_id/intent/note）
 
 **埋点实现**：
 - ✅ 手动买入/卖出（`create_trade`）→ action=buy/sell, actor=human
@@ -372,9 +372,8 @@ CLI → Flows (纯函数 + @dependency) → Data (通过装饰器注入)
 - ❌ 系统自动确认、DCA 自动执行（trades 表已有状态）
 
 **字段精简**：
-- 去掉 `source`（action + actor 足够）
-- 去掉 `plan_id`（可通过 trade_id 追溯）
-- 去掉 `extra` JSON（有 note 就够）
+- 不引入 JSON 扩展字段，行为来源使用结构化的 `source` 枚举（manual/import/automation/migration）
+- 不单独维护 `plan_id` 字段，可通过 trade_id 或 DCA 规则追溯
 
 ### 验证标准
 

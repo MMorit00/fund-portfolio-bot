@@ -684,7 +684,10 @@ def _write_trades(
                 id=None,
                 action=record.trade_type,  # buy / sell
                 actor="human",
+                source="import",
                 acted_at=record.trade_time,
+                fund_code=record.fund_code,
+                target_date=record.trade_date,
                 trade_id=saved_trade.id,
                 intent="planned",  # 历史行为无法判断，默认 planned
                 note=f"导入自{record.source}账单（{csv_name}）",

@@ -11,7 +11,7 @@ from src.flows.config import list_actions
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="python -m src.cli.action",
-        description="行为日志查询（v0.4.1）",
+        description="行为日志查询",
     )
     subparsers = parser.add_subparsers(dest="command", required=True, help="子命令")
 
@@ -41,8 +41,14 @@ def _format_action(action: ActionLog) -> str:
     # 时间格式化
     time_str = action.acted_at.strftime("%Y-%m-%d %H:%M")
 
-    # 基本信息
+    # 基本信息：图标 + id + 动作
     parts = [f"{icon} [{action.id}] {action.action}"]
+
+    # fund_code / target_date（若有）
+    if action.fund_code:
+        parts.append(f"{action.fund_code}")
+    if action.target_date:
+        parts.append(f"on {action.target_date.isoformat()}")
 
     # trade_id
     if action.trade_id:
@@ -52,7 +58,8 @@ def _format_action(action: ActionLog) -> str:
     if action.intent:
         parts.append(f"[{action.intent}]")
 
-    # 时间
+    # 来源 + 时间
+    parts.append(f"via {action.source}")
     parts.append(f"@ {time_str}")
 
     line = " ".join(parts)
@@ -87,8 +94,7 @@ def _do_list(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    """
-    行为日志查询 CLI（v0.4.1）。
+    """行为日志查询 CLI。
 
     Returns:
         退出码：0=成功；5=其他失败。

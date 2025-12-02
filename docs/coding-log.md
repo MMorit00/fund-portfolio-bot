@@ -249,14 +249,23 @@ ALTER TABLE trades ADD COLUMN external_id TEXT;
 - 理由：快照和结果可从 `trades` / `navs` 动态计算，无需预存
 - 真正需要固化时再加表（验证驱动）
 
-**2. 字段精简（7 个）**：
+**2. 字段精简（初版 7 个 → 现版 10 个）**：
+
+初版：
 ```
 id, action, actor, acted_at, trade_id, intent, note
 ```
-- 去掉 `source`：`action` + `actor` 组合已足够区分来源
-- 去掉 `plan_id`：可通过 `trade_id` 追溯
-- 去掉 `fund_code`：可通过 `trade_id` JOIN `trades` 查到
-- 去掉 `extra`：有 `note` 就够，JSON 扩展是过度设计
+
+现版（测试阶段重构，为 AI 使用优化）：
+```
+id, action, actor, source, acted_at, fund_code, target_date, trade_id, intent, note
+```
+- 增加 `source`：显式区分行为来源（manual / import / automation / migration）
+- 增加 `fund_code` + `target_date`：支持定投执行率、某基金某日的决策统计
+- 保持 `intent` + `note` 作为 AI 分析的关键信息
+
+TODO：
+- v1 阶段引入 ContextSnapshot / Outcome 表后，将在此补充行为 → 快照 → 结果的完整链路说明。
 
 **3. `intent` 固定枚举**：
 ```python

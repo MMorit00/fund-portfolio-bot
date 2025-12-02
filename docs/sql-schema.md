@@ -25,7 +25,7 @@
 | `trading_calendar` | 交易日历 | market, day, is_trading_day |
 | `dca_plans` | 定投计划 | fund_code, amount, frequency, rule, status |
 | `alloc_config` | 资产配置目标 | asset_class, target_weight, max_deviation |
-| `action_log` | 用户行为日志 | id, action, actor, acted_at, trade_id, intent, note |
+| `action_log` | 用户行为日志 | id, action, actor, source, acted_at, fund_code, target_date, trade_id, intent, note |
 | `meta` | 元数据 | key, value (schema_version 等) |
 
 ## 重要字段说明
@@ -52,39 +52,48 @@
 
 **月度定投短月顺延**（v0.3.4+）：rule=29/30/31 在短月自动顺延到月末最后一天
 
-### action_log 表（v0.4 新增）
+### action_log 表（行为日志）
 
-用户行为日志，记录每一次投资操作，为后续 AI 分析提供数据基础。
+用户行为日志，记录每一次投资相关的决策行为，为后续 AI 分析提供数据基础。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `id` | INTEGER | 主键 |
-| `action` | TEXT | 动作类型：buy / sell / dca_skip / cancel |
-| `actor` | TEXT | 执行者：human / system / dca |
+| `action` | TEXT | 行为类型：buy / sell / dca_skip / cancel |
+| `actor` | TEXT | 行为主体：human / assistant / system（当前仅使用 human） |
+| `source` | TEXT | 行为来源：manual / import / automation / migration |
 | `acted_at` | TEXT | 发生时间（ISO datetime） |
+| `fund_code` | TEXT | 关联基金代码（可空） |
+| `target_date` | TEXT | 行为针对的交易日/计划日（如定投日期，可空） |
 | `trade_id` | INTEGER | 关联 trades.id（可空） |
 | `intent` | TEXT | 意图标签：planned / impulse / opportunistic / exit / rebalance（可空） |
 | `note` | TEXT | 人话备注（可空） |
 
 **设计说明**：
-- 只记录"发生了什么"，不存储快照或结果（需要时从 trades/navs 动态计算）
-- `intent` 和 `note` 是给 AI 的关键信息，手动填写
+- 只记录“发生了什么”，不存储快照或结果（需要时从 trades/navs 动态计算）
+- `intent` 和 `note` 是给 AI 的关键信息，手动填写或流程写入
+- DCA 相关行为（如跳过某日定投）应尽量填写 `fund_code` + `target_date`，便于统计执行率
 
 **埋点范围**：
 
-| 场景 | 是否记录 | action | actor | 说明 |
-|------|----------|--------|-------|------|
-| 手动买入/卖出 | ✅ | buy / sell | human | CLI `trade buy/sell` |
-| DCA 自动执行 | ❌ | - | - | 系统行为，不记录 |
-| 跳过定投 | ✅ | dca_skip | human | CLI `dca skip` |
-| 取消交易 | ✅ | cancel | human | CLI `trade cancel`（v0.4.1+） |
-| 交易确认 | ❌ | - | - | trades.status 已有 |
-| 再平衡执行 | ❌ | - | - | 留到后续版本 |
+| 场景 | 是否记录 | action | actor | source | 说明 |
+|------|----------|--------|-------|--------|------|
+| 手动买入/卖出 | ✅ | buy / sell | human | manual | 用户通过 CLI / 前端 / 聊天指令下单 |
+| DCA 自动执行 | ❌ | - | - | - | 系统行为，不记录 |
+| 跳过定投 | ✅ | dca_skip | human | manual | 用户主动跳过某日定投 |
+| 取消交易 | ✅ | cancel | human | manual | 用户主动取消 pending 交易 |
+| 导入历史交易 | ✅ | buy / sell | human | import | history_import Flow 自动补录 |
+| 交易确认 | ❌ | - | - | - | trades.status 已有 |
+| 再平衡执行 | ❌ | - | - | - | 留到后续版本 |
 
 **actor 含义**：
-- `human`：用户通过 CLI 手动执行
-- `system`：后台 job 自动执行（当前未使用）
-- `dca`：定投计划触发（当前未使用）
+- `human`：用户通过任意交互方式触发（CLI / 前端按钮 / 聊天指令等）
+- `assistant`：AI 助手基于策略自动执行（预留，当前未使用）
+- `system`：后台 job 或硬规则任务（预留，当前未使用）
+
+**TODO（未来扩展）**：
+- 引入 ContextSnapshot / Outcome 等表，通过 action_log.id 建立一对一关联；
+- 如需多账户/多组合，考虑在 action_log 增加 account_id/portfolio_id 字段。
 
 ### fund_fee_items 表（v0.4.4 新增）
 
