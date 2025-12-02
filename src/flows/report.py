@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
+from core.models import MarketType
 from src.core.dependency import dependency
 from src.core.models.asset_class import AssetClass
 from src.core.models.nav import NavQuality
@@ -549,7 +550,7 @@ def _get_nav_with_quality(
     target_date: date,
     nav_service: LocalNavService,
     calendar: CalendarService,
-    market: str = "CN_A",
+    market: MarketType = MarketType.CN_A,
 ) -> NavResult:
     """
     查询 NAV 并评估数据质量。
@@ -567,7 +568,7 @@ def _get_nav_with_quality(
         target_date: 目标日期。
         nav_service: NAV 查询服务。
         calendar: 交易日历服务。
-        market: 市场标识（默认 "CN_A"）。
+        market: 市场类型（MarketType，默认 CN_A）。
 
     Returns:
         NAV 查询结果（包含质量等级）。
@@ -579,13 +580,13 @@ def _get_nav_with_quality(
 
     # 2. 检查是否交易日
     try:
-        is_trading_day = calendar.is_open(market, target_date)
+        is_trading_day = calendar.is_open(market.value, target_date)
     except RuntimeError:
         # 日历数据缺失，降级为 missing
         return NavResult(None, NavQuality.missing, None)
 
     # 3. 查找最近交易日的 NAV
-    last_trading = calendar.prev_open(market, target_date)
+    last_trading = calendar.prev_open(market.value, target_date)
     if last_trading is None:
         return NavResult(None, NavQuality.missing, None)
 

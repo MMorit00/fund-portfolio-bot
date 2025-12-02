@@ -4,6 +4,7 @@ import sqlite3
 
 from src.core.models.asset_class import AssetClass
 from src.core.models.fund import FundInfo
+from src.core.models.trade import MarketType
 
 
 class FundRepo:
@@ -21,7 +22,7 @@ class FundRepo:
         fund_code: str,
         name: str,
         asset_class: AssetClass,
-        market: str,
+        market: MarketType,
         alias: str | None = None,
     ) -> None:
         """新增或更新基金信息（fund_code 幂等）。"""
@@ -34,7 +35,7 @@ class FundRepo:
                     "asset_class=excluded.asset_class, market=excluded.market, "
                     "alias=excluded.alias"
                 ),
-                (fund_code, name, asset_class.value, market, alias),
+                (fund_code, name, asset_class.value, market.value, alias),
             )
 
     def get(self, fund_code: str) -> FundInfo | None:  # type: ignore[override]
@@ -118,6 +119,6 @@ def _row_to_fund_info(row: sqlite3.Row) -> FundInfo:
         fund_code=row["fund_code"],
         name=row["name"],
         asset_class=AssetClass(row["asset_class"]),
-        market=row["market"],
+        market=MarketType(row["market"]),
         alias=row["alias"],
     )

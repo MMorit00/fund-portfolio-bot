@@ -5,7 +5,7 @@ import sys
 
 from src.core.container import get_fund_repo
 from src.core.log import log
-from src.core.models.asset_class import AssetClass
+from src.core.models import AssetClass, MarketType
 from src.flows.config import add_fund, list_funds, remove_fund
 from src.flows.fund_fees import get_fund_fees, sync_fund_fees
 
@@ -64,10 +64,10 @@ def _do_add(args: argparse.Namespace) -> int:
         fund_code = args.code
         name = args.name
         asset_class = AssetClass(args.asset_class)
-        market = args.market
+        market = MarketType(args.market)
         alias = args.alias if hasattr(args, "alias") else None
 
-        log(f"[Fund:add] 添加基金：{fund_code} - {name} ({asset_class.value}/{market})")
+        log(f"[Fund:add] 添加基金：{fund_code} - {name} ({asset_class.value}/{market.value})")
         add_fund(
             fund_code=fund_code,
             name=name,
@@ -110,7 +110,10 @@ def _do_list(_args: argparse.Namespace) -> int:
 
         log(f"共 {len(funds)} 个基金：")
         for fund in funds:
-            log(f"  {fund.fund_code} | {fund.name} | {fund.asset_class.value} | {fund.market}")
+            log(
+                f"  {fund.fund_code} | {fund.name} | "
+                f"{fund.asset_class.value} | {fund.market.value}"
+            )
         return 0
     except Exception as err:  # noqa: BLE001
         log(f"❌ 查询基金失败：{err}")

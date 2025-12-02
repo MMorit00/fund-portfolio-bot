@@ -20,7 +20,7 @@ from src.core.models.history_import import (
     ImportResult,
     ImportSource,
 )
-from src.core.models.trade import TradeStatus, TradeType
+from src.core.models.trade import MarketType, TradeStatus, TradeType
 from src.core.rules.precision import quantize_shares
 from src.core.rules.settlement import calc_pricing_date, default_policy
 from src.data.client.eastmoney import EastmoneyClient
@@ -497,7 +497,7 @@ def _fetch_navs(
             continue
 
         fund_code = record.fund_code
-        market = record.market
+        market: MarketType = record.market
 
         # 计算定价日（关键修复：使用 pricing_date 而非 trade_date）
         try:

@@ -4,7 +4,7 @@ import sqlite3
 from datetime import date
 from decimal import Decimal
 
-from src.core.models.trade import Trade
+from src.core.models.trade import MarketType, Trade
 from src.core.rules.precision import quantize_amount
 from src.core.rules.settlement import calc_settlement_dates, default_policy
 from src.data.db.calendar import CalendarService
@@ -43,7 +43,7 @@ class TradeRepo:
                     format(normalized_amount, "f"),
                     trade.trade_date.isoformat(),
                     trade.status,
-                    trade.market,
+                    trade.market.value,
                     _decimal_to_str(trade.shares),
                     trade.remark,
                     pricing_day.isoformat(),
@@ -306,7 +306,7 @@ def _row_to_trade(row: sqlite3.Row) -> Trade:
         amount=Decimal(row["amount"]),
         trade_date=date.fromisoformat(row["trade_date"]),
         status=row["status"],
-        market=row["market"],
+        market=MarketType(row["market"]),
         shares=Decimal(shares) if shares is not None else None,
         remark=row["remark"],
         pricing_date=date.fromisoformat(row["pricing_date"]) if row["pricing_date"] else None,

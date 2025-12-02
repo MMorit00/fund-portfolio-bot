@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING
 
+from src.core.models.trade import MarketType
 from src.core.models.policy import SettlementPolicy
 
 if TYPE_CHECKING:
@@ -29,7 +30,7 @@ def calc_settlement_dates(trade_date: date, policy: SettlementPolicy, calendar: 
     return pricing, confirm
 
 
-def default_policy(market: str) -> SettlementPolicy:
+def default_policy(market: MarketType) -> SettlementPolicy:
     """
     按市场返回默认结算策略（系统内建规则）。
 
@@ -42,7 +43,7 @@ def default_policy(market: str) -> SettlementPolicy:
     - v0.3.2：统一使用标准市场标识 CN_A/US_NYSE。
 
     Args:
-        market: 市场类型（CN_A 或 US_NYSE）。
+        market: 市场类型（MarketType 枚举）。
 
     Returns:
         结算策略。
@@ -50,18 +51,18 @@ def default_policy(market: str) -> SettlementPolicy:
     Raises:
         ValueError: 不支持的市场类型。
     """
-    if market == "CN_A":
+    if market is MarketType.CN_A:
         return SettlementPolicy(
-            pricing_calendar="CN_A",
+            pricing_calendar=MarketType.CN_A.value,
             settle_lag=1,
-            lag_counting_calendar="CN_A",
+            lag_counting_calendar=MarketType.CN_A.value,
             guard_calendar=None,
         )
-    if market == "US_NYSE":
+    if market is MarketType.US_NYSE:
         return SettlementPolicy(
-            pricing_calendar="US_NYSE",
+            pricing_calendar=MarketType.US_NYSE.value,
             settle_lag=2,
-            lag_counting_calendar="US_NYSE",
-            guard_calendar="CN_A",
+            lag_counting_calendar=MarketType.US_NYSE.value,
+            guard_calendar=MarketType.CN_A.value,
         )
     raise ValueError(f"不支持的市场类型：{market}（仅支持 CN_A / US_NYSE）")

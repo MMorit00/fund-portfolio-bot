@@ -3,11 +3,25 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from enum import Enum
 from typing import Literal
 
 TradeType = Literal["buy", "sell"]
 TradeStatus = Literal["pending", "confirmed", "skipped"]
-MarketType = Literal["CN_A", "US_NYSE"]  # v0.3.2：统一使用标准市场标识
+
+
+class MarketType(Enum):
+    """
+    市场类型枚举（使用标准市场标识）。
+
+    说明：
+    - 继承自 str，保持与数据库中的字符串值兼容；
+    - __str__ 返回枚举值本身，便于日志与 CLI 展示；
+    - 当前内建市场：CN_A（国内 A 股）、US_NYSE（美股 NYSE）。
+    """
+
+    CN_A = "CN_A"
+    US_NYSE = "US_NYSE"
 
 
 @dataclass(slots=True)
