@@ -24,7 +24,7 @@ class TradeRepo:
         self.conn = conn
         self.calendar = calendar
 
-    def add(self, trade: Trade) -> Trade:  # type: ignore[override]
+    def add(self, trade: Trade) -> Trade:
         """新增一条交易记录，并按策略写入定价日/确认日。"""
         normalized_amount = quantize_amount(trade.amount)
         policy = default_policy(trade.market)
@@ -73,7 +73,7 @@ class TradeRepo:
             external_id=trade.external_id,
         )
 
-    def list_pending(self, confirm_date: date) -> list[Trade]:  # type: ignore[override]
+    def list_pending(self, confirm_date: date) -> list[Trade]:
         """
         查询待确认交易（包括过期交易以支持延迟追踪）。
 
@@ -85,7 +85,7 @@ class TradeRepo:
         ).fetchall()
         return [_row_to_trade(r) for r in rows]
 
-    def confirm(self, trade_id: int, shares: Decimal) -> None:  # type: ignore[override]
+    def confirm(self, trade_id: int, shares: Decimal) -> None:
         """
         将指定交易标记为已确认，写入份额（v0.2.1：重置延迟标记）。
 
@@ -109,7 +109,7 @@ class TradeRepo:
                 ),
             )
 
-    def update(self, trade: Trade) -> None:  # type: ignore[override]
+    def update(self, trade: Trade) -> None:
         """更新交易记录（v0.2.1：支持延迟追踪字段更新）。"""
         with self.conn:
             self.conn.execute(
@@ -132,7 +132,7 @@ class TradeRepo:
                 ),
             )
 
-    def list_recent_trades(self, days: int = 7) -> list[Trade]:  # type: ignore[override]
+    def list_recent_trades(self, days: int = 7) -> list[Trade]:
         """列出最近 N 天的交易（v0.2.1：用于日报展示）。"""
         rows = self.conn.execute(
             """
@@ -211,7 +211,7 @@ class TradeRepo:
         total = row["total"] if row and row["total"] is not None else "0"
         return Decimal(str(total))
 
-    def skip_dca_for_date(self, fund_code: str, day: date) -> int:  # type: ignore[override]
+    def skip_dca_for_date(self, fund_code: str, day: date) -> int:
         """将指定日期的 pending 买入定投标记为 skipped，返回影响行数。"""
         cur = self.conn.execute(
             """

@@ -663,12 +663,12 @@ def _write_trades(
         # 构造 Trade 对象（nav 已存入 navs 表，不冗余存储到 trades）
         trade = Trade(
             id=None,
-            fund_code=record.fund_code,  # type: ignore[arg-type]
+            fund_code=record.fund_code,
             type=record.trade_type,
             amount=record.amount,
             trade_date=record.trade_date,
             status=record.target_status,
-            market=record.market,  # type: ignore[arg-type]
+            market=record.market,
             shares=record.shares,  # confirmed 有值，pending 为 None
             remark=f"导入自 {record.source}（{csv_name}）",
             external_id=record.external_id,

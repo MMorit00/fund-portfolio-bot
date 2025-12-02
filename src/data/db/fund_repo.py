@@ -38,7 +38,7 @@ class FundRepo:
                 (fund_code, name, asset_class.value, market.value, external_name),
             )
 
-    def get(self, fund_code: str) -> Fund | None:  # type: ignore[override]
+    def get(self, fund_code: str) -> Fund | None:
         """按基金代码读取，未找到返回 None。"""
         row = self.conn.execute(
             "SELECT * FROM funds WHERE fund_code = ?",
@@ -48,7 +48,7 @@ class FundRepo:
             return None
         return _row_to_fund_info(row)
 
-    def list_all(self) -> list[Fund]:  # type: ignore[override]
+    def list_all(self) -> list[Fund]:
         """按 fund_code 排序返回全部基金。"""
         rows = self.conn.execute("SELECT * FROM funds ORDER BY fund_code").fetchall()
         return [_row_to_fund_info(r) for r in rows]
@@ -74,7 +74,7 @@ class FundRepo:
             raise ValueError(f"基金不存在：{fund_code}")
         self.conn.commit()
 
-    def find_by_external_name(self, external_name: str) -> FundInfo | None:
+    def find_by_external_name(self, external_name: str) -> Fund | None:
         """
         通过外部完整名称查找基金。
 
@@ -86,7 +86,7 @@ class FundRepo:
             external_name: 平台完整基金名称（精确匹配）。
 
         Returns:
-            匹配的 FundInfo，未找到返回 None。
+            匹配的 Fund，未找到返回 None。
         """
         row = self.conn.execute(
             "SELECT * FROM funds WHERE alias = ?",

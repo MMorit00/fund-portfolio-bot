@@ -175,7 +175,7 @@ def sync_calendar(
         raise ValueError(f"start 不得晚于 end：start={start}, end={end}")
 
     try:
-        import exchange_calendars as xc  # type: ignore[import]
+        import exchange_calendars as xc
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(
             "exchange_calendars 未安装或导入失败。\n"
@@ -264,8 +264,8 @@ def patch_calendar_cn_a(
         RuntimeError: Akshare 或 pandas 导入失败等。
     """
     try:
-        import akshare as ak  # type: ignore[import]
-        import pandas as pd  # type: ignore[import]
+        import akshare as ak
+        import pandas as pd
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(
             "Akshare 或 pandas 未安装或导入失败。\n"

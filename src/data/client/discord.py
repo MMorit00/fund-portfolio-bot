@@ -19,7 +19,7 @@ class DiscordClient:
         """
         self.webhook_url = webhook_url or os.getenv("DISCORD_WEBHOOK_URL")
 
-    def send(self, text: str) -> bool:  # type: ignore[override]
+    def send(self, text: str) -> bool:
         """
         发送文本消息到 Discord。
 

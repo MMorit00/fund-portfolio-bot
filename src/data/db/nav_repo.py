@@ -17,7 +17,7 @@ class NavRepo:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def upsert(self, fund_code: str, day: date, nav: Decimal) -> None:  # type: ignore[override]
+    def upsert(self, fund_code: str, day: date, nav: Decimal) -> None:
         """插入或更新某日净值（主键冲突时覆盖）。"""
         normalized_nav = quantize_nav(nav)
         with self.conn:
@@ -29,7 +29,7 @@ class NavRepo:
                 (fund_code, day.isoformat(), format(normalized_nav, "f")),
             )
 
-    def get(self, fund_code: str, day: date) -> Decimal | None:  # type: ignore[override]
+    def get(self, fund_code: str, day: date) -> Decimal | None:
         """读取某日净值，未找到返回 None。"""
         row = self.conn.execute(
             "SELECT nav FROM navs WHERE fund_code = ? AND day = ?",

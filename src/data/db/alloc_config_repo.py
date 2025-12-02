@@ -25,11 +25,11 @@ class AllocConfigRepo:
             data[asset_class] = Decimal(row[column])
         return data
 
-    def get_target_weights(self) -> dict[AssetClass, Decimal]:  # type: ignore[override]
+    def get_target_weights(self) -> dict[AssetClass, Decimal]:
         """返回资产类别目标权重（0..1）。"""
         return self._load_decimal_map("target_weight")
 
-    def get_max_deviation(self) -> dict[AssetClass, Decimal]:  # type: ignore[override]
+    def get_max_deviation(self) -> dict[AssetClass, Decimal]:
         """返回各资产类别允许的最大偏离（0..1）。"""
         return self._load_decimal_map("max_deviation")
 
