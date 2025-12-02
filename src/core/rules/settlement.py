@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import TYPE_CHECKING
 
 from src.core.models import MarketType, SettlementPolicy
-
-if TYPE_CHECKING:
-    from src.data.db.calendar import CalendarService
+from src.data.db.calendar import CalendarService
 
 
-def calc_pricing_date(trade_date: date, policy: SettlementPolicy, calendar: "CalendarService") -> date:
+def calc_pricing_date(trade_date: date, policy: SettlementPolicy, calendar: CalendarService) -> date:
     """
     计算定价日（策略版）：先过 guard（若有），再在定价日历上取下一开市日。
 
@@ -22,7 +19,7 @@ def calc_pricing_date(trade_date: date, policy: SettlementPolicy, calendar: "Cal
     return calendar.next_open(policy.pricing_calendar, effective)
 
 
-def calc_settlement_dates(trade_date: date, policy: SettlementPolicy, calendar: "CalendarService") -> tuple[date, date]:
+def calc_settlement_dates(trade_date: date, policy: SettlementPolicy, calendar: CalendarService) -> tuple[date, date]:
     """返回 (pricing_date, confirm_date)，计数在 `lag_counting_calendar` 上进行。"""
     pricing = calc_pricing_date(trade_date, policy, calendar)
     confirm = calendar.shift(policy.lag_counting_calendar, pricing, policy.settle_lag)

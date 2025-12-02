@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from src.data.db.nav_repo import NavRepo
+from src.data.db.nav_repo import NavRepo
 
 
 class LocalNavService:
@@ -18,7 +16,7 @@ class LocalNavService:
     - 数据写入由独立 Job（如 `fetch_navs`）负责。
     """
 
-    def __init__(self, nav_repo: "NavRepo") -> None:
+    def __init__(self, nav_repo: NavRepo) -> None:
         self.nav_repo = nav_repo
 
     def get_nav(self, fund_code: str, day: date) -> Decimal | None:
