@@ -2,7 +2,7 @@ from .action import ActionLog, ActionType, Actor, Intent
 from .alloc_config import AllocConfig
 from .asset_class import AssetClass
 from .dca_plan import DcaPlan, Frequency, Status
-from .fund import FundFees, FundInfo, RedemptionFeeTier
+from .fund import Fund, FundFees, RedemptionTier
 from .history_import import ImportErrorType, ImportRecord, ImportResult, ImportSource
 from .nav import NavQuality
 from .policy import SettlementPolicy
@@ -23,9 +23,9 @@ __all__ = [
     "TradeStatus",
     "MarketType",
     # 基金与资产配置
-    "FundInfo",
+    "Fund",
     "FundFees",
-    "RedemptionFeeTier",
+    "RedemptionTier",
     "AssetClass",
     "AllocConfig",
     # 定投计划

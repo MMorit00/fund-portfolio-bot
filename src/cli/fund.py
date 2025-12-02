@@ -37,7 +37,7 @@ def _parse_args() -> argparse.Namespace:
     add_parser.add_argument(
         "--alias",
         required=False,
-        help="平台完整基金名称（可选，用于导入时匹配）",
+        help="平台完整基金名称（可选，用于导入时匹配，不用于展示）",
     )
 
     # ========== list 子命令 ==========
@@ -65,7 +65,7 @@ def _do_add(args: argparse.Namespace) -> int:
         name = args.name
         asset_class = AssetClass(args.asset_class)
         market = MarketType(args.market)
-        alias = args.alias if hasattr(args, "alias") else None
+        external_name = args.alias if hasattr(args, "alias") else None
 
         log(f"[Fund:add] 添加基金：{fund_code} - {name} ({asset_class.value}/{market.value})")
         add_fund(
@@ -73,7 +73,7 @@ def _do_add(args: argparse.Namespace) -> int:
             name=name,
             asset_class=asset_class,
             market=market,
-            alias=alias,
+            external_name=external_name,
         )
         log(f"✅ 基金 {fund_code} 添加成功")
         return 0

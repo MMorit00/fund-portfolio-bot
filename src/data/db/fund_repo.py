@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from src.core.models.asset_class import AssetClass
-from src.core.models.fund import FundInfo
+from src.core.models.fund import Fund
 from src.core.models.trade import MarketType
 
 
@@ -23,7 +23,7 @@ class FundRepo:
         name: str,
         asset_class: AssetClass,
         market: MarketType,
-        alias: str | None = None,
+        external_name: str | None = None,
     ) -> None:
         """新增或更新基金信息（fund_code 幂等）。"""
         with self.conn:
@@ -35,10 +35,10 @@ class FundRepo:
                     "asset_class=excluded.asset_class, market=excluded.market, "
                     "alias=excluded.alias"
                 ),
-                (fund_code, name, asset_class.value, market.value, alias),
+                (fund_code, name, asset_class.value, market.value, external_name),
             )
 
-    def get(self, fund_code: str) -> FundInfo | None:  # type: ignore[override]
+    def get(self, fund_code: str) -> Fund | None:  # type: ignore[override]
         """按基金代码读取，未找到返回 None。"""
         row = self.conn.execute(
             "SELECT * FROM funds WHERE fund_code = ?",
@@ -48,7 +48,7 @@ class FundRepo:
             return None
         return _row_to_fund_info(row)
 
-    def list_all(self) -> list[FundInfo]:  # type: ignore[override]
+    def list_all(self) -> list[Fund]:  # type: ignore[override]
         """按 fund_code 排序返回全部基金。"""
         rows = self.conn.execute("SELECT * FROM funds ORDER BY fund_code").fetchall()
         return [_row_to_fund_info(r) for r in rows]
@@ -74,51 +74,56 @@ class FundRepo:
             raise ValueError(f"基金不存在：{fund_code}")
         self.conn.commit()
 
-    def find_by_alias(self, alias: str) -> FundInfo | None:
+    def find_by_external_name(self, external_name: str) -> FundInfo | None:
         """
-        通过 alias 查找基金（v0.4.2 新增）。
+        通过外部完整名称查找基金。
 
         用于历史账单导入时，根据平台完整基金名称查找对应的 fund_code。
+        注意：当前仍使用 funds.alias 字段存储该外部名称。
+        TODO: 将来考虑引入独立的 FundNameMapping 表，替代直接使用 funds.alias。
 
         Args:
-            alias: 平台完整基金名称（精确匹配）。
+            external_name: 平台完整基金名称（精确匹配）。
 
         Returns:
             匹配的 FundInfo，未找到返回 None。
         """
         row = self.conn.execute(
             "SELECT * FROM funds WHERE alias = ?",
-            (alias,),
+            (external_name,),
         ).fetchone()
         if not row:
             return None
         return _row_to_fund_info(row)
 
-    def update_alias(self, fund_code: str, alias: str | None) -> None:
+    def update_external_name(self, fund_code: str, external_name: str | None) -> None:
         """
-        更新基金的 alias（v0.4.2 新增）。
+        更新基金的外部名称。
+
+        注意：当前仍映射到 funds.alias 字段。
+        TODO: 与 find_by_external_name 一并迁移到独立映射表后，收敛此方法。
 
         Args:
             fund_code: 基金代码。
-            alias: 平台完整基金名称，None 表示清除。
+            external_name: 平台完整基金名称，None 表示清除。
 
         Raises:
             ValueError: 基金不存在时抛出。
         """
         cursor = self.conn.execute(
             "UPDATE funds SET alias = ? WHERE fund_code = ?",
-            (alias, fund_code),
+            (external_name, fund_code),
         )
         if cursor.rowcount == 0:
             raise ValueError(f"基金不存在：{fund_code}")
         self.conn.commit()
 
-def _row_to_fund_info(row: sqlite3.Row) -> FundInfo:
-    """将 SQLite Row 转换为 FundInfo 对象。"""
-    return FundInfo(
+def _row_to_fund_info(row: sqlite3.Row) -> Fund:
+    """将 SQLite Row 转换为 Fund 对象。"""
+    return Fund(
         fund_code=row["fund_code"],
         name=row["name"],
         asset_class=AssetClass(row["asset_class"]),
         market=MarketType(row["market"]),
-        alias=row["alias"],
+        external_name=row["alias"],
     )

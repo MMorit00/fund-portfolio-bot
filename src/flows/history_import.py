@@ -329,9 +329,9 @@ def _auto_resolve_funds(
 
     流程：
     1. 收集所有唯一的基金名称
-    2. 跳过已存在的基金（通过 alias 查询）
+    2. 跳过已存在的基金（通过外部名称查询）
     3. 调用东方财富 API 搜索未知基金
-    4. 自动创建 funds 表记录（含 alias 用于后续匹配）
+    4. 自动创建 funds 表记录（含外部名称用于后续匹配）
 
     Args:
         records: ImportRecord 列表。
@@ -358,7 +358,7 @@ def _auto_resolve_funds(
     resolved_count = 0
     for fund_name in unique_fund_names:
         # 步骤 1: 检查本地是否已存在
-        if fund_repo.find_by_alias(fund_name) is not None:
+        if fund_repo.find_by_external_name(fund_name) is not None:
             resolved_count += 1
             continue
 
@@ -375,7 +375,7 @@ def _auto_resolve_funds(
         asset_class = _infer_asset_class(search_result)
 
         log(f"[Flow:HistoryImport] 创建基金：{fund_name} → {fund_code} ({asset_class.value})")
-        fund_repo.add(fund_code, name, asset_class, market, alias=fund_name)
+        fund_repo.add(fund_code, name, asset_class, market, external_name=fund_name)
 
         # 自动抓取费率（v0.4.3 新增）
         sync_fund_fees(fund_code)
@@ -421,16 +421,19 @@ def _map_funds(records: list[ImportRecord], fund_repo: FundRepo) -> None:
     映射 fund_code 和 market。
 
     逻辑：
-    1. 根据 original_fund_name 查询 funds.alias
+    1. 根据 original_fund_name 查询外部名称映射（当前使用 funds.alias 字段）
     2. 找到匹配的 fund_code 和 market
     3. 映射失败的记录标记 error_type="fund_not_found"
+
+    TODO: 将外部名称映射迁移到独立的 FundNameMapping 仓储，避免 ImportRecord
+    直接依赖 funds.alias 字段。
 
     Args:
         records: ImportRecord 列表（原地修改）。
         fund_repo: 基金仓储。
     """
     # 缓存已查询的映射结果，避免重复查询
-    alias_cache: dict[str, tuple[str, str] | None] = {}
+    external_name_cache: dict[str, tuple[str, str] | None] = {}
 
     for record in records:
         # 跳过已有错误的记录
@@ -440,23 +443,23 @@ def _map_funds(records: list[ImportRecord], fund_repo: FundRepo) -> None:
         fund_name = record.original_fund_name
 
         # 查缓存
-        if fund_name in alias_cache:
-            cached = alias_cache[fund_name]
+        if fund_name in external_name_cache:
+            cached = external_name_cache[fund_name]
             if cached is None:
                 record.error_type = "fund_not_found"
-                record.error_message = f"未找到 alias 映射：{fund_name}"
+                record.error_message = f"未找到基金外部名称映射：{fund_name}"
             else:
                 record.fund_code, record.market = cached
             continue
 
         # 查数据库
-        fund_info = fund_repo.find_by_alias(fund_name)
+        fund_info = fund_repo.find_by_external_name(fund_name)
         if fund_info is None:
-            alias_cache[fund_name] = None
+            external_name_cache[fund_name] = None
             record.error_type = "fund_not_found"
-            record.error_message = f"未找到 alias 映射：{fund_name}"
+            record.error_message = f"未找到基金外部名称映射：{fund_name}"
         else:
-            alias_cache[fund_name] = (fund_info.fund_code, fund_info.market)
+            external_name_cache[fund_name] = (fund_info.fund_code, fund_info.market)
             record.fund_code = fund_info.fund_code
             record.market = fund_info.market
 

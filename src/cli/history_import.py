@@ -1,7 +1,7 @@
 """历史账单导入 CLI。
 
-v0.4.2 新增：支持从支付宝等平台导入历史基金交易。
-详细设计见 docs/history-import.md
+支持从支付宝等平台导入历史基金交易。
+详细设计见 docs/history-import.md。
 
 用法：
     # 干跑：检查 CSV 是否有问题
@@ -14,7 +14,7 @@ v0.4.2 新增：支持从支付宝等平台导入历史基金交易。
     python -m src.cli.history_import --csv data/alipay.csv --mode apply --no-actions
 
 当前状态：✅ 已实现（实验中），支持支付宝 CSV 导入。
-核心功能：CSV 解析、基金映射（alias）、自动创建基金、NAV 抓取、份额计算、去重检查。
+核心功能：CSV 解析、基金外部名称映射、自动创建基金、NAV 抓取、份额计算、去重检查。
 NAV 策略：confirmed + NAV 缺失时自动降级为 pending，后续通过 confirm_trades 自动确认。
 """
 

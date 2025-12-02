@@ -24,7 +24,7 @@ ImportSource = Literal["alipay", "ttjj"]
 # 错误类型
 ImportErrorType = Literal[
     "parse_error",      # CSV 解析失败（格式错误、编码问题）
-    "fund_not_found",   # alias 映射失败
+    "fund_not_found",   # 基金外部名称映射失败
     "nav_missing",      # NAV 抓取失败
     "invalid_data",     # 数据校验失败（金额为负等）
     "duplicate",        # 重复记录
@@ -56,7 +56,12 @@ class ImportRecord:
     """交易号，用于去重（trades.external_id 唯一约束）。"""
 
     original_fund_name: str
-    """原始基金名称，用于 alias 映射和调试。"""
+    """
+    原始基金名称，用于外部名称映射和调试。
+
+    TODO: 中长期配合 FundNameMapping，将该字段的使用从直接查询 funds.alias
+    迁移到独立的名称映射仓储。
+    """
 
     trade_type: TradeType
     """交易类型：buy / sell（从商品名称末尾解析）。"""
@@ -72,7 +77,7 @@ class ImportRecord:
 
     # === 映射数据（FundRepo 查询后填充） ===
     fund_code: str | None = None
-    """基金代码（通过 funds.alias 映射得到）。"""
+    """基金代码（通过基金外部名称映射得到，当前实现依赖 funds.alias 字段）。"""
 
     market: MarketType | None = None
     """市场类型（写 Trade 需要，从 funds.market 获取）。"""

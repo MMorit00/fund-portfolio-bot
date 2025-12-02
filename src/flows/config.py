@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from src.core.dependency import dependency
-from src.core.models import ActionLog, AllocConfig, AssetClass, DcaPlan, FundInfo
+from src.core.models import ActionLog, AllocConfig, AssetClass, DcaPlan, Fund
 from src.data.db.action_repo import ActionRepo
 from src.data.db.alloc_config_repo import AllocConfigRepo
 from src.data.db.dca_plan_repo import DcaPlanRepo
@@ -20,7 +20,7 @@ def add_fund(
     name: str,
     asset_class: AssetClass,
     market: str,
-    alias: str | None = None,
+    external_name: str | None = None,
     sync_fees: bool = True,
     fund_repo: FundRepo | None = None,
 ) -> None:
@@ -32,14 +32,14 @@ def add_fund(
         name: 基金名称。
         asset_class: 资产类别（AssetClass 枚举）。
         market: 市场类型（CN_A/US_NYSE 等）。
-        alias: 平台完整基金名称（可选，用于导入时匹配）。
+        external_name: 历史导入时使用的外部完整基金名称（可选，不用于展示）。
         sync_fees: 是否自动同步费率（默认 True）。
         fund_repo: 基金仓储（可选，自动注入）。
 
     副作用：
         幂等插入或更新 funds 表，sync_fees=True 时自动抓取费率入库。
     """
-    fund_repo.add(fund_code, name, asset_class, market, alias)
+    fund_repo.add(fund_code, name, asset_class, market, external_name)
 
     # 自动抓取费率（v0.4.3 新增）
     if sync_fees:
@@ -50,7 +50,7 @@ def add_fund(
 def list_funds(
     *,
     fund_repo: FundRepo | None = None,
-) -> list[FundInfo]:
+) -> list[Fund]:
     """
     查询所有基金（v0.3.2）。
 

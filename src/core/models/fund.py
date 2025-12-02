@@ -8,9 +8,9 @@ from src.core.models.trade import MarketType
 
 
 @dataclass(slots=True)
-class FundInfo:
+class Fund:
     """
-    基金基础信息数据类。
+    基金基础信息。
 
     包含基金代码、名称、资产类别和市场类型。
     用于在领域层和应用层传递基金元数据。
@@ -20,12 +20,17 @@ class FundInfo:
     name: str
     asset_class: AssetClass
     market: MarketType
-    alias: str | None = None
-    """平台完整基金名称（用于导入时匹配）。"""
+    external_name: str | None = None
+    """
+    用于历史导入时的外部完整基金名称，不用于展示。
+
+    TODO: 中长期考虑将外部名称映射拆分为独立的 FundNameMapping
+    模型/表，避免在领域模型中直接依赖具体平台命名。
+    """
 
 
 @dataclass(slots=True)
-class RedemptionFeeTier:
+class RedemptionTier:
     """
     赎回费阶梯。
 
@@ -68,5 +73,5 @@ class FundFees:
     """申购费率原费率（百分比）。"""
     purchase_fee_discount: Decimal | None = None
     """申购费率折扣后费率（百分比）。"""
-    redemption_tiers: list[RedemptionFeeTier] = field(default_factory=list)
+    redemption_tiers: list[RedemptionTier] = field(default_factory=list)
     """赎回费阶梯（按 min_hold_days 升序排列）。"""

@@ -75,7 +75,7 @@ def fetch_navs(
 
     # 确定要抓取的基金列表
     if fund_codes:
-        # 指定基金代码时，从 fund_repo 查询对应的 FundInfo
+        # 指定基金代码时，从 fund_repo 查询对应的基金信息
         funds = []
         for code in fund_codes:
             fund = fund_repo.get(code)

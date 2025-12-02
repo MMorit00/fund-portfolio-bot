@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from src.core.dependency import dependency
-from src.core.models import FundFees, RedemptionFeeTier
+from src.core.models import FundFees, RedemptionTier
 from src.data.client.eastmoney import EastmoneyClient
 from src.data.db.fund_fee_repo import FundFeeRepo
 from src.data.db.fund_repo import FundRepo
@@ -124,10 +124,10 @@ def _build_fund_fees(fees_dict: dict) -> FundFees:
         FundFees 对象（含赎回费阶梯）。
     """
     # 构建赎回费阶梯
-    redemption_tiers: list[RedemptionFeeTier] = []
+    redemption_tiers: list[RedemptionTier] = []
     if "redemption" in fees_dict and fees_dict["redemption"]:
         for tier_dict in fees_dict["redemption"]:
-            tier = RedemptionFeeTier(
+            tier = RedemptionTier(
                 min_hold_days=tier_dict.get("min_hold_days", 0),
                 max_hold_days=tier_dict.get("max_hold_days"),
                 rate=tier_dict["rate"],
