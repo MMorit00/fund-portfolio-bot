@@ -5,7 +5,7 @@ import sys
 from datetime import date
 
 from src.core.log import log
-from src.core.models.nav import NavQuality
+from src.core.models import NavQuality
 from src.flows.report import RebalanceResult, make_rebalance_suggestion
 
 

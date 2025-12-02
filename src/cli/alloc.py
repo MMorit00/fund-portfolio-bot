@@ -5,7 +5,7 @@ import sys
 from decimal import Decimal
 
 from src.core.log import log
-from src.core.models.asset_class import AssetClass
+from src.core.models import AssetClass
 from src.flows.config import delete_allocation, list_allocations, set_allocation
 
 

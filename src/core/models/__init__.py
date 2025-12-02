@@ -1,13 +1,3 @@
-from __future__ import annotations
-
-"""
-领域模型聚合导出。
-
-说明：
-- 仅做名称聚合，不引入额外逻辑，便于上层模块统一引用；
-- 现有代码可以继续从各子模块直接导入，后续可按需逐步收敛到本入口。
-"""
-
 from .action import ActionLog, ActionType, Actor, Intent
 from .alloc_config import AllocConfig
 from .asset_class import AssetClass
@@ -17,6 +7,14 @@ from .history_import import ImportErrorType, ImportRecord, ImportResult, ImportS
 from .nav import NavQuality
 from .policy import SettlementPolicy
 from .trade import MarketType, Trade, TradeStatus, TradeType
+
+"""
+领域模型聚合导出。
+
+说明：
+- 仅做名称聚合，不引入额外逻辑，便于上层模块统一引用；
+- 现有代码可以继续从各子模块直接导入，后续可按需逐步收敛到本入口。
+"""
 
 __all__ = [
     # 交易与市场

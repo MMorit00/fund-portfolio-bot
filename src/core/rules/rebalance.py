@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
-from src.core.models.asset_class import AssetClass
+from src.core.models import AssetClass
 
 
 @dataclass(slots=True)

@@ -3,8 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING
 
-from src.core.models.trade import MarketType
-from src.core.models.policy import SettlementPolicy
+from src.core.models import MarketType, SettlementPolicy
 
 if TYPE_CHECKING:
     from src.data.db.calendar import CalendarService

@@ -14,13 +14,15 @@ from typing import Literal
 
 from src.core.dependency import dependency
 from src.core.log import log
-from src.core.models.asset_class import AssetClass
-from src.core.models.history_import import (
+from src.core.models import (
+    AssetClass,
     ImportRecord,
     ImportResult,
     ImportSource,
+    MarketType,
+    TradeStatus,
+    TradeType,
 )
-from src.core.models.trade import MarketType, TradeStatus, TradeType
 from src.core.rules.precision import quantize_shares
 from src.core.rules.settlement import calc_pricing_date, default_policy
 from src.data.client.eastmoney import EastmoneyClient

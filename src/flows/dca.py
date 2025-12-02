@@ -6,8 +6,7 @@ from calendar import monthrange
 from datetime import date, datetime
 
 from src.core.dependency import dependency
-from src.core.models.action import ActionLog
-from src.core.models.dca_plan import DcaPlan
+from src.core.models import ActionLog, DcaPlan
 from src.data.db.action_repo import ActionRepo
 from src.data.db.dca_plan_repo import DcaPlanRepo
 from src.data.db.trade_repo import TradeRepo

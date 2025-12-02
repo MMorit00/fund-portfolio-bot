@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from src.core.dependency import dependency
-from src.core.models.fund import FundFees, RedemptionFeeTier
+from src.core.models import FundFees, RedemptionFeeTier
 from src.data.client.eastmoney import EastmoneyClient
 from src.data.db.fund_fee_repo import FundFeeRepo
 from src.data.db.fund_repo import FundRepo

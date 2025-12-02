@@ -7,11 +7,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from core.models import MarketType
 from src.core.dependency import dependency
-from src.core.models.asset_class import AssetClass
-from src.core.models.nav import NavQuality
-from src.core.models.trade import Trade
+from src.core.models import AssetClass, MarketType, NavQuality, Trade
 from src.core.rules.rebalance import (
     FundSuggestion,
     RebalanceAdvice,

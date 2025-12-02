@@ -4,7 +4,7 @@ import argparse
 import sys
 
 from src.core.log import log
-from src.core.models.action import ActionLog
+from src.core.models import ActionLog
 from src.flows.config import list_actions
 
 

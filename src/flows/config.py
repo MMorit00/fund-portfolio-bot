@@ -3,11 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from src.core.dependency import dependency
-from src.core.models.action import ActionLog
-from src.core.models.alloc_config import AllocConfig
-from src.core.models.asset_class import AssetClass
-from src.core.models.dca_plan import DcaPlan
-from src.core.models.fund import FundInfo
+from src.core.models import ActionLog, AllocConfig, AssetClass, DcaPlan, FundInfo
 from src.data.db.action_repo import ActionRepo
 from src.data.db.alloc_config_repo import AllocConfigRepo
 from src.data.db.dca_plan_repo import DcaPlanRepo

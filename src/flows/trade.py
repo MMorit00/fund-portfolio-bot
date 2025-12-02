@@ -5,8 +5,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from src.core.dependency import dependency
-from src.core.models.action import ActionLog, Intent
-from src.core.models.trade import Trade
+from src.core.models import ActionLog, Intent, Trade
 from src.core.rules.precision import quantize_shares
 from src.data.client.local_nav import LocalNavService
 from src.data.db.action_repo import ActionRepo
