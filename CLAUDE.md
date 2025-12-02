@@ -10,6 +10,25 @@
 > **Schema 管理**：开发阶段，由 `db_helper.py` 创建（SCHEMA_VERSION = 8），可随时重建，详见 `docs/sql-schema.md`
 > **版本规划**：见 `docs/roadmap.md`，禁止实现任何 AI 产品功能，仅做数据准备
 
+### 环境说明
+
+**⚠️ 重要**：本项目使用 **uv** 管理 Python 依赖。
+
+所有 CLI 命令必须使用 `uv run` 前缀：
+
+```bash
+# ✅ 正确
+uv run python -m src.cli.fund list
+uv run python -m src.cli.history_import --csv data/alipay.csv --mode apply
+
+# ❌ 错误（会报 ModuleNotFoundError）
+python -m src.cli.fund list
+```
+
+**原因**：uv 使用独立虚拟环境（`.venv/`），直接运行 `python` 无法访问依赖。
+
+**测试命令时请务必加上 `uv run` 前缀。**
+
 ---
 
 ## 1. 目录 & 文档导航

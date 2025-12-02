@@ -51,10 +51,10 @@ class ImportRecord:
 
     # === 原始数据（CSV 解析，必填） ===
     source: ImportSource
-    """来源平台（用于 trades.source 和 action_log.note）。"""
+    """来源平台（用于 trades.remark 和 action_log.note）。"""
 
     external_id: str
-    """交易号，用于 (source, external_id) 去重。"""
+    """交易号，用于去重（trades.external_id 唯一约束）。"""
 
     original_fund_name: str
     """原始基金名称，用于 alias 映射和调试。"""
@@ -92,6 +92,10 @@ class ImportRecord:
     error_message: str | None = None
     """错误详情。"""
 
+    # === 降级标记（v0.4.2+） ===
+    was_downgraded: bool = False
+    """是否因 NAV 缺失从 confirmed 自动降级为 pending（v0.4.2+ 新增）。"""
+
     @property
     def trade_date(self) -> date:
         """交易日期（从 trade_time 派生，保持单一数据源）。"""
@@ -123,6 +127,11 @@ class ImportResult:
     导入结果汇总。
 
     只存储统计数据，不存储输入参数（mode/csv_path 等由调用者管理）。
+
+    v0.4.2+ 新增：
+    - downgraded_count: 因 NAV 缺失自动降级为 pending 的数量
+    - fund_mapping: 基金映射摘要
+    - error_summary: 错误分类统计
     """
 
     total: int = 0
@@ -137,8 +146,17 @@ class ImportResult:
     skipped: int = 0
     """跳过（重复记录）。"""
 
+    downgraded_count: int = 0
+    """因 NAV 缺失自动降级为 pending 的数量（v0.4.2+）。"""
+
     failed_records: list[ImportRecord] = field(default_factory=list)
     """失败记录详情（用于错误报告，只存失败的）。"""
+
+    fund_mapping: dict[str, tuple[str, str]] = field(default_factory=dict)
+    """基金映射摘要：{original_fund_name: (fund_code, fund_name)}（v0.4.2+）。"""
+
+    error_summary: dict[str, int] = field(default_factory=dict)
+    """错误分类统计：{error_type: count}（v0.4.2+）。"""
 
     @property
     def success_rate(self) -> float:

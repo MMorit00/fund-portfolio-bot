@@ -141,7 +141,7 @@ def import_trades_from_csv(
                 succeeded += 1
 
     # 步骤 7: 构建结果
-    return _build_result(records, succeeded)
+    return _build_result(records, succeeded, fund_repo)
 
 
 def _parse_csv(csv_path: str, source: ImportSource) -> list[ImportRecord]:
@@ -528,9 +528,12 @@ def _fetch_navs(
         if nav is not None:
             record.nav = nav
         elif record.target_status == "confirmed":
-            # confirmed 记录必须有 NAV，否则标记错误
-            record.error_type = "nav_missing"
-            record.error_message = f"NAV 缺失：{fund_code} @ {pricing_date}（定价日，下单日={record.trade_date}）"
+            # confirmed + NAV 缺失 → 自动降级为 pending（v0.4.2+ 优化）
+            # 原因：支付宝显示"交易成功"，但暂时拿不到净值时，不应拒绝导入
+            # 策略：降级为 pending，后续通过 confirm_trades 正常流程自动确认
+            record.target_status = "pending"
+            record.was_downgraded = True  # 标记降级（v0.4.2+）
+            log(f"[Flow:HistoryImport] NAV 暂缺，降级为 pending：{fund_code} @ {pricing_date}")
         # pending 记录不需要 NAV（后续正常确认流程处理）
 
 
@@ -690,7 +693,11 @@ def _write_trades(
     return succeeded
 
 
-def _build_result(records: list[ImportRecord], succeeded: int) -> ImportResult:
+def _build_result(
+    records: list[ImportRecord],
+    succeeded: int,
+    fund_repo: FundRepo | None = None,
+) -> ImportResult:
     """
     根据处理后的 records 构建 ImportResult。
 
@@ -699,10 +706,12 @@ def _build_result(records: list[ImportRecord], succeeded: int) -> ImportResult:
     - succeeded: 成功写入的记录数（由 _write_trades 返回）
     - failed: 有错误的记录数
     - skipped: 重复记录数（error_type="duplicate"）
+    - downgraded_count: 因 NAV 缺失降级为 pending 的数量（v0.4.2+）
 
     Args:
         records: ImportRecord 列表。
         succeeded: 成功写入的交易数量。
+        fund_repo: 基金仓储（用于构建映射摘要）。
 
     Returns:
         ImportResult 统计结果。
@@ -712,10 +721,37 @@ def _build_result(records: list[ImportRecord], succeeded: int) -> ImportResult:
     failed = len(failed_records)
     skipped = len([r for r in failed_records if r.error_type == "duplicate"])
 
+    # 统计降级数量（v0.4.2+ 新增）
+    # 注：降级记录不算失败，会成功写入为 pending 状态
+    downgraded_count = sum(1 for record in records if record.was_downgraded)
+
+    # 构建基金映射摘要（v0.4.2+ 新增）
+    fund_mapping: dict[str, tuple[str, str]] = {}
+    if fund_repo is not None:
+        seen_names = set()
+        for record in records:
+            if record.fund_code and record.original_fund_name not in seen_names:
+                fund_info = fund_repo.get(record.fund_code)
+                if fund_info:
+                    fund_mapping[record.original_fund_name] = (
+                        record.fund_code,
+                        fund_info.name,
+                    )
+                    seen_names.add(record.original_fund_name)
+
+    # 构建错误分类统计（v0.4.2+ 新增）
+    error_summary: dict[str, int] = {}
+    for record in failed_records:
+        if record.error_type:
+            error_summary[record.error_type] = error_summary.get(record.error_type, 0) + 1
+
     return ImportResult(
         total=total,
         succeeded=succeeded,
         failed=failed - skipped,  # 失败数不含跳过
         skipped=skipped,
+        downgraded_count=downgraded_count,
         failed_records=failed_records,
+        fund_mapping=fund_mapping,
+        error_summary=error_summary,
     )

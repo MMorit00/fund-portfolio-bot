@@ -1,7 +1,7 @@
 
 # 历史账单导入设计
 
-> **状态**：v0.4.2 开发中（Schema 已实现，Flow 逻辑待完善）
+> **状态**：v0.4.2 ✅ 主流程已完成（CSV 解析 → 映射 → NAV 抓取 → 份额计算 → 写入），待优化：进度条、错误恢复策略
 
 ## 概述
 
@@ -130,9 +130,29 @@ def find_fund_by_alias(alias: str) -> str | None:
 
 | 支付宝状态 | 导入状态 |
 |------------|----------|
-| `交易成功` | `confirmed` |
+| `交易成功` | `confirmed`（如 NAV 可用）/ `pending`（如 NAV 暂缺） |
 | `付款成功，份额确认中` | `pending`（等待 NAV） |
 | `交易关闭` | 跳过 |
+
+### NAV 缺失处理策略（v0.4.2+ 优化）
+
+**设计理念**：尽量导入，利用现有确认流程。
+
+| 场景 | 处理方式 | 理由 |
+|------|---------|------|
+| **confirmed + NAV 可用** | ✅ 写入为 confirmed，份额已计算 | 正常流程 |
+| **confirmed + NAV 缺失** | ✅ 自动降级为 pending，后续自动确认 | 支付宝显示"交易成功"说明交易已发生，只是暂时拿不到净值，不应拒绝导入 |
+| **pending + NAV 缺失** | ✅ 写入为 pending，等待后续确认 | pending 本身就是"待确认"状态，与日常流程一致 |
+
+**降级机制**：
+- 当 `target_status="confirmed"` 但 NAV 抓取失败时，自动修改为 `target_status="pending"`
+- 降级后的记录会成功写入 trades 表，等待后续 `confirm_trades` 自动处理
+- CLI 输出会显示降级数量："⚠️ 降级为 pending: X 笔（NAV 暂缺，后续自动确认）"
+
+**用户应对策略**（如净值永久缺失）：
+1. **等待几天后重试**：NAV 可能延迟发布，过几天重新运行导入（幂等安全）
+2. **手动确认**：使用 `trade confirm-manual --id <ID> --shares <份额> --nav <净值>` 手动确认
+3. **取消交易**：如不重要可用 `trade cancel --id <ID>` 删除
 
 ---
 
@@ -230,22 +250,25 @@ CREATE TABLE import_batches (
 
 ## 实现清单
 
-**已完成**：
-- [x] `funds.alias` 字段实现
-- [x] `trades.external_id` 字段实现（去重）
+**已完成（v0.4.2）**：
+- [x] Schema 扩展（`funds.alias` + `trades.external_id`）
 - [x] `FundRepo.find_by_alias()` 方法
 - [x] CSV 解析器（GBK 编码 + 基金交易过滤）
-- [x] 基金名称 → 代码映射逻辑
+- [x] 基金名称 → 代码映射逻辑（alias）
 - [x] 自动创建基金（apply 模式）
-- [x] 历史 NAV 批量抓取
-- [x] 份额计算逻辑
-- [x] CLI 参数解析（dry-run / apply）
+- [x] 历史 NAV 批量抓取（使用定价日策略）
+- [x] NAV 缺失自动降级（confirmed → pending）
+- [x] 份额计算逻辑（amount / nav）
+- [x] 去重检查（external_id + 数据库 UNIQUE 约束）
+- [x] ActionLog 补录（buy/sell + actor=human）
+- [x] CLI 参数解析（dry-run / apply / --no-actions）
+- [x] 导入报告增强（基金映射摘要、错误分类统计、降级提示）
 
-**待完善**：
+**待优化（非阻塞）**：
+- [ ] 进度条显示（大文件导入体验优化）
+- [ ] 交互式 alias 修正 + 重试机制
 - [ ] 导入事务优化（批量写入性能）
-- [ ] 进度条显示
-- [ ] ActionLog 补录（可选）
-- [ ] 错误处理增强
+- [ ] 导入批次表（远期，按需）
 
 ---
 

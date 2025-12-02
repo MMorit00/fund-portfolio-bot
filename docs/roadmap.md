@@ -404,51 +404,49 @@ CLI → Flows (纯函数 + @dependency) → Data (通过装饰器注入)
 
 ---
 
-## v0.4.2（历史账单导入，🔜 设计完成）
+## v0.4.2（历史账单导入，✅ 主流程已完成）
 
 ### 目标
 
 支持从支付宝等平台导入历史基金交易记录，自动补充净值和份额。
 
-### 设计完成
+### 已完成（v0.4.2）
 
-**P1 - 历史导入**：
-- ✅ 支付宝账单格式分析（GBK 编码、16 列、基金交易识别）
-- ✅ 导入流程设计（CSV 解析 → alias 映射 → NAV 抓取 → 份额计算）
-- ✅ CLI 接口设计（`--csv` / `--mode dry-run|apply` / `--source`）
-- ✅ ActionLog 补录策略设计
+**P1 - 核心导入流程**（✅ 已完成）：
+- ✅ Schema 扩展（`funds.alias` + `trades.external_id`）
+- ✅ CSV 解析器（GBK 编码、跳过头部、基金交易过滤）
+- ✅ 基金名称映射（`FundRepo.find_by_alias()`）
+- ✅ 自动创建基金（apply 模式，通过东方财富搜索 API）
+- ✅ 历史 NAV 批量抓取（使用定价日策略，与日常确认流程一致）
+- ✅ **NAV 缺失自动降级**（confirmed → pending，后续自动确认）
+- ✅ 份额计算（amount / nav，保留 4 位小数）
+- ✅ 去重检查（external_id + 数据库 UNIQUE 约束）
+- ✅ ActionLog 补录（buy/sell + actor=human + note）
+- ✅ CLI 完整实现（dry-run / apply / --no-actions）
 
-**P2 - Schema 扩展规划**：
-- ✅ `funds.alias`：存储平台完整基金名称，用于导入时匹配
-- ✅ `trades.source`：标识交易来源（manual / alipay / dca）
-- ✅ `trades.external_id`：外部流水号，防止重复导入
+**P2 - 导入报告增强**（✅ 已完成）：
+- ✅ 基金映射摘要（原始名称 → fund_code + 基金名）
+- ✅ 错误分类统计（按 error_type 聚合计数）
+- ✅ 降级提示（因 NAV 暂缺降级为 pending 的数量）
+- ✅ 失败记录按类型分组显示
 
-**P3 - 代码骨架**：
-- ✅ `src/core/models/history_import.py`：数据类定义
-- ✅ `src/flows/history_import.py`：Flow 函数签名
-- ✅ `src/cli/history_import.py`：CLI 入口
-
-### 已完成（v0.4.2+）
-
-**P4 - 市值验证工具**（✅ 2025-12-01 完成）：
+**P3 - 市值验证工具**（✅ 2025-12-01 完成）：
 - ✅ `verify_import_market_value()`：计算导入账单后的总市值
 - ✅ `src/cli/verify_import.py`：独立验证 CLI
 - ✅ 净值回退策略（默认）：向前查找最近 7 个交易日的官方净值
 - ✅ 估值回退策略（`--estimate`）：使用盘中估值（仅限最近 3 天）
-- ✅ `EastmoneyClient.get_estimated_nav()`：获取盘中估值
 
 **功能定位**：
-- 仅用于验证导入账单后的总市值对齐
-- 不侵入核心功能（confirm_trades、rebalance 等仍只用官方净值）
-- 估值不存储到 navs 表，保持数据纯净
+- 核心导入流程已完整，可用于生产环境
+- 自动降级机制确保"尽量导入"，利用现有确认流程
+- 市值验证工具作为安全网，验证导入后账面市值对齐
 
-### 待实现
+### 待优化（非阻塞）
 
-- [ ] `funds.alias` 字段 + `FundRepo.find_by_alias()`（✅ 部分完成）
-- [ ] CSV 解析器（GBK + 基金交易过滤）（✅ 部分完成）
-- [ ] 历史 NAV 批量抓取（✅ 部分完成）
-- [ ] 份额计算 + 事务写入（✅ 部分完成）
-- [ ] 进度条 + 错误报告
+- [ ] 进度条显示（大文件导入体验优化）
+- [ ] 交互式 alias 修正 + 重试机制
+- [ ] 导入事务优化（批量写入性能）
+- [ ] 导入批次表（远期，按需）
 
 ### 详细设计
 

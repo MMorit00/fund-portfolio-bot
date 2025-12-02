@@ -13,7 +13,9 @@ v0.4.2 新增：支持从支付宝等平台导入历史基金交易。
     # 禁用 ActionLog 记录
     python -m src.cli.history_import --csv data/alipay.csv --mode apply --no-actions
 
-当前状态：骨架实现，调用 Flow 时会提示未实现。
+当前状态：✅ 已实现（实验中），支持支付宝 CSV 导入。
+核心功能：CSV 解析、基金映射（alias）、自动创建基金、NAV 抓取、份额计算、去重检查。
+NAV 策略：confirmed + NAV 缺失时自动降级为 pending，后续通过 confirm_trades 自动确认。
 """
 
 from __future__ import annotations
@@ -98,24 +100,49 @@ def main() -> None:
             print(f"   可导入: {result.succeeded} 笔")
             print(f"   失败: {result.failed} 笔")
             print(f"   跳过: {result.skipped} 笔")
+            if result.downgraded_count > 0:
+                print(f"   ⚠️  降级为 pending: {result.downgraded_count} 笔（NAV 暂缺，后续自动确认）")
         else:
             print("✅ 导入完成")
             print(f"   总计: {result.total} 笔")
             print(f"   成功: {result.succeeded} 笔")
             print(f"   失败: {result.failed} 笔")
             print(f"   跳过: {result.skipped} 笔")
+            if result.downgraded_count > 0:
+                print(f"   ⚠️  降级为 pending: {result.downgraded_count} 笔（NAV 暂缺，后续自动确认）")
             print(f"   成功率: {result.success_rate:.1%}")
 
+        # 基金映射摘要
+        if result.fund_mapping:
+            print()
+            print("📋 基金映射摘要:")
+            for fund_name, (fund_code, fund_full_name) in sorted(result.fund_mapping.items()):
+                print(f"   ✅ {fund_name}")
+                print(f"      → {fund_code} ({fund_full_name})")
+
+        # 错误分类统计
+        if result.error_summary:
+            print()
+            print("📊 错误分类统计:")
+            for error_type, count in sorted(result.error_summary.items()):
+                print(f"   [{error_type}]: {count} 笔")
+
+        # 失败记录详情（按类型分组）
         if result.failed_records:
             print()
-            print("❌ 失败记录:")
-            for record in result.failed_records[:10]:
-                print(
-                    f"   [{record.error_type}] {record.original_fund_name}: "
-                    f"{record.error_message}"
-                )
-            if len(result.failed_records) > 10:
-                print(f"   ... 还有 {len(result.failed_records) - 10} 条")
+            print("❌ 失败记录详情:")
+
+            # 按 error_type 分组
+            grouped = {}
+            for record in result.failed_records:
+                grouped.setdefault(record.error_type, []).append(record)
+
+            for error_type, records in sorted(grouped.items()):
+                print(f"\n   [{error_type}] ({len(records)} 笔):")
+                for record in records[:3]:  # 每类只显示前3个
+                    print(f"     • {record.original_fund_name}: {record.error_message}")
+                if len(records) > 3:
+                    print(f"     ... 还有 {len(records) - 3} 条")
 
     except NotImplementedError as e:
         print(f"⚠️  {e}")

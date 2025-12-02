@@ -3,7 +3,21 @@
 > 本文档记录当前版本的操作命令与配置方式。
 > 历史决策与演进见 `docs/coding-log.md`。
 
-## 环境配置
+## 环境准备
+
+### 依赖管理
+
+本项目使用 **uv** 管理 Python 依赖：
+
+```bash
+# 安装依赖
+uv sync
+
+# 运行命令（重要！）
+uv run python -m src.cli.xxx
+```
+
+### 环境变量配置
 
 敏感信息通过环境变量 / `.env` 提供：
 - `DISCORD_WEBHOOK_URL`：日报推送地址
