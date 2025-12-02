@@ -6,7 +6,7 @@ from typing import Optional
 
 from src.core.config import enable_sql_debug, get_db_path
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 SCHEMA_DDL = """
 CREATE TABLE IF NOT EXISTS funds (
@@ -14,12 +14,19 @@ CREATE TABLE IF NOT EXISTS funds (
     name TEXT NOT NULL,
     asset_class TEXT NOT NULL,
     market TEXT NOT NULL,
-    alias TEXT,
-    management_fee TEXT,
-    custody_fee TEXT,
-    service_fee TEXT,
-    purchase_fee TEXT,
-    purchase_fee_discount TEXT
+    alias TEXT
+);
+
+CREATE TABLE IF NOT EXISTS fund_fee_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fund_code TEXT NOT NULL,
+    fee_type TEXT NOT NULL,
+    charge_basis TEXT NOT NULL,
+    rate TEXT NOT NULL,
+    min_hold_days INTEGER,
+    max_hold_days INTEGER,
+    FOREIGN KEY (fund_code) REFERENCES funds(fund_code) ON DELETE CASCADE,
+    UNIQUE (fund_code, fee_type, min_hold_days)
 );
 
 CREATE TABLE IF NOT EXISTS trades (

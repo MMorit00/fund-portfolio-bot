@@ -461,7 +461,7 @@ class EastmoneyClient:
             log(f"[EastmoneyClient] 获取 {fund_code} 估值失败: {e}")
             return None
 
-    def get_fund_fees(self, fund_code: str) -> dict[str, Decimal] | None:
+    def get_fund_fees(self, fund_code: str) -> dict | None:
         """
         获取基金费率信息。
 
@@ -473,6 +473,7 @@ class EastmoneyClient:
         - service_fee: 销售服务费率（年化百分比）
         - purchase_fee: 申购费率原费率（百分比）
         - purchase_fee_discount: 申购费率折扣后费率（百分比）
+        - redemption: 赎回费阶梯列表 [{"min_hold_days": 0, "max_hold_days": 7, "rate": Decimal("1.50")}, ...]
 
         Args:
             fund_code: 基金代码（6 位数字）
@@ -494,7 +495,7 @@ class EastmoneyClient:
                     return None
 
                 html = resp.text
-                fees: dict[str, Decimal] = {}
+                fees: dict = {}
 
                 # 解析运作费用
                 # 管理费率：0.50%（每年）
@@ -529,6 +530,11 @@ class EastmoneyClient:
                     if fees_from_js:
                         fees.update(fees_from_js)
 
+                # 解析赎回费阶梯
+                redemption_tiers = self._parse_redemption_fees(html)
+                if redemption_tiers:
+                    fees["redemption"] = redemption_tiers
+
                 if not fees:
                     log(f"[EastmoneyClient] 获取 {fund_code} 费率失败: 无法解析费率数据")
                     return None
@@ -538,6 +544,93 @@ class EastmoneyClient:
         except Exception as e:
             log(f"[EastmoneyClient] 获取 {fund_code} 费率失败: {e}")
             return None
+
+    def _parse_redemption_fees(self, html: str) -> list[dict] | None:
+        """
+        解析赎回费阶梯（从 HTML 中提取）。
+
+        HTML 格式示例（东方财富）：
+        <td>小于等于6天</td><td>1.50%</td>
+        <td>大于等于7天，小于等于364天</td><td>0.50%</td>
+        <td>大于等于365天，小于等于729天</td><td>0.25%</td>
+        <td>大于等于730天</td><td>0.00%</td>
+
+        Returns:
+            赎回费阶梯列表或 None（解析失败）
+
+        TODO（鲁棒性优化）：
+        - 当前使用正则匹配 HTML，如东方财富改版会失效
+        - 建议后续引入 BeautifulSoup/lxml 做 DOM 解析，更稳定
+        - 或考虑多数据源备份（天天基金等）
+        """
+        tiers: list[dict] = []
+
+        # 东方财富常见格式匹配
+        # 注意：更具体的模式要放在前面，避免被通用模式先匹配
+        patterns = [
+            # 格式1: 大于等于X天，小于等于Y天 → rate%（范围格式，需先匹配）
+            (
+                r"大于等于\s*(\d+)\s*[天日]，小于等于\s*(\d+)\s*[天日]</td><td[^>]*>(\d+\.?\d*)%",
+                lambda m: {"min_hold_days": int(m.group(1)), "max_hold_days": int(m.group(2)) + 1, "rate": Decimal(m.group(3))},
+            ),
+            # 格式2: 大于等于X天，小于Y天 → rate%
+            (
+                r"大于等于\s*(\d+)\s*[天日]，小于\s*(\d+)\s*[天日]</td><td[^>]*>(\d+\.?\d*)%",
+                lambda m: {"min_hold_days": int(m.group(1)), "max_hold_days": int(m.group(2)), "rate": Decimal(m.group(3))},
+            ),
+            # 格式3: 大于等于X天 → rate%（无上限，单独出现）
+            (
+                r"(?<!，)大于等于\s*(\d+)\s*[天日]</td><td[^>]*>(\d+\.?\d*)%",
+                lambda m: {"min_hold_days": int(m.group(1)), "max_hold_days": None, "rate": Decimal(m.group(2))},
+            ),
+            # 格式4: 小于等于X天 → rate%（最短期限，排除 "大于等于...，小于等于" 中的）
+            (
+                r"(?<!，)小于等于\s*(\d+)\s*[天日]</td><td[^>]*>(\d+\.?\d*)%",
+                lambda m: {"min_hold_days": 0, "max_hold_days": int(m.group(1)) + 1, "rate": Decimal(m.group(2))},
+            ),
+            # 格式5: 小于X天 → rate%（最短期限，不含等于）
+            (
+                r"(?<!，)小于\s*(\d+)\s*[天日]</td><td[^>]*>(\d+\.?\d*)%",
+                lambda m: {"min_hold_days": 0, "max_hold_days": int(m.group(1)), "rate": Decimal(m.group(2))},
+            ),
+            # 格式6: 大于X天 → rate%（无上限，不含等于）
+            (
+                r"(?<!，)大于\s*(\d+)\s*[天日]</td><td[^>]*>(\d+\.?\d*)%",
+                lambda m: {"min_hold_days": int(m.group(1)) + 1, "max_hold_days": None, "rate": Decimal(m.group(2))},
+            ),
+            # 旧格式兼容: 持有期限<7天
+            (
+                r"持有期限\s*[<＜]\s*(\d+)\s*[天日].*?(\d+\.?\d*)%",
+                lambda m: {"min_hold_days": 0, "max_hold_days": int(m.group(1)), "rate": Decimal(m.group(2))},
+            ),
+            # 旧格式兼容: X天≤持有期限<Y天
+            (
+                r"(\d+)\s*[天日]\s*[≤<=]\s*持有期限\s*[<＜]\s*(\d+)\s*[天日].*?(\d+\.?\d*)%",
+                lambda m: {"min_hold_days": int(m.group(1)), "max_hold_days": int(m.group(2)), "rate": Decimal(m.group(3))},
+            ),
+            # 旧格式兼容: 持有期限≥X天
+            (
+                r"持有期限\s*[≥>=]\s*(\d+)\s*[天日].*?(\d+\.?\d*)%",
+                lambda m: {"min_hold_days": int(m.group(1)), "max_hold_days": None, "rate": Decimal(m.group(2))},
+            ),
+        ]
+
+        found_patterns = set()
+        for pattern, extractor in patterns:
+            for m in re.finditer(pattern, html):
+                tier = extractor(m)
+                # 避免重复添加相同区间
+                tier_key = (tier["min_hold_days"], tier["max_hold_days"])
+                if tier_key not in found_patterns:
+                    found_patterns.add(tier_key)
+                    tiers.append(tier)
+
+        if not tiers:
+            return None
+
+        # 按 min_hold_days 排序
+        tiers.sort(key=lambda t: t["min_hold_days"])
+        return tiers
 
     def _get_fees_from_js(self, fund_code: str) -> dict[str, Decimal] | None:
         """从 pingzhongdata.js 获取申购费率（备用方案）。"""

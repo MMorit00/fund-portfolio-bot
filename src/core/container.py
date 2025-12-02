@@ -44,6 +44,7 @@ from src.data.db.alloc_config_repo import AllocConfigRepo
 from src.data.db.calendar import CalendarService
 from src.data.db.db_helper import DbHelper
 from src.data.db.dca_plan_repo import DcaPlanRepo
+from src.data.db.fund_fee_repo import FundFeeRepo
 from src.data.db.fund_repo import FundRepo
 from src.data.db.nav_repo import NavRepo
 from src.data.db.trade_repo import TradeRepo
@@ -144,6 +145,20 @@ def get_fund_repo() -> FundRepo:
     """
     conn = get_db_connection()
     return FundRepo(conn)
+
+
+@register("fund_fee_repo")
+def get_fund_fee_repo() -> FundFeeRepo:
+    """
+    获取基金费率仓储。
+
+    Returns:
+        基金费率仓储实例。
+
+    注册名：fund_fee_repo
+    """
+    conn = get_db_connection()
+    return FundFeeRepo(conn)
 
 
 @register("dca_plan_repo")

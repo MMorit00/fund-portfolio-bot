@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 
 from src.core.models.asset_class import AssetClass
@@ -18,8 +18,7 @@ class FundInfo:
     v0.4.2 新增：alias 字段，用于存储平台完整基金名称（如支付宝账单中的名称），
     支持历史账单导入时的名称映射。
 
-    v0.4.3 新增：费率字段（management_fee, custody_fee, service_fee,
-    purchase_fee, purchase_fee_discount）。
+    v0.4.4 变更：费率字段移至独立表 fund_fee_items，通过 FundFeeRepo 读取。
     """
 
     fund_code: str
@@ -28,21 +27,43 @@ class FundInfo:
     market: MarketType
     alias: str | None = None
     """平台完整基金名称（用于导入时匹配）。"""
-    management_fee: Decimal | None = None
-    """管理费率（年化百分比，如 0.50 表示 0.50%）。"""
-    custody_fee: Decimal | None = None
-    """托管费率（年化百分比）。"""
-    service_fee: Decimal | None = None
-    """销售服务费率（年化百分比）。"""
-    purchase_fee: Decimal | None = None
-    """申购费率原费率（百分比）。"""
-    purchase_fee_discount: Decimal | None = None
-    """申购费率折扣后费率（百分比）。"""
+
+
+@dataclass(slots=True)
+class RedemptionFeeTier:
+    """
+    赎回费阶梯。
+
+    按持有天数区分不同的赎回费率。
+    """
+
+    min_hold_days: int
+    """最小持有天数（含）。"""
+    max_hold_days: int | None
+    """最大持有天数（不含），None 表示无上限。"""
+    rate: Decimal
+    """赎回费率（百分比，如 1.50 表示 1.50%）。"""
 
 
 @dataclass(slots=True)
 class FundFees:
-    """基金费率信息（从 Eastmoney 抓取）。"""
+    """
+    基金费率信息（聚合视图）。
+
+    v0.4.4 变更：从 fund_fee_items 表组装，支持赎回费阶梯。
+
+    设计说明：
+    - 当前是"聚合视图"，隐藏了表中的 fee_type/charge_basis 字段
+    - fee_type 被编码到字段名中（management_fee/custody_fee 等）
+    - charge_basis 被隐含：management/custody/service 是 annual，purchase/redemption 是 transaction
+    - 优点：业务层使用简单，直接问"管理费多少？赎回阶梯如何？"
+    - 缺点：如需按 charge_basis 统计、或直接操作单条费率，需要额外方法
+
+    TODO: 如果将来有以下需求，可考虑新增 FundFeeItem 数据类：
+    - 需要在业务层区分"按年收 vs 按笔收"的费用分类统计
+    - 需要直接操作"单条费率记录"而非聚合视图
+    - 需要动态新增 fee_type 而不修改 FundFees 字段
+    """
 
     management_fee: Decimal | None = None
     """管理费率（年化百分比）。"""
@@ -54,3 +75,5 @@ class FundFees:
     """申购费率原费率（百分比）。"""
     purchase_fee_discount: Decimal | None = None
     """申购费率折扣后费率（百分比）。"""
+    redemption_tiers: list[RedemptionFeeTier] = field(default_factory=list)
+    """赎回费阶梯（按 min_hold_days 升序排列）。"""

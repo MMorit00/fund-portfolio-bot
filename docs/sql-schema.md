@@ -7,7 +7,7 @@
 
 ## 当前版本
 
-- Schema Version: **9** (SCHEMA_VERSION = 9)
+- Schema Version: **10** (SCHEMA_VERSION = 10)
 - 最后更新: 2025-12-02
 
 ## 核心表结构
@@ -18,7 +18,8 @@
 
 | 表名 | 作用 | 关键字段 |
 |------|------|---------|
-| `funds` | 基金基础信息 | fund_code, name, asset_class, market, alias, 费率字段 |
+| `funds` | 基金基础信息 | fund_code, name, asset_class, market, alias |
+| `fund_fee_items` | 基金费率（v0.4.4 新增） | fund_code, fee_type, charge_basis, rate, min_hold_days, max_hold_days |
 | `trades` | 交易记录 | id, fund_code, trade_date, pricing_date, confirm_date, confirmation_status |
 | `navs` | 净值数据 | fund_code, day, nav |
 | `trading_calendar` | 交易日历 | market, day, is_trading_day |
@@ -85,6 +86,46 @@
 - `system`：后台 job 自动执行（当前未使用）
 - `dca`：定投计划触发（当前未使用）
 
+### fund_fee_items 表（v0.4.4 新增）
+
+基金费率信息独立表，支持多种费率类型和赎回费阶梯。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER | 主键 |
+| `fund_code` | TEXT | 基金代码（外键） |
+| `fee_type` | TEXT | 费率类型：management / custody / service / purchase / purchase_discount / redemption |
+| `charge_basis` | TEXT | 收费方式：annual（年化）/ transaction（单笔） |
+| `rate` | TEXT | 费率（百分比，如 0.50 表示 0.50%） |
+| `min_hold_days` | INTEGER | 赎回费阶梯用：最小持有天数（含），其他类型为 NULL |
+| `max_hold_days` | INTEGER | 赎回费阶梯用：最大持有天数（不含），NULL 表示无上限 |
+
+**fee_type 枚举说明**：
+
+| fee_type | 含义 | charge_basis | min/max_hold_days |
+|----------|------|--------------|-------------------|
+| management | 管理费（年化） | annual | NULL |
+| custody | 托管费（年化） | annual | NULL |
+| service | 销售服务费（年化） | annual | NULL |
+| purchase | 申购费（原价） | transaction | NULL |
+| purchase_discount | 申购费（折扣后） | transaction | NULL |
+| redemption | 赎回费（按持有天数） | transaction | 使用 min/max |
+
+**赎回费阶梯示例**：
+
+```
+持有 0-7 天:    1.50%
+持有 7-365 天:  0.50%
+持有 365-730 天: 0.25%
+持有 ≥730 天:   0.00%
+```
+
+**Repo 方法**：
+- `FundFeeRepo.get_fees(fund_code)` - 获取 FundFees 聚合对象
+- `FundFeeRepo.upsert_fees(fund_code, fees)` - 全量更新费率
+- `FundFeeRepo.has_operating_fees(fund_code)` - 检查是否已有运作费率
+- `FundFeeRepo.get_redemption_fee(fund_code, hold_days)` - 获取指定持有天数的赎回费率
+
 ### trading_calendar 表
 
 用于维护不同市场的交易日信息（节假日/临时休市等）。
@@ -132,6 +173,7 @@ SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 - **v0.4.2** (2025-11-30): `funds` 表增加 `alias` 字段，`trades` 表增加 `external_id` 字段（历史导入去重）
 - **v0.4.2+** (2025-12-01): 移除 `trades` 表的 `nav` 字段（数据规范化，nav 归一化存储于 navs 表）
 - **v0.4.3** (2025-12-02): `funds` 表增加费率字段（management_fee, custody_fee, service_fee, purchase_fee, purchase_fee_discount）
+- **v0.4.4** (2025-12-02): 费率模型重构，新增 `fund_fee_items` 表，支持赎回费阶梯；`funds` 表移除费率字段
 
 ## 何时需要迁移文档？
 

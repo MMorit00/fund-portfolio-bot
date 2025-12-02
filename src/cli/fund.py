@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from src.core.container import get_fund_repo
 from src.core.log import log
 from src.core.models.asset_class import AssetClass
 from src.flows.config import add_fund, list_funds, remove_fund
@@ -119,32 +120,53 @@ def _do_list(_args: argparse.Namespace) -> int:
 def _do_fees(args: argparse.Namespace) -> int:
     """执行 fees 命令：查看基金费率。"""
     try:
-        fund = get_fund_fees(args.code)
-        if fund is None:
+        # 获取基金信息
+        fund_repo = get_fund_repo()
+        fund_info = fund_repo.get(args.code)
+        if fund_info is None:
             log(f"❌ 基金不存在：{args.code}")
             return 4
 
-        print(f"\n📊 {fund.name} ({fund.fund_code}) 费率信息\n")
+        # 获取费率信息
+        fees = get_fund_fees(args.code)
+
+        print(f"\n📊 {fund_info.name} ({fund_info.fund_code}) 费率信息\n")
+
+        if fees is None:
+            print("⚠️  费率信息未同步，请运行 sync-fees 命令")
+            print()
+            return 0
 
         # 运作费用（注意：Decimal("0") 是 falsy，需要用 is not None 判断）
         print("运作费用（年化，从净值中扣除）：")
-        print(f"  管理费率: {fund.management_fee}%" if fund.management_fee is not None else "  管理费率: 未知")
-        print(f"  托管费率: {fund.custody_fee}%" if fund.custody_fee is not None else "  托管费率: 未知")
-        print(f"  销售服务费率: {fund.service_fee}%" if fund.service_fee is not None else "  销售服务费率: 未知")
+        print(f"  管理费率: {fees.management_fee}%" if fees.management_fee is not None else "  管理费率: 未知")
+        print(f"  托管费率: {fees.custody_fee}%" if fees.custody_fee is not None else "  托管费率: 未知")
+        print(f"  销售服务费率: {fees.service_fee}%" if fees.service_fee is not None else "  销售服务费率: 未知")
 
-        # 交易费用
-        print("\n交易费用：")
-        if fund.purchase_fee:
-            print(f"  申购费率（原）: {fund.purchase_fee}%")
-        if fund.purchase_fee_discount:
-            print(f"  申购费率（折扣）: {fund.purchase_fee_discount}%")
+        # 申购费用
+        print("\n申购费用：")
+        if fees.purchase_fee is not None:
+            print(f"  申购费率（原）: {fees.purchase_fee}%")
+        if fees.purchase_fee_discount is not None:
+            print(f"  申购费率（折扣）: {fees.purchase_fee_discount}%")
+        if fees.purchase_fee is None and fees.purchase_fee_discount is None:
+            print("  未知")
+
+        # 赎回费用（阶梯）
+        print("\n赎回费用（按持有天数）：")
+        if fees.redemption_tiers:
+            for tier in fees.redemption_tiers:
+                if tier.max_hold_days is None:
+                    print(f"  持有 ≥{tier.min_hold_days} 天: {tier.rate}%")
+                else:
+                    print(f"  持有 {tier.min_hold_days}-{tier.max_hold_days} 天: {tier.rate}%")
+        else:
+            print("  未知")
 
         # 检查费率是否完整
-        has_operating_fees = fund.management_fee or fund.custody_fee
-        has_trading_fees = fund.purchase_fee or fund.purchase_fee_discount
-        if not has_operating_fees and not has_trading_fees:
-            print("\n⚠️  费率信息未同步，请运行 sync-fees 命令")
-        elif not has_operating_fees or not has_trading_fees:
+        has_operating_fees = fees.management_fee is not None or fees.custody_fee is not None
+        has_trading_fees = fees.purchase_fee is not None or fees.redemption_tiers
+        if not has_operating_fees or not has_trading_fees:
             print("\n⚠️  费率信息不完整，建议运行 sync-fees 命令补全")
 
         print()
