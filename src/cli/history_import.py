@@ -100,16 +100,16 @@ def main() -> None:
             print(f"   可导入: {result.succeeded} 笔")
             print(f"   失败: {result.failed} 笔")
             print(f"   跳过: {result.skipped} 笔")
-            if result.downgraded_count > 0:
-                print(f"   ⚠️  降级为 pending: {result.downgraded_count} 笔（NAV 暂缺，后续自动确认）")
+            if result.downgraded > 0:
+                print(f"   ⚠️  降级为 pending: {result.downgraded} 笔（NAV 暂缺，后续自动确认）")
         else:
             print("✅ 导入完成")
             print(f"   总计: {result.total} 笔")
             print(f"   成功: {result.succeeded} 笔")
             print(f"   失败: {result.failed} 笔")
             print(f"   跳过: {result.skipped} 笔")
-            if result.downgraded_count > 0:
-                print(f"   ⚠️  降级为 pending: {result.downgraded_count} 笔（NAV 暂缺，后续自动确认）")
+            if result.downgraded > 0:
+                print(f"   ⚠️  降级为 pending: {result.downgraded} 笔（NAV 暂缺，后续自动确认）")
             print(f"   成功率: {result.success_rate:.1%}")
 
         # 基金映射摘要
@@ -140,7 +140,7 @@ def main() -> None:
             for error_type, records in sorted(grouped.items()):
                 print(f"\n   [{error_type}] ({len(records)} 笔):")
                 for record in records[:3]:  # 每类只显示前3个
-                    print(f"     • {record.original_fund_name}: {record.error_message}")
+                    print(f"     • {record.raw_fund_name}: {record.error_message}")
                 if len(records) > 3:
                     print(f"     ... 还有 {len(records) - 3} 条")
 

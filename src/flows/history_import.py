@@ -710,7 +710,7 @@ def _build_result(
     - succeeded: 成功写入的记录数（由 _write_trades 返回）
     - failed: 有错误的记录数
     - skipped: 重复记录数（error_type="duplicate"）
-    - downgraded_count: 因 NAV 缺失降级为 pending 的数量（v0.4.2+）
+    - downgraded: 因 NAV 缺失降级为 pending 的数量（v0.4.2+）
 
     Args:
         records: ImportRecord 列表。
@@ -727,21 +727,21 @@ def _build_result(
 
     # 统计降级数量（v0.4.2+ 新增）
     # 注：降级记录不算失败，会成功写入为 pending 状态
-    downgraded_count = sum(1 for record in records if record.was_downgraded)
+    downgraded = sum(1 for record in records if record.was_downgraded)
 
     # 构建基金映射摘要（v0.4.2+ 新增）
     fund_mapping: dict[str, tuple[str, str]] = {}
     if fund_repo is not None:
         seen_names = set()
         for record in records:
-            if record.fund_code and record.original_fund_name not in seen_names:
+            if record.fund_code and record.raw_fund_name not in seen_names:
                 fund_info = fund_repo.get(record.fund_code)
                 if fund_info:
-                    fund_mapping[record.original_fund_name] = (
+                    fund_mapping[record.raw_fund_name] = (
                         record.fund_code,
                         fund_info.name,
                     )
-                    seen_names.add(record.original_fund_name)
+                    seen_names.add(record.raw_fund_name)
 
     # 构建错误分类统计（v0.4.2+ 新增）
     error_summary: dict[str, int] = {}
@@ -754,7 +754,7 @@ def _build_result(
         succeeded=succeeded,
         failed=failed - skipped,  # 失败数不含跳过
         skipped=skipped,
-        downgraded_count=downgraded_count,
+        downgraded=downgraded,
         failed_records=failed_records,
         fund_mapping=fund_mapping,
         error_summary=error_summary,
