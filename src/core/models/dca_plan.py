@@ -11,9 +11,9 @@ Status = Literal["active", "disabled"]
 @dataclass(slots=True)
 class DcaPlan:
     """
-    定投计划（v0.3.2 新增 status）。
+    定投计划。
 
-    - frequency: daily/weekly/monthly
+    - frequency: 定投频率（daily/weekly/monthly）
     - rule: 对 daily 可为空；weekly 用 MON/TUE/...；monthly 用 1..31
     - status: active（活跃）/ disabled（已禁用）
     """
@@ -23,4 +23,3 @@ class DcaPlan:
     frequency: Frequency
     rule: str
     status: Status = "active"
-

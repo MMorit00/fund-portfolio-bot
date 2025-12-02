@@ -14,11 +14,6 @@ class FundInfo:
 
     包含基金代码、名称、资产类别和市场类型。
     用于在领域层和应用层传递基金元数据。
-
-    v0.4.2 新增：alias 字段，用于存储平台完整基金名称（如支付宝账单中的名称），
-    支持历史账单导入时的名称映射。
-
-    v0.4.4 变更：费率字段移至独立表 fund_fee_items，通过 FundFeeRepo 读取。
     """
 
     fund_code: str
@@ -49,8 +44,6 @@ class RedemptionFeeTier:
 class FundFees:
     """
     基金费率信息（聚合视图）。
-
-    v0.4.4 变更：从 fund_fee_items 表组装，支持赎回费阶梯。
 
     设计说明：
     - 当前是"聚合视图"，隐藏了表中的 fee_type/charge_basis 字段

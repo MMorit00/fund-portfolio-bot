@@ -9,7 +9,7 @@ from src.core.models.asset_class import AssetClass
 @dataclass(slots=True)
 class AllocConfig:
     """
-    资产配置目标（v0.3.2 新增）。
+    资产配置目标。
 
     - target_weight: 目标权重（0..1）
     - max_deviation: 允许的最大偏离（0..1）
