@@ -74,9 +74,12 @@ def _parse_args() -> argparse.Namespace:
 def _do_refresh(args: argparse.Namespace) -> int:
     """执行 refresh 命令。"""
     try:
+        # 1. 从 CSV 刷新日历
         csv_path = args.csv
         log(f"[Calendar:refresh] 从 CSV 刷新日历：{csv_path}")
         result = refresh_calendar(csv_path=csv_path)
+
+        # 2. 输出结果
         log(
             "✅ 日历刷新成功："
             f"total_days={result.total_days}, updated_days={result.updated_days}"
@@ -96,11 +99,16 @@ def _do_refresh(args: argparse.Namespace) -> int:
 def _do_sync(args: argparse.Namespace) -> int:
     """执行 sync 命令（使用 exchange_calendars 注油）。"""
     try:
+        # 1. 解析参数
         market = args.market
         start = date.fromisoformat(args.since)
         end = date.fromisoformat(args.until)
+
+        # 2. 同步日历
         log(f"[Calendar:sync] 同步日历：market={market} {start}..{end}")
         result = sync_calendar(market=market, start=start, end=end)
+
+        # 3. 输出结果
         log(
             "✅ 日历同步完成："
             f"total_days={result.total_days}, updated_days={result.updated_days}, "
@@ -118,8 +126,11 @@ def _do_sync(args: argparse.Namespace) -> int:
 def _do_patch_cn_a(args: argparse.Namespace) -> int:
     """执行 patch-cn-a 命令（使用 Akshare 修补 CN_A）。"""
     try:
+        # 1. 解析参数
         back = int(args.back)
         forward = int(args.forward)
+
+        # 2. 修补日历
         log(
             "[Calendar:patch] 使用 Akshare 修补 CN_A 日历："
             f"back={back} days, forward={forward} days"
@@ -128,6 +139,8 @@ def _do_patch_cn_a(args: argparse.Namespace) -> int:
             lookback_days=back,
             forward_days=forward,
         )
+
+        # 3. 输出结果
         if result.total_days == 0:
             log(
                 "✅ 日历无需要修补的变更："
@@ -152,8 +165,10 @@ def main() -> int:
     Returns:
         退出码：0=成功；4=参数错误；5=其他失败。
     """
+    # 1. 解析参数
     args = _parse_args()
 
+    # 2. 路由到子命令
     if args.command == "refresh":
         return _do_refresh(args)
     if args.command == "sync":

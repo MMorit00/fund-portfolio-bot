@@ -37,9 +37,11 @@ def _parse_args() -> argparse.Namespace:
 def _do_run(args: argparse.Namespace) -> int:
     """执行 run 命令。"""
     try:
+        # 1. 解析日期参数
         date_arg = args.date
         today = date.fromisoformat(date_arg) if date_arg else date.today()
 
+        # 2. 执行定投
         log(f"[DCA:run] 开始：date={today}")
         count = run_daily_dca(today=today)
         log(f"✅ 成功生成 {count} 笔定投交易")
@@ -52,14 +54,17 @@ def _do_run(args: argparse.Namespace) -> int:
 def _do_skip(args: argparse.Namespace) -> int:
     """执行 skip 命令。"""
     try:
+        # 1. 解析参数
         fund_code = args.fund
         date_arg = args.date
         day = date.fromisoformat(date_arg) if date_arg else date.today()
         note = args.note
 
+        # 2. 执行跳过操作
         log(f"[DCA:skip] 跳过定投：{fund_code} @ {day}")
         affected = skip_dca(fund_code=fund_code, day=day, note=note)
 
+        # 3. 输出结果
         if affected > 0:
             log(f"✅ 已跳过 {affected} 笔定投交易")
         else:
@@ -77,8 +82,10 @@ def main() -> int:
     Returns:
         退出码：0=成功；5=执行失败。
     """
+    # 1. 解析参数
     args = _parse_args()
 
+    # 2. 路由到子命令
     if args.command == "run":
         return _do_run(args)
     elif args.command == "skip":

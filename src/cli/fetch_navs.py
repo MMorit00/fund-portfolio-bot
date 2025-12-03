@@ -1,3 +1,26 @@
+"""基金净值抓取 CLI。
+
+从外部数据源抓取基金净值并落库。
+
+用法：
+    # 抓取上一交易日所有基金净值
+    python -m src.cli.fetch_navs
+
+    # 抓取指定日期净值
+    python -m src.cli.fetch_navs --date 2024-12-01
+
+    # 抓取指定基金净值
+    python -m src.cli.fetch_navs --funds 000001,110022
+
+    # 自动检测延迟交易的缺失 NAV 并补抓
+    python -m src.cli.fetch_navs --auto-detect-missing --days 30
+
+说明：
+- 模式 1（默认）：按指定日期抓取基金 NAV
+- 模式 2（--auto-detect-missing）：自动检测延迟交易的缺失 NAV 并补抓
+- 落库按 (fund_code, day) 幂等
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -9,15 +32,7 @@ from src.flows.nav import fetch_missing_navs, fetch_navs
 
 
 def _parse_args() -> argparse.Namespace:
-    """
-    解析 fetch_navs 命令行参数。
-
-    支持参数：
-    - --date：目标日期（YYYY-MM-DD），默认上一交易日。
-    - --funds：指定基金代码列表（逗号分隔），可选。
-    - --auto-detect-missing：自动检测延迟交易的缺失 NAV 并补抓。
-    - --days：auto-detect-missing 时检测的天数范围，默认 30 天。
-    """
+    """解析命令行参数。"""
     parser = argparse.ArgumentParser(
         prog="python -m src.cli.fetch_navs",
         description="从外部数据源抓取基金净值并落库",
@@ -44,62 +59,99 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _do_auto_detect(args: argparse.Namespace) -> int:
+    """执行自动检测缺失 NAV 模式。
+
+    Args:
+        args: 命令行参数。
+
+    Returns:
+        退出码：0=成功；5=其他失败。
+    """
+    # 1. 输出操作提示
+    log(f"[FetchNavs] 自动检测模式：扫描最近 {args.days} 天的延迟交易")
+
+    # 2. 调用 Flow 函数
+    result = fetch_missing_navs(days=args.days)
+
+    # 3. 输出结果
+    log(
+        f"[FetchNavs] 补抓结束：total={result.total} "
+        f"success={result.success} failed={len(result.failed_codes)}"
+    )
+
+    # 4. 输出失败列表
+    if result.failed_codes:
+        log(
+            "[FetchNavs] 补抓失败（部分可能因 NAV 缺失或网络错误）： "
+            + ", ".join(sorted(result.failed_codes))
+        )
+
+    return 0
+
+
+def _do_fetch_by_date(args: argparse.Namespace) -> int:
+    """执行按日期抓取模式。
+
+    Args:
+        args: 命令行参数。
+
+    Returns:
+        退出码：0=成功；5=其他失败。
+    """
+    # 1. 解析参数
+    date_arg = getattr(args, "date", None)
+    target_day = date.fromisoformat(date_arg) if date_arg else None
+    fund_codes = [c.strip() for c in args.funds.split(",") if c.strip()] if args.funds else None
+
+    # 2. 输出操作提示
+    log(f"[FetchNavs] 开始：day={target_day or '上一交易日'} funds={fund_codes or '全部'}")
+
+    # 3. 调用 Flow 函数（day=None 时自动使用上一交易日）
+    result = fetch_navs(day=target_day, fund_codes=fund_codes)
+
+    # 4. 输出结果
+    log(
+        f"[FetchNavs] 结束：day={result.day} total={result.total} "
+        f"success={result.success} failed={len(result.failed_codes)}"
+    )
+
+    # 5. 输出失败列表
+    if result.failed_codes:
+        log(
+            "[FetchNavs] 失败基金代码（部分可能因 NAV 缺失或网络错误）： "
+            + ", ".join(sorted(result.failed_codes))
+        )
+        # 如果抓今日NAV且失败较多，给出友好提示
+        if result.day == date.today() and len(result.failed_codes) > result.success:
+            log("⚠️  提示：今日 NAV 可能尚未公布（通常 18:00-22:00 后可抓取），建议晚上重试")
+
+    return 0
+
+
 def main() -> int:
     """
     抓取净值任务入口。
 
-    说明：
-    - 模式 1（默认）：按指定日期抓取基金 NAV；
-    - 模式 2（--auto-detect-missing）：自动检测延迟交易的缺失 NAV 并补抓；
-    - 落库按 (fund_code, day) 幂等。
-
     Returns:
-        退出码：0=成功；4=参数/实现错误。
+        退出码：0=成功；4=参数错误；5=其他失败。
     """
     try:
+        # 1. 解析参数
         args = _parse_args()
 
-        # 模式 1：自动检测缺失 NAV
+        # 2. 路由执行
         if args.auto_detect_missing:
-            log(f"[Job:fetch_navs] 自动检测模式：扫描最近 {args.days} 天的延迟交易")
-            result = fetch_missing_navs(days=args.days)
-            log(
-                f"[Job:fetch_navs] 补抓结束：total={result.total} "
-                f"success={result.success} failed={len(result.failed_codes)}"
-            )
-            if result.failed_codes:
-                log(
-                    "[Job:fetch_navs] 补抓失败（部分可能因 NAV 缺失或网络错误）： "
-                    + ", ".join(sorted(result.failed_codes))
-                )
-            return 0
+            return _do_auto_detect(args)
+        else:
+            return _do_fetch_by_date(args)
 
-        # 模式 2：按日期抓取
-        date_arg = getattr(args, "date", None)
-        target_day = date.fromisoformat(date_arg) if date_arg else None
-        fund_codes = [c.strip() for c in args.funds.split(",") if c.strip()] if args.funds else None
-
-        log(f"[Job:fetch_navs] 开始：day={target_day or '上一交易日'} funds={fund_codes or '全部'}")
-
-        # 调用 Flow 函数（day=None 时自动使用上一交易日）
-        result = fetch_navs(day=target_day, fund_codes=fund_codes)
-
-        log(
-            f"[Job:fetch_navs] 结束：day={result.day} total={result.total} "
-            f"success={result.success} failed={len(result.failed_codes)}"
-        )
-        if result.failed_codes:
-            log(
-                "[Job:fetch_navs] 失败基金代码（部分可能因 NAV 缺失或网络错误）： "
-                + ", ".join(sorted(result.failed_codes))
-            )
-            # 如果抓今日NAV且失败较多，给出友好提示
-            if result.day == date.today() and len(result.failed_codes) > result.success:
-                log("⚠️  提示：今日 NAV 可能尚未公布（通常 18:00-22:00 后可抓取），建议晚上重试")
-        return 0
-    except Exception as err:  # noqa: BLE001
-        log(f"❌ 执行失败：fetch_navs - {err}")
+    except ValueError as err:
+        log(f"❌ 参数错误：{err}")
         return 4
+    except Exception as err:  # noqa: BLE001
+        log(f"❌ 执行失败：{err}")
+        return 5
 
 
 if __name__ == "__main__":

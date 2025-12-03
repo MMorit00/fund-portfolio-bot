@@ -1,3 +1,5 @@
+"""基金配置管理 CLI（v0.4.3）。"""
+
 from __future__ import annotations
 
 import argparse
@@ -5,12 +7,13 @@ import sys
 
 from src.core.container import get_fund_repo
 from src.core.log import log
-from src.core.models import AssetClass, MarketType
+from src.core.models import AssetClass, FundFees, MarketType
 from src.flows.config import add_fund, list_funds, remove_fund
 from src.flows.fund_fees import get_fund_fees, sync_fund_fees
 
 
 def _parse_args() -> argparse.Namespace:
+    """解析命令行参数。"""
     parser = argparse.ArgumentParser(
         prog="python -m src.cli.fund",
         description="基金配置管理（v0.4.3）",
@@ -58,15 +61,66 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _format_fees(fees: FundFees) -> None:
+    """格式化并输出费率信息。
+
+    Args:
+        fees: 基金费率信息。
+    """
+    # 1. 运作费用（年化，从净值中扣除）
+    log("运作费用（年化，从净值中扣除）：")
+    log(f"  管理费率: {fees.management_fee}%" if fees.management_fee is not None else "  管理费率: 未知")
+    log(f"  托管费率: {fees.custody_fee}%" if fees.custody_fee is not None else "  托管费率: 未知")
+    log(f"  销售服务费率: {fees.service_fee}%" if fees.service_fee is not None else "  销售服务费率: 未知")
+
+    # 2. 申购费用
+    log("")
+    log("申购费用：")
+    if fees.purchase_fee is not None:
+        log(f"  申购费率（原）: {fees.purchase_fee}%")
+    if fees.purchase_fee_discount is not None:
+        log(f"  申购费率（折扣）: {fees.purchase_fee_discount}%")
+    if fees.purchase_fee is None and fees.purchase_fee_discount is None:
+        log("  未知")
+
+    # 3. 赎回费用（阶梯）
+    log("")
+    log("赎回费用（按持有天数）：")
+    if fees.redemption_tiers:
+        for tier in fees.redemption_tiers:
+            if tier.max_hold_days is None:
+                log(f"  持有 ≥{tier.min_hold_days} 天: {tier.rate}%")
+            else:
+                log(f"  持有 {tier.min_hold_days}-{tier.max_hold_days} 天: {tier.rate}%")
+    else:
+        log("  未知")
+
+    # 4. 检查费率是否完整
+    has_operating_fees = fees.management_fee is not None or fees.custody_fee is not None
+    has_trading_fees = fees.purchase_fee is not None or fees.redemption_tiers
+    if not has_operating_fees or not has_trading_fees:
+        log("")
+        log("⚠️  费率信息不完整，建议运行 sync-fees 命令补全")
+
+
 def _do_add(args: argparse.Namespace) -> int:
-    """执行 add 命令。"""
+    """执行 add 命令。
+
+    Args:
+        args: 命令行参数。
+
+    Returns:
+        退出码：0=成功；5=失败。
+    """
     try:
+        # 1. 解析参数
         fund_code = args.code
         name = args.name
         asset_class = AssetClass(args.asset_class)
         market = MarketType(args.market)
         external_name = args.alias if hasattr(args, "alias") else None
 
+        # 2. 执行添加
         log(f"[Fund:add] 添加基金：{fund_code} - {name} ({asset_class.value}/{market.value})")
         add_fund(
             fund_code=fund_code,
@@ -75,6 +129,8 @@ def _do_add(args: argparse.Namespace) -> int:
             market=market,
             external_name=external_name,
         )
+
+        # 3. 输出结果
         log(f"✅ 基金 {fund_code} 添加成功")
         return 0
     except Exception as err:  # noqa: BLE001
@@ -83,11 +139,23 @@ def _do_add(args: argparse.Namespace) -> int:
 
 
 def _do_remove(args: argparse.Namespace) -> int:
-    """执行 remove 命令。"""
+    """执行 remove 命令。
+
+    Args:
+        args: 命令行参数。
+
+    Returns:
+        退出码：0=成功；4=参数错误；5=其他失败。
+    """
     try:
+        # 1. 解析参数
         fund_code = args.code
+
+        # 2. 执行删除
         log(f"[Fund:remove] 删除基金：{fund_code}")
         remove_fund(fund_code=fund_code)
+
+        # 3. 输出结果
         log(f"✅ 基金 {fund_code} 删除成功")
         return 0
     except ValueError as err:
@@ -99,21 +167,27 @@ def _do_remove(args: argparse.Namespace) -> int:
 
 
 def _do_list(_args: argparse.Namespace) -> int:
-    """执行 list 命令。"""
+    """执行 list 命令。
+
+    Args:
+        _args: 命令行参数（未使用）。
+
+    Returns:
+        退出码：0=成功；5=失败。
+    """
     try:
+        # 1. 查询基金列表
         log("[Fund:list] 查询所有基金")
         funds = list_funds()
 
+        # 2. 输出结果
         if not funds:
             log("（无基金配置）")
             return 0
 
         log(f"共 {len(funds)} 个基金：")
         for fund in funds:
-            log(
-                f"  {fund.fund_code} | {fund.name} | "
-                f"{fund.asset_class.value} | {fund.market.value}"
-            )
+            log(f"  {fund.fund_code} | {fund.name} | {fund.asset_class.value} | {fund.market.value}")
         return 0
     except Exception as err:  # noqa: BLE001
         log(f"❌ 查询基金失败：{err}")
@@ -121,58 +195,38 @@ def _do_list(_args: argparse.Namespace) -> int:
 
 
 def _do_fees(args: argparse.Namespace) -> int:
-    """执行 fees 命令：查看基金费率。"""
+    """执行 fees 命令：查看基金费率。
+
+    Args:
+        args: 命令行参数。
+
+    Returns:
+        退出码：0=成功；4=参数错误；5=其他失败。
+    """
     try:
-        # 获取基金信息
+        # 1. 获取基金信息
         fund_repo = get_fund_repo()
         fund_info = fund_repo.get(args.code)
         if fund_info is None:
             log(f"❌ 基金不存在：{args.code}")
             return 4
 
-        # 获取费率信息
+        # 2. 获取费率信息
         fees = get_fund_fees(args.code)
 
-        print(f"\n📊 {fund_info.name} ({fund_info.fund_code}) 费率信息\n")
+        # 3. 输出标题
+        log(f"\n📊 {fund_info.name} ({fund_info.fund_code}) 费率信息\n")
 
+        # 4. 检查费率是否存在
         if fees is None:
-            print("⚠️  费率信息未同步，请运行 sync-fees 命令")
-            print()
+            log("⚠️  费率信息未同步，请运行 sync-fees 命令")
+            log("")
             return 0
 
-        # 运作费用（注意：Decimal("0") 是 falsy，需要用 is not None 判断）
-        print("运作费用（年化，从净值中扣除）：")
-        print(f"  管理费率: {fees.management_fee}%" if fees.management_fee is not None else "  管理费率: 未知")
-        print(f"  托管费率: {fees.custody_fee}%" if fees.custody_fee is not None else "  托管费率: 未知")
-        print(f"  销售服务费率: {fees.service_fee}%" if fees.service_fee is not None else "  销售服务费率: 未知")
+        # 5. 格式化输出费率
+        _format_fees(fees)
 
-        # 申购费用
-        print("\n申购费用：")
-        if fees.purchase_fee is not None:
-            print(f"  申购费率（原）: {fees.purchase_fee}%")
-        if fees.purchase_fee_discount is not None:
-            print(f"  申购费率（折扣）: {fees.purchase_fee_discount}%")
-        if fees.purchase_fee is None and fees.purchase_fee_discount is None:
-            print("  未知")
-
-        # 赎回费用（阶梯）
-        print("\n赎回费用（按持有天数）：")
-        if fees.redemption_tiers:
-            for tier in fees.redemption_tiers:
-                if tier.max_hold_days is None:
-                    print(f"  持有 ≥{tier.min_hold_days} 天: {tier.rate}%")
-                else:
-                    print(f"  持有 {tier.min_hold_days}-{tier.max_hold_days} 天: {tier.rate}%")
-        else:
-            print("  未知")
-
-        # 检查费率是否完整
-        has_operating_fees = fees.management_fee is not None or fees.custody_fee is not None
-        has_trading_fees = fees.purchase_fee is not None or fees.redemption_tiers
-        if not has_operating_fees or not has_trading_fees:
-            print("\n⚠️  费率信息不完整，建议运行 sync-fees 命令补全")
-
-        print()
+        log("")
         return 0
     except Exception as err:  # noqa: BLE001
         log(f"❌ 查询费率失败：{err}")
@@ -180,14 +234,24 @@ def _do_fees(args: argparse.Namespace) -> int:
 
 
 def _do_sync_fees(args: argparse.Namespace) -> int:
-    """执行 sync-fees 命令：同步基金费率。"""
+    """执行 sync-fees 命令：同步基金费率。
+
+    Args:
+        args: 命令行参数。
+
+    Returns:
+        退出码：0=成功；4=参数错误；5=失败。
+    """
     try:
+        # 1. 调用 Flow 函数
         result = sync_fund_fees(args.code)
 
+        # 2. 检查是否有基金
         if not result.details:
             log("（无基金配置）")
             return 0
 
+        # 3. 输出结果
         if args.code:
             # 单只基金
             _, name, success = result.details[0]
@@ -222,8 +286,10 @@ def main() -> int:
     Returns:
         退出码：0=成功；4=参数错误；5=其他失败。
     """
+    # 1. 解析参数
     args = _parse_args()
 
+    # 2. 路由到具体命令
     if args.command == "add":
         return _do_add(args)
     elif args.command == "list":

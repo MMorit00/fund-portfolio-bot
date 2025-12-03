@@ -25,7 +25,7 @@ from __future__ import annotations
 import sqlite3
 from decimal import Decimal
 
-from src.core.models.fund import FundFees, RedemptionFeeTier
+from src.core.models.fund import FundFees, RedemptionTier
 
 # fee_type 枚举值
 fee_type_management = "management"
@@ -70,7 +70,7 @@ class FundFeeRepo:
             return None
 
         fees = FundFees()
-        redemption_tiers: list[RedemptionFeeTier] = []
+        redemption_tiers: list[RedemptionTier] = []
 
         for row in rows:
             fee_type = row["fee_type"]
@@ -87,7 +87,7 @@ class FundFeeRepo:
             elif fee_type == fee_type_purchase_discount:
                 fees.purchase_fee_discount = rate
             elif fee_type == fee_type_redemption:
-                tier = RedemptionFeeTier(
+                tier = RedemptionTier(
                     min_hold_days=row["min_hold_days"] or 0,
                     max_hold_days=row["max_hold_days"],
                     rate=rate,
@@ -228,7 +228,7 @@ class FundFeeRepo:
         )
 
     def _insert_redemption_tier(
-        self, fund_code: str, tier: RedemptionFeeTier
+        self, fund_code: str, tier: RedemptionTier
     ) -> None:
         """插入赎回费阶梯记录。"""
         self._insert_fee(

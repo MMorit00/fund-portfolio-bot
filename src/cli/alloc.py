@@ -57,11 +57,12 @@ def _parse_args() -> argparse.Namespace:
 def _do_set(args: argparse.Namespace) -> int:
     """执行 set 命令。"""
     try:
+        # 1. 解析参数
         asset_class = AssetClass(args.asset_class)
         target_weight = args.target
         max_deviation = args.deviation
 
-        # 验证范围
+        # 2. 验证参数范围
         if not (Decimal("0") <= target_weight <= Decimal("1")):
             log("❌ 目标权重必须在 0..1 范围内")
             return 4
@@ -69,6 +70,7 @@ def _do_set(args: argparse.Namespace) -> int:
             log("❌ 最大偏离必须在 0..1 范围内")
             return 4
 
+        # 3. 设置资产配置
         log(
             f"[Alloc:set] 设置配置：{asset_class.value} - 目标 {target_weight*100:.1f}%，偏离 ±{max_deviation*100:.1f}%"
         )
@@ -87,7 +89,10 @@ def _do_set(args: argparse.Namespace) -> int:
 def _do_delete(args: argparse.Namespace) -> int:
     """执行 delete 命令。"""
     try:
+        # 1. 解析参数
         asset_class = AssetClass(args.asset_class)
+
+        # 2. 删除资产配置
         log(f"[Alloc:delete] 删除资产配置：{asset_class.value}")
         delete_allocation(asset_class=asset_class)
         log(f"✅ 资产配置 {asset_class.value} 删除成功")
@@ -103,6 +108,7 @@ def _do_delete(args: argparse.Namespace) -> int:
 def _do_show(_args: argparse.Namespace) -> int:
     """执行 show 命令。"""
     try:
+        # 1. 查询所有资产配置
         log("[Alloc:show] 查询所有资产配置目标")
         configs = list_allocations()
 
@@ -110,6 +116,7 @@ def _do_show(_args: argparse.Namespace) -> int:
             log("（无资产配置）")
             return 0
 
+        # 2. 格式化输出
         log(f"共 {len(configs)} 个资产配置：")
         total_weight = Decimal("0")
         for config in configs:
@@ -118,7 +125,7 @@ def _do_show(_args: argparse.Namespace) -> int:
             )
             total_weight += config.target_weight
 
-        # 提示总权重
+        # 3. 验证总权重
         if total_weight != Decimal("1"):
             log(f"⚠️  注意：总权重 = {total_weight*100:.1f}%（期望 100%）")
         else:
@@ -137,8 +144,10 @@ def main() -> int:
     Returns:
         退出码：0=成功；4=参数错误；5=其他失败。
     """
+    # 1. 解析参数
     args = _parse_args()
 
+    # 2. 路由到子命令
     if args.command == "set":
         return _do_set(args)
     elif args.command == "show":

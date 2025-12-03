@@ -69,12 +69,14 @@ def _parse_args() -> argparse.Namespace:
 def _do_add(args: argparse.Namespace) -> int:
     """执行 add 命令。"""
     try:
+        # 1. 解析参数
         fund_code = args.fund
         amount = args.amount
         frequency = args.freq
         rule = args.rule
         status = args.status
 
+        # 2. 添加定投计划
         log(f"[DCA:add] 添加定投计划：{fund_code} - {amount} 元/{frequency}/{rule} ({status})")
         add_dca_plan(
             fund_code=fund_code,
@@ -93,6 +95,7 @@ def _do_add(args: argparse.Namespace) -> int:
 def _do_list(args: argparse.Namespace) -> int:
     """执行 list 命令。"""
     try:
+        # 1. 查询定投计划
         active_only = args.active_only
         log(f"[DCA:list] 查询定投计划（active_only={active_only}）")
         plans = list_dca_plans(active_only=active_only)
@@ -101,6 +104,7 @@ def _do_list(args: argparse.Namespace) -> int:
             log("（无定投计划）")
             return 0
 
+        # 2. 格式化输出
         log(f"共 {len(plans)} 个定投计划：")
         for plan in plans:
             status_icon = "✅" if plan.status == "active" else "⏸️"
@@ -116,7 +120,10 @@ def _do_list(args: argparse.Namespace) -> int:
 def _do_disable(args: argparse.Namespace) -> int:
     """执行 disable 命令。"""
     try:
+        # 1. 解析参数
         fund_code = args.fund
+
+        # 2. 禁用定投计划
         log(f"[DCA:disable] 禁用定投计划：{fund_code}")
         disable_dca_plan(fund_code=fund_code)
         log(f"✅ 定投计划 {fund_code} 已禁用")
@@ -132,7 +139,10 @@ def _do_disable(args: argparse.Namespace) -> int:
 def _do_enable(args: argparse.Namespace) -> int:
     """执行 enable 命令。"""
     try:
+        # 1. 解析参数
         fund_code = args.fund
+
+        # 2. 启用定投计划
         log(f"[DCA:enable] 启用定投计划：{fund_code}")
         enable_dca_plan(fund_code=fund_code)
         log(f"✅ 定投计划 {fund_code} 已启用")
@@ -148,7 +158,10 @@ def _do_enable(args: argparse.Namespace) -> int:
 def _do_delete(args: argparse.Namespace) -> int:
     """执行 delete 命令。"""
     try:
+        # 1. 解析参数
         fund_code = args.fund
+
+        # 2. 删除定投计划
         log(f"[DCA:delete] 删除定投计划：{fund_code}")
         delete_dca_plan(fund_code=fund_code)
         log(f"✅ 定投计划 {fund_code} 已删除")
@@ -168,8 +181,10 @@ def main() -> int:
     Returns:
         退出码：0=成功；4=计划不存在；5=其他失败。
     """
+    # 1. 解析参数
     args = _parse_args()
 
+    # 2. 路由到子命令
     if args.command == "add":
         return _do_add(args)
     elif args.command == "list":

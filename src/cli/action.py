@@ -29,7 +29,7 @@ def _parse_args() -> argparse.Namespace:
 
 def _format_action(action: ActionLog) -> str:
     """格式化单条行为日志。"""
-    # 动作图标
+    # 1. 动作图标
     action_icons = {
         "buy": "📈",
         "sell": "📉",
@@ -38,33 +38,30 @@ def _format_action(action: ActionLog) -> str:
     }
     icon = action_icons.get(action.action, "•")
 
-    # 时间格式化
+    # 2. 时间格式化
     time_str = action.acted_at.strftime("%Y-%m-%d %H:%M")
 
-    # 基本信息：图标 + id + 动作
+    # 3. 构建基本信息
     parts = [f"{icon} [{action.id}] {action.action}"]
 
-    # fund_code / target_date（若有）
+    # 4. 添加可选字段
     if action.fund_code:
         parts.append(f"{action.fund_code}")
     if action.target_date:
         parts.append(f"on {action.target_date.isoformat()}")
-
-    # trade_id
     if action.trade_id:
         parts.append(f"trade#{action.trade_id}")
-
-    # intent
     if action.intent:
         parts.append(f"[{action.intent}]")
 
-    # 来源 + 时间
+    # 5. 添加来源和时间
     parts.append(f"via {action.source}")
     parts.append(f"@ {time_str}")
 
+    # 6. 组合成单行
     line = " ".join(parts)
 
-    # note 单独一行
+    # 7. 添加备注（单独一行）
     if action.note:
         line += f"\n       📝 {action.note}"
 
@@ -74,11 +71,12 @@ def _format_action(action: ActionLog) -> str:
 def _do_list(args: argparse.Namespace) -> int:
     """执行 list 命令。"""
     try:
+        # 1. 查询行为日志
         days = args.days
         log(f"[Action:list] 查询最近 {days} 天行为日志")
-
         actions = list_actions(days=days)
 
+        # 2. 格式化输出
         if not actions:
             log("（无行为记录）")
             return 0
@@ -99,8 +97,10 @@ def main() -> int:
     Returns:
         退出码：0=成功；5=其他失败。
     """
+    # 1. 解析参数
     args = _parse_args()
 
+    # 2. 路由到子命令
     if args.command == "list":
         return _do_list(args)
     else:
