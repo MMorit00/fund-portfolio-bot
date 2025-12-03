@@ -171,19 +171,19 @@ python -m src.cli.fetch_navs_range --from 2025-01-01 --to 2025-03-31
 python -m src.cli.confirm --day 2025-04-01
 ```
 
-### 市值验证（v0.4.2+）
+### 市值查询（v0.4.2+）
 
-用于验证导入账单后的总市值是否与平台一致：
+用于查询指定日期的持仓市值（可用于导入后验证、日常对账等）：
 
 ```bash
 # 查看市值（默认：上一交易日，回退到最近有净值的交易日）
-python -m src.cli.verify_import
+python -m src.cli.market_value
 
 # 指定日期
-python -m src.cli.verify_import --as-of 2025-11-29
+python -m src.cli.market_value --as-of 2025-11-29
 
 # 使用估值模式（当官方净值缺失时用盘中估值）
-python -m src.cli.verify_import --estimate
+python -m src.cli.market_value --estimate
 ```
 
 **回退策略**：

@@ -1,4 +1,4 @@
-"""导入账单市值验证 CLI（v0.4.2+）"""
+"""持仓市值查询 CLI。"""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ import argparse
 from datetime import date
 
 from src.core.log import log
-from src.flows.import_verify import verify_import_market_value
+from src.flows.market_value import cal_market_value
 
 
 def main() -> None:
-    """验证导入账单后的市值计算。"""
-    parser = argparse.ArgumentParser(description="导入账单市值验证")
+    """查询持仓市值。"""
+    parser = argparse.ArgumentParser(description="持仓市值查询")
     parser.add_argument("--as-of", type=str, help="查询日期（YYYY-MM-DD）")
     parser.add_argument("--estimate", action="store_true", help="使用估值回退")
     args = parser.parse_args()
@@ -25,11 +25,11 @@ def main() -> None:
             print(f"❌ 日期格式错误：{args.as_of}，正确格式：YYYY-MM-DD")
             return
 
-    log(f"[VerifyImport] 查询日期: {as_of or '上一交易日'}, 估值: {args.estimate}")
-    result = verify_import_market_value(as_of=as_of, use_estimate=args.estimate)
+    log(f"[MarketValue] 查询日期: {as_of or '上一交易日'}, 估值: {args.estimate}")
+    result = cal_market_value(as_of=as_of, use_estimate=args.estimate)
 
     # 输出
-    print(f"\n📊 导入账单市值验证（{result.as_of}）\n")
+    print(f"\n📊 持仓市值（{result.as_of}）\n")
     print(f"总市值: ¥{result.total_market_value:,.2f}")
     print(f"待确认: ¥{result.pending_amount:,.2f}\n")
 

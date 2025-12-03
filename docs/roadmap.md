@@ -429,9 +429,9 @@ CLI → Flows (纯函数 + @dependency) → Data (通过装饰器注入)
 - ✅ 降级提示（因 NAV 暂缺降级为 pending 的数量）
 - ✅ 失败记录按类型分组显示
 
-**P3 - 市值验证工具**（✅ 2025-12-01 完成）：
-- ✅ `verify_import_market_value()`：计算导入账单后的总市值
-- ✅ `src/cli/verify_import.py`：独立验证 CLI
+**P3 - 市值查询工具**（✅ 2025-12-01 完成）：
+- ✅ `cal_market_value()`：计算指定日期的持仓市值
+- ✅ `src/cli/market_value.py`：市值查询 CLI
 - ✅ 净值回退策略（默认）：向前查找最近 7 个交易日的官方净值
 - ✅ 估值回退策略（`--estimate`）：使用盘中估值（仅限最近 3 天）
 
@@ -717,8 +717,8 @@ v1.1+ (AI 进阶功能)
   - `python -m src.cli.report [--mode market/shares] [--as-of 2025-01-15]`
 - `再平衡建议`(`make_rebalance_suggestion`)
   - `python -m src.cli.rebalance [--as-of 2025-01-15]`（v0.3.3：独立 CLI + 基金建议）
-- `市值验证`(`verify_import_market_value`)（v0.4.2+）
-  - `python -m src.cli.verify_import [--as-of 2025-11-29] [--estimate]`
+- `市值查询`(`cal_market_value`)（v0.4.2+）
+  - `python -m src.cli.market_value [--as-of 2025-11-29] [--estimate]`
 
 ## 日历管理（v0.3.4+）
 - `刷新日历（CSV）`(`refresh_calendar`)

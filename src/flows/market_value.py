@@ -1,4 +1,4 @@
-"""导入账单市值验证功能（v0.4.2+）"""
+"""持仓市值计算功能（v0.4.2+）"""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from src.data.db.trade_repo import TradeRepo
 
 @dataclass(slots=True)
 class FundHolding:
-    """基金持仓（用于市值验证）"""
+    """基金持仓（用于市值计算与对账）。"""
 
     fund_code: str
     fund_name: str
@@ -28,8 +28,8 @@ class FundHolding:
 
 
 @dataclass(slots=True)
-class ImportVerifyResult:
-    """导入账单市值验证结果"""
+class MarketValueResult:
+    """持仓市值计算结果。"""
 
     as_of: date
     holdings: list[FundHolding]
@@ -41,7 +41,7 @@ class ImportVerifyResult:
 
 
 @dependency
-def verify_import_market_value(
+def cal_market_value(
     *,
     as_of: date | None = None,
     use_estimate: bool = False,
@@ -50,28 +50,28 @@ def verify_import_market_value(
     nav_repo: NavRepo | None = None,
     eastmoney_service: EastmoneyClient | None = None,
     calendar_service: CalendarService | None = None,
-) -> ImportVerifyResult:
+) -> MarketValueResult:
     """
-    验证导入账单后的市值计算（v0.4.2+）。
+    计算指定日期的持仓市值（v0.4.2+）。
 
     功能：
-    - 计算指定日期的持仓市值
-    - 优先使用当天官方净值
-    - 净值缺失时的回退策略由 use_estimate 控制
+        - 计算指定日期的持仓市值；
+        - 优先使用当日官方净值；
+        - 净值缺失时的回退策略由 use_estimate 控制。
 
     Args:
-        as_of: 查询日期，默认上一交易日
-        use_estimate: 净值缺失时的回退策略（默认 False）
-            - False: 向前查找最近 7 个交易日的官方净值
-            - True: 使用盘中估值（仅限最近 3 天）
-        trade_repo: 交易仓储（自动注入）
-        fund_repo: 基金仓储（自动注入）
-        nav_repo: 净值仓储（自动注入）
-        eastmoney_service: 东方财富客户端（自动注入）
-        calendar_service: 日历服务（自动注入）
+        as_of: 查询日期，None 时默认使用上一交易日。
+        use_estimate: 净值缺失时的回退策略（默认 False）。
+            - False: 向前查找最近 7 个交易日的官方净值；
+            - True: 使用盘中估值（仅限最近 3 天）。
+        trade_repo: 交易仓储（自动注入）。
+        fund_repo: 基金仓储（自动注入）。
+        nav_repo: 净值仓储（自动注入）。
+        eastmoney_service: 东方财富客户端（自动注入）。
+        calendar_service: 日历服务（自动注入）。
 
     Returns:
-        ImportVerifyResult 包含总市值和明细
+        MarketValueResult：持仓市值及明细。
     """
     # 0. 默认日期：上一交易日
     if as_of is None:
@@ -88,7 +88,7 @@ def verify_import_market_value(
     pending_amt = trade_repo.get_pending_amount(up_to=as_of)
 
     if not holdings_data:
-        return ImportVerifyResult(
+        return MarketValueResult(
             as_of=as_of,
             holdings=[],
             total_market_value=Decimal("0"),
@@ -165,7 +165,7 @@ def verify_import_market_value(
         start=Decimal("0"),
     )
 
-    return ImportVerifyResult(
+    return MarketValueResult(
         as_of=as_of,
         holdings=holdings,
         total_market_value=total_mv,

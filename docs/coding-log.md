@@ -5,20 +5,39 @@
 
 ---
 
-## 2025-12-01 v0.4.2+ 导入账单市值验证工具
+## 2025-12-03 v0.4.2+ 市值查询工具重命名（cal_market_value）
 
 ### 决策
 
-新增独立的市值验证工具，用于验证支付宝账单导入后的总市值对齐。
+将"导入验证"工具重命名为"市值查询"，强调通用性而非特定场景。
+
+**重命名对照**：
+- 文件：`src/flows/import_verify.py` → `src/flows/market_value.py`
+- 函数：`get_import_valuation()` → `cal_market_value()`
+- Result类：`ImportValuationResult` → `MarketValueResult`
+- CLI：`src/cli/verify_import.py` → `src/cli/market_value.py`
+
+**理由**：
+- 功能本质是计算持仓市值，适用于导入验证、日常对账等多种场景
+- 避免语义局限于"导入"操作
+- 命名更清晰直接
+
+---
+
+## 2025-12-01 v0.4.2+ 市值查询工具（原导入账单市值验证）
+
+### 决策
+
+新��独立的市值查询工具，用于计算指定日期的持仓市值（可用于导入后验证、日常对账等）。
 
 **净值回退策略**：
 - 默认使用官方净值，向前查找最近 7 个交易日
 - 可选 `--estimate` 使用盘中估值（仅限最近 3 天）
 - 估值不存储到 navs 表，保持数据纯净
 
-**新增文件**：
-- `src/flows/import_verify.py`：Flow 函数
-- `src/cli/verify_import.py`：CLI 入口
+**文件结构**：
+- `src/flows/market_value.py`：Flow 函数（`cal_market_value()`）
+- `src/cli/market_value.py`：CLI 入口
 - `EastmoneyClient.get_nav_estimate()`：盘中估值接口
 
 **与 roadmap 一致性**：符合 v0.5+ "盘中估值（附加信息，非核心口径）"定位，核心功能不受影响。
