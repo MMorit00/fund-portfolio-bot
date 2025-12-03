@@ -19,7 +19,7 @@
 **新增文件**：
 - `src/flows/import_verify.py`：Flow 函数
 - `src/cli/verify_import.py`：CLI 入口
-- `EastmoneyClient.get_estimated_nav()`：盘中估值接口
+- `EastmoneyClient.get_nav_estimate()`：盘中估值接口
 
 **与 roadmap 一致性**：符合 v0.5+ "盘中估值（附加信息，非核心口径）"定位，核心功能不受影响。
 

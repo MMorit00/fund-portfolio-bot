@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from time import sleep
@@ -12,13 +13,40 @@ import httpx
 from src.core.log import log
 
 
+@dataclass(slots=True)
+class FundSearchResult:
+    """
+    东方财富基金搜索结果（内部模型）。
+
+    仅在本模块内部使用，用于规整 search_fund 的解析结果。
+    """
+
+    fund_code: str
+    name: str
+    market: str
+    ftype: str | None = None
+    fund_type_code: str | None = None
+
+    def to_dict(self) -> dict[str, str | None]:
+        """转换为调用方当前使用的字典形式。"""
+        return {
+            "fund_code": self.fund_code,
+            "name": self.name,
+            "market": self.market,
+            "ftype": self.ftype,
+            "fund_type_code": self.fund_type_code,
+        }
+
+
 class EastmoneyClient:
     """
     东方财富 API 客户端。
 
     职责：
-    - 获取基金净值（get_nav）
+    - 获取历史官方净值（get_nav）
     - 搜索基金信息（search_fund）
+    - 获取盘中估算净值（get_nav_estimate）
+    - 获取基金费率信息（get_fund_fees）
 
     设计原则：
     - 仅负责 HTTP 请求与响应解析，不直接落库；
@@ -59,15 +87,13 @@ class EastmoneyClient:
         )
         self.backoff_base = backoff_base
 
+    # ============================================================
+    # 区域：历史官方净值（get_nav / _build_url / _parse_nav）
+    # ============================================================
+
     def get_nav(self, fund_code: str, day: date) -> Decimal | None:
         """
-        读取东方财富的官方单位净值（骨架实现）。
-
-        当前实现行为：
-        - 根据基金代码与日期构造请求 URL；
-        - 在有限次数内重试 HTTP 请求；
-        - 尝试从响应中解析 NAV 字段并转为 Decimal；
-        - 任一环节异常时记录简要信息并返回 None，不抛出异常。
+        获取官方确认净值，用于计算仓位、市值和交易确认。
 
         Args:
             fund_code: 基金代码。
@@ -92,12 +118,17 @@ class EastmoneyClient:
                     return None
                 nav = self._parse_nav(data)
                 if nav is None or nav <= Decimal("0"):
-                    log(f"[EastmoneyNav] 无效 NAV 数据：fund={fund_code} day={day}")
+                    log(
+                        f"[Client:Eastmoney] 无效 NAV 数据：fund={fund_code} day={day}"
+                    )
                     return None
                 return nav
             except Exception as err:  # noqa: BLE001
                 # 防御性兜底：不向上抛异常，避免打断批量任务
-                log(f"[EastmoneyNav] 获取 NAV 失败：fund={fund_code} day={day} err={err}")
+                log(
+                    "[Client:Eastmoney] 获取 NAV 失败："
+                    f"fund={fund_code} day={day} err={err}"
+                )
                 if attempt >= self.retries:
                     return None
                 attempt += 1
@@ -105,10 +136,7 @@ class EastmoneyClient:
 
     def _build_url(self, fund_code: str, day: date) -> str:
         """
-        构造东方财富净值查询 URL（占位实现）。
-
-        说明：
-        - 真实接入时应根据具体 API 规则拼接查询参数（如代码、日期范围等）。
+        构造东方财富净值查询 URL。
         """
         # f10/lsjz 接口支持 startDate/endDate，按同一天精确取 1 条
         params = {
@@ -135,21 +163,20 @@ class EastmoneyClient:
             if resp.status_code >= 500 or resp.status_code == 429:
                 resp.raise_for_status()
             if resp.status_code != 200:
-                log(f"[EastmoneyNav] HTTP 状态异常：status={resp.status_code}")
+                log(
+                    "[Client:Eastmoney] HTTP 状态异常："
+                    f"status={resp.status_code} url={url}"
+                )
                 return None
             try:
                 return resp.json()
             except ValueError as err:
-                log(f"[EastmoneyNav] JSON 解析失败：url={url} err={err}")
+                log(f"[Client:Eastmoney] JSON 解析失败：url={url} err={err}")
                 return None
 
     def _parse_nav(self, raw: dict) -> Decimal | None:
         """
-        从东方财富响应中解析单位净值（占位实现）。
-
-        说明：
-        - 当前仅为结构占位，假设 raw 中存在某个字段存放净值；
-        - 真实接入时请根据实际字段名做解析。
+        从东方财富响应中解析单位净值。
         """
         # 典型返回结构（示意）：
         # {
@@ -176,6 +203,10 @@ class EastmoneyClient:
         except (InvalidOperation, TypeError):
             return None
 
+    # ============================================================
+    # 区域：基金搜索（search_fund / _do_search / 一组 _search_* 辅助函数）
+    # ============================================================
+
     def search_fund(self, fund_name: str) -> dict | None:
         """
         根据基金名称搜索基金信息。
@@ -194,9 +225,10 @@ class EastmoneyClient:
 
         Returns:
             基金信息字典 {fund_code, name, market, ftype} 或 None。
+        TODO: 后续可考虑返回 FundSearchResult 而非裸 dict，减少 magic string。
         """
         # 提取份额类型（A/C/E 等）
-        share_class = self._extract_share_class(fund_name)
+        share_class = self._search_extract_share_class(fund_name)
 
         # 策略1：先尝试完整名称
         result = self._do_search(fund_name, share_class=share_class)
@@ -204,24 +236,32 @@ class EastmoneyClient:
             return result
 
         # 策略2：提取核心关键词（去掉括号后缀）重试
-        core_name = self._extract_core_name(fund_name)
+        core_name = self._search_extract_core_name(fund_name)
         if core_name and core_name != fund_name:
-            log(f"[EastmoneyNav] 完整名称搜索失败，尝试核心关键词：{core_name}")
+            log(
+                "[Client:Eastmoney] 完整名称搜索失败，"
+                f"尝试核心关键词：{core_name}"
+            )
             result = self._do_search(core_name, share_class=share_class)
             if result is not None:
                 return result
 
         # 策略3：进一步简化（去掉 ETF联接/指数 等后缀）
-        simple_name = self._simplify_name(core_name or fund_name)
+        simple_name = self._search_simplify_name(core_name or fund_name)
         if simple_name and simple_name != core_name and simple_name != fund_name:
-            log(f"[EastmoneyNav] 核心关键词搜索失败，尝试简化名称：{simple_name}")
+            log(
+                "[Client:Eastmoney] 核心关键词搜索失败，"
+                f"尝试简化名称：{simple_name}"
+            )
             result = self._do_search(simple_name, share_class=share_class)
             if result is not None:
                 return result
 
         return None
 
-    def _do_search(self, keyword: str, *, share_class: str | None = None) -> dict | None:
+    def _do_search(
+        self, keyword: str, *, share_class: str | None = None
+    ) -> dict | None:
         """
         执行单次搜索（内部方法）。
 
@@ -240,27 +280,35 @@ class EastmoneyClient:
             data = self._fetch_raw_json(url, headers=headers)
             if data is None:
                 return None
-            result = self._parse_search_result(data, query=keyword, share_class=share_class)
-            if result is None:
+            result_obj = self._parse_search_result(
+                data,
+                query=keyword,
+                share_class=share_class,
+            )
+            if result_obj is None:
                 return None
 
             # 过滤明显不匹配的结果（避免 F0xxxx 等误匹配）
-            code = result.get("fund_code")
-            name = result.get("name", "")
+            code = result_obj.fund_code
+            name = result_obj.name
             if code is None or len(code) != 6 or not str(code).isdigit():
                 return None
 
             # 宽松的关键词匹配
-            if not self._is_name_match(keyword, name):
+            if not self._search_is_name_match(keyword, name):
                 return None
 
-            return result
+            # 对外仍返回 dict，保持现有调用方不变
+            return result_obj.to_dict()
         except Exception as err:  # noqa: BLE001
-            log(f"[EastmoneyNav] 搜索基金失败：keyword={keyword} err={err}")
+            log(
+                "[Client:Eastmoney] 搜索基金失败："
+                f"keyword={keyword} err={err}"
+            )
             return None
 
     @staticmethod
-    def _extract_share_class(fund_name: str) -> str | None:
+    def _search_extract_share_class(fund_name: str) -> str | None:
         """
         从基金名称中提取份额类型（A/C/E/H/I 等）。
 
@@ -284,7 +332,7 @@ class EastmoneyClient:
         return None
 
     @staticmethod
-    def _extract_core_name(fund_name: str) -> str:
+    def _search_extract_core_name(fund_name: str) -> str:
         """提取基金名称的核心部分（去掉括号后缀）。"""
         match = re.match(r"^([^(（]+)", fund_name)
         if match:
@@ -292,7 +340,7 @@ class EastmoneyClient:
         return fund_name
 
     @staticmethod
-    def _simplify_name(fund_name: str) -> str:
+    def _search_simplify_name(fund_name: str) -> str:
         """进一步简化基金名称（去掉 ETF联接/指数 等后缀）。"""
         suffixes = ["ETF联接", "ETF发起联接", "发起联接", "联接", "指数", "ETF"]
         result = fund_name
@@ -304,16 +352,16 @@ class EastmoneyClient:
         result = re.sub(r"指数$", "", result)
         return result.strip()
 
-    def _is_name_match(self, query: str, result_name: str) -> bool:
+    def _search_is_name_match(self, query: str, result_name: str) -> bool:
         """判断搜索结果名称是否与查询匹配（宽松匹配）。"""
-        q_core = self._extract_keywords(query)
-        r_core = self._extract_keywords(result_name)
+        q_core = self._search_extract_keywords(query)
+        r_core = self._search_extract_keywords(result_name)
         if not q_core or not r_core:
             return False
         return q_core in r_core or r_core in q_core
 
     @staticmethod
-    def _extract_keywords(name: str) -> str:
+    def _search_extract_keywords(name: str) -> str:
         """提取基金名称的核心关键词（去掉修饰词）。"""
         core = re.sub(r"[（(].*$", "", name)
         modifiers = ["发起", "人民币", "美元", "港币", "增强", "增强型"]
@@ -323,7 +371,7 @@ class EastmoneyClient:
 
     def _parse_search_result(
         self, raw: dict, *, query: str, share_class: str | None = None
-    ) -> dict | None:
+    ) -> FundSearchResult | None:
         """
         从东方财富搜索响应中解析基金信息。
 
@@ -333,7 +381,7 @@ class EastmoneyClient:
             share_class: 期望的份额类型（A/C/E 等），优先选择匹配的结果。
 
         Returns:
-            基金信息字典或 None（解析失败或无结果）。
+            基金搜索结果或 None（解析失败或无结果）。
         """
         datas = raw.get("Datas")
         if not isinstance(datas, list) or not datas:
@@ -390,20 +438,24 @@ class EastmoneyClient:
                 market = "US_NYSE"
         elif isinstance(base_info, str):
             parts = base_info.split("|")
-            if len(parts) > 0 and "QDII" in parts[0].upper():
+            if parts and "QDII" in parts[0].upper():
                 market = "US_NYSE"
 
-        return {
-            "fund_code": fund_code,
-            "name": name,
-            "market": market,
-            "ftype": ftype,
-            "fund_type_code": fund_type_code,
-        }
+        return FundSearchResult(
+            fund_code=str(fund_code),
+            name=str(name),
+            market=str(market),
+            ftype=ftype or None,
+            fund_type_code=fund_type_code or None,
+        )
 
-    def get_estimated_nav(self, fund_code: str) -> tuple[Decimal, str] | None:
+    # ============================================================
+    # 区域：盘中估算净值（get_nav_estimate）
+    # ============================================================
+
+    def get_nav_estimate(self, fund_code: str) -> tuple[Decimal, str] | None:
         """
-        获取盘中估算净值（仅供展示验证，不用于核心计算）。
+        获取盘中估算净值，仅用于展示与诊断，不参与结算。
 
         数据源：天天基金 fundgz 接口
 
@@ -431,13 +483,19 @@ class EastmoneyClient:
             with httpx.Client(timeout=self.timeout) as client:
                 resp = client.get(url, headers=headers)
                 if resp.status_code != 200:
-                    log(f"[EastmoneyClient] 获取 {fund_code} 估值失败: HTTP {resp.status_code}")
+                    log(
+                        "[Client:Eastmoney] 获取盘中估值失败："
+                        f"fund={fund_code} status={resp.status_code}"
+                    )
                     return None
 
                 # 返回格式：jsonpgz({...});
                 m = re.search(r"\{.+\}", resp.text)
                 if not m:
-                    log(f"[EastmoneyClient] 获取 {fund_code} 估值失败: 无法解析响应")
+                    log(
+                        "[Client:Eastmoney] 获取盘中估值失败："
+                        f"fund={fund_code} 原始响应无法解析"
+                    )
                     return None
 
                 data = json.loads(m.group(0))
@@ -445,21 +503,37 @@ class EastmoneyClient:
                 gztime = data.get("gztime")  # 估值时间 "2025-11-28 15:00"
 
                 if not gsz or not gztime:
-                    log(f"[EastmoneyClient] 获取 {fund_code} 估值失败: 缺少必要字段")
+                    log(
+                        "[Client:Eastmoney] 获取盘中估值失败："
+                        f"fund={fund_code} 缺少必要字段"
+                    )
                     return None
 
                 nav = Decimal(str(gsz))
                 return nav, gztime
 
         except json.JSONDecodeError as e:
-            log(f"[EastmoneyClient] 获取 {fund_code} 估值失败: JSON 解析错误 {e}")
+            log(
+                "[Client:Eastmoney] 获取盘中估值失败："
+                f"fund={fund_code} JSON 解析错误 {e}"
+            )
             return None
         except (InvalidOperation, TypeError, ValueError) as e:
-            log(f"[EastmoneyClient] 获取 {fund_code} 估值失败: 数据转换错误 {e}")
+            log(
+                "[Client:Eastmoney] 获取盘中估值失败："
+                f"fund={fund_code} 数据转换错误 {e}"
+            )
             return None
         except Exception as e:
-            log(f"[EastmoneyClient] 获取 {fund_code} 估值失败: {e}")
+            log(
+                "[Client:Eastmoney] 获取盘中估值失败："
+                f"fund={fund_code} err={e}"
+            )
             return None
+
+    # ============================================================
+    # 区域：基金费率信息（get_fund_fees / _parse_redemption_fees / _get_fees_from_js）
+    # ============================================================
 
     def get_fund_fees(self, fund_code: str) -> dict | None:
         """
@@ -480,6 +554,9 @@ class EastmoneyClient:
 
         Returns:
             费率字典或 None（获取失败）
+
+        TODO: 后续可考虑拆分为“获取原始 HTML/JS + 独立解析规则模块”，
+        EastmoneyClient 只负责 I/O。
         """
         url = f"http://fundf10.eastmoney.com/jjfl_{fund_code}.html"
         headers = {
@@ -491,7 +568,10 @@ class EastmoneyClient:
             with httpx.Client(timeout=self.timeout) as client:
                 resp = client.get(url, headers=headers)
                 if resp.status_code != 200:
-                    log(f"[EastmoneyClient] 获取 {fund_code} 费率失败: HTTP {resp.status_code}")
+                    log(
+                        "[Client:Eastmoney] 获取费率失败："
+                        f"fund={fund_code} status={resp.status_code}"
+                    )
                     return None
 
                 html = resp.text
@@ -536,13 +616,19 @@ class EastmoneyClient:
                     fees["redemption"] = redemption_tiers
 
                 if not fees:
-                    log(f"[EastmoneyClient] 获取 {fund_code} 费率失败: 无法解析费率数据")
+                    log(
+                        "[Client:Eastmoney] 获取费率失败："
+                        f"fund={fund_code} 无法解析费率数据"
+                    )
                     return None
 
                 return fees
 
         except Exception as e:
-            log(f"[EastmoneyClient] 获取 {fund_code} 费率失败: {e}")
+            log(
+                "[Client:Eastmoney] 获取费率失败："
+                f"fund={fund_code} err={e}"
+            )
             return None
 
     def _parse_redemption_fees(self, html: str) -> list[dict] | None:
@@ -558,10 +644,8 @@ class EastmoneyClient:
         Returns:
             赎回费阶梯列表或 None（解析失败）
 
-        TODO（鲁棒性优化）：
-        - 当前使用正则匹配 HTML，如东方财富改版会失效
-        - 建议后续引入 BeautifulSoup/lxml 做 DOM 解析，更稳定
-        - 或考虑多数据源备份（天天基金等）
+        TODO: 当前使用正则匹配 HTML，如东方财富改版会失效，
+        可考虑改用 DOM 解析库或增加备用数据源。
         """
         tiers: list[dict] = []
 
@@ -663,4 +747,3 @@ class EastmoneyClient:
 
         except Exception:
             return None
-

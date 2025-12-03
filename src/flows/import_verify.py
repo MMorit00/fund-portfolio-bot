@@ -130,7 +130,7 @@ def verify_import_market_value(
             # 估值模式（仅限最近 3 天）
             days_diff = (date.today() - as_of).days
             if days_diff <= 3:
-                est_result = eastmoney_service.get_estimated_nav(holding.fund_code)
+                est_result = eastmoney_service.get_nav_estimate(holding.fund_code)
                 if est_result:
                     holding.nav, holding.estimated_time = est_result
                     holding.nav_source = "估值"

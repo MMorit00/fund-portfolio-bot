@@ -117,6 +117,9 @@ def _build_fund_fees(fees_dict: dict) -> FundFees:
     """
     从 EastmoneyClient 返回的 dict 构建 FundFees 对象。
 
+    TODO: 中长期可考虑将 HTML/JS 解析迁移到独立规则模块，
+    EastmoneyClient 只负责 I/O，减少 client 层正则解析逻辑。
+
     Args:
         fees_dict: EastmoneyClient.get_fund_fees() 返回的字典。
 

@@ -363,6 +363,8 @@ def _auto_resolve_funds(
             continue
 
         # 步骤 2: 调用东方财富搜索 API
+        # TODO: EastmoneyClient 后续可直接返回 FundSearchResult，
+        # 这里可相应改为使用强类型对象而非 dict。
         search_result = eastmoney_client.search_fund(fund_name)
         if search_result is None:
             log(f"[Flow:HistoryImport] 未找到匹配基金：{fund_name}")
