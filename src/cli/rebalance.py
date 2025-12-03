@@ -6,7 +6,7 @@ from datetime import date
 
 from src.core.log import log
 from src.core.models import NavQuality
-from src.flows.report import RebalanceResult, make_rebalance_suggestion
+from src.flows.rebalance import RebalanceResult, make_rebalance_suggestion
 
 
 def _format_quality_summary(result: RebalanceResult) -> str | None:

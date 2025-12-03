@@ -5,7 +5,7 @@ import sys
 from datetime import date, timedelta
 
 from src.core.log import log
-from src.flows.market import fetch_navs
+from src.flows.nav import fetch_navs
 
 
 def _daterange(start: date, end: date):
@@ -56,7 +56,9 @@ def main() -> int:
             total_success += result.success
 
             if result.failed_codes:
-                for code in result.failed_codes:
+                for code_date in result.failed_codes:
+                    # failed_codes 格式为 "code@date"，提取 code 部分
+                    code = code_date.split("@")[0]
                     failed_aggregate.setdefault(code, []).append(day)
 
             failed_count = len(result.failed_codes)

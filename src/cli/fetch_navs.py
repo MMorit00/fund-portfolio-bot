@@ -5,7 +5,7 @@ import sys
 from datetime import date
 
 from src.core.log import log
-from src.flows.market import fetch_missing_navs, fetch_navs
+from src.flows.nav import fetch_missing_navs, fetch_navs
 
 
 def _parse_args() -> argparse.Namespace:
