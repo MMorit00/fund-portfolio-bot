@@ -192,4 +192,4 @@ logs/
 .env.production
 .env.staging
 config/local.*
-data
+/data
