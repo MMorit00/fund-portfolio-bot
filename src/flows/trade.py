@@ -54,11 +54,12 @@ def create_trade(
         - 通过 @dependency 装饰器自动注入依赖
         - 测试时可传入 Mock 对象覆盖默认依赖
     """
-    # trade_repo 和 fund_repo 已通过装饰器自动注入，直接使用
+    # 1. 验证基金存在
     fund = fund_repo.get(fund_code)
     if not fund:
         raise ValueError(f"未知基金代码：{fund_code}")
 
+    # 2. 创建并保存交易记录
     trade = Trade(
         id=None,
         fund_code=fund_code,
@@ -70,7 +71,7 @@ def create_trade(
     )
     saved_trade = trade_repo.add(trade)
 
-    # 记录行为日志（仅手动交易，DCA 等自动场景不记录）
+    # 3. 记录行为日志（仅手动交易，DCA 等自动场景不记录）
     if _log_action and action_repo is not None:
         action_repo.add(
             ActionLog(
@@ -87,6 +88,7 @@ def create_trade(
             )
         )
 
+    # 4. 返回已保存的交易
     return saved_trade
 
 
@@ -135,24 +137,28 @@ def confirm_trades(
         - 将符合条件的交易状态更新为 `confirmed`，写入份额与确认用 NAV（定价日 NAV）。
         - 将超期但 NAV 缺失的交易标记为 DELAYED。
     """
-    # trade_repo 和 nav_service 已通过装饰器自动注入
-    # 找到今天应确认的交易（按交易日+T+N）
+    # 1. 获取待确认交易
     to_confirm = trade_repo.list_pending(today)
 
+    # 2. 初始化统计计数器
     confirmed_count = 0
     skipped_count = 0
     delayed_count = 0
     skipped_funds_set: set[str] = set()
 
+    # 3. 遍历交易并确认
     for t in to_confirm:
-        # 仅使用定价日 NAV（由 TradeRepo.add 写入时计算，保证非空）
+        # 3.1 验证定价日
         pricing_day = t.pricing_date
         if pricing_day is None:
             raise ValueError(f"交易记录缺少 pricing_date：trade_id={t.id}")
+
+        # 3.2 获取定价日 NAV
         nav = nav_service.get_nav(t.fund_code, pricing_day)
 
+        # 3.3 根据 NAV 可用性处理
         if nav is not None and nav > Decimal("0"):
-            # 正常确认（confirm 方法已包含重置延迟标记）
+            # NAV 可用 → 正常确认
             shares = quantize_shares(t.amount / nav)
             trade_repo.confirm(t.id or 0, shares)
             confirmed_count += 1
@@ -171,6 +177,7 @@ def confirm_trades(
                 skipped_count += 1
                 skipped_funds_set.add(t.fund_code)
 
+    # 4. 返回统计结果
     return ConfirmResult(
         confirmed_count=confirmed_count,
         skipped_count=skipped_count,
@@ -195,15 +202,16 @@ def list_trades(
     Returns:
         交易列表，按 trade_date 降序、id 降序排列。
     """
+    # 1. 按状态查询
     if status is not None:
         return trade_repo.list_by_status(status)
 
-    # status=None 时，合并所有状态的交易
+    # 2. status=None 时，合并所有状态的交易
     all_trades: list[Trade] = []
     for s in ["pending", "confirmed", "skipped"]:
         all_trades.extend(trade_repo.list_by_status(s))
 
-    # 按 trade_date 降序、id 降序排序
+    # 3. 排序并返回
     all_trades.sort(key=lambda t: (t.trade_date, t.id or 0), reverse=True)
     return all_trades
 
@@ -231,9 +239,10 @@ def cancel_trade(
     副作用：
         将指定交易的 status 从 pending 更新为 skipped。
     """
+    # 1. 取消交易
     trade_repo.cancel(trade_id)
 
-    # 记录行为日志
+    # 2. 记录行为日志
     if action_repo is not None:
         action_repo.add(
             ActionLog(
@@ -283,6 +292,7 @@ def confirm_trade_manual(
         - 建议仅在 NAV 延迟超过 3 天后使用
         - 确认后无法撤销，请仔细核对数据
     """
+    # 1. 验证参数
     if shares <= Decimal("0"):
         raise ValueError(f"份额必须大于 0：{shares}")
     if nav <= Decimal("0"):
@@ -290,11 +300,12 @@ def confirm_trade_manual(
 
     shares = quantize_shares(shares)
 
+    # 2. 验证交易状态
     trade = trade_repo.get(trade_id)
     if not trade:
         raise ValueError(f"交易不存在：trade_id={trade_id}")
     if trade.status != "pending":
         raise ValueError(f"只能确认 pending 交易：trade_id={trade_id}，当前状态={trade.status}")
 
-    # 使用 confirm 方法确认交易（会自动重置延迟标记）
+    # 3. 确认交易（会自动重置延迟标记）
     trade_repo.confirm(trade_id, shares)
