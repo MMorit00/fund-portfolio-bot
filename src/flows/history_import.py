@@ -34,13 +34,13 @@ from src.data.db.trade_repo import TradeRepo
 from src.flows.fund_fees import sync_fund_fees
 
 # 支付宝 CSV 常量
-_ALIPAY_ENCODING = "gbk"
-_ALIPAY_SKIP_ROWS = 5
-_ALIPAY_FUND_COUNTERPARTY = "蚂蚁财富-蚂蚁（杭州）基金销售有限公司"
-_ALIPAY_FUND_STATUS = "资金转移"
+_alipay_encoding = "gbk"
+_alipay_skip_rows = 5
+_alipay_fund_counterparty = "蚂蚁财富-蚂蚁（杭州）基金销售有限公司"
+_alipay_fund_status = "资金转移"
 
 # 商品名称正则：蚂蚁财富-{基金名称}-{买入/卖出}
-_ALIPAY_PRODUCT_PATTERN = re.compile(r"^蚂蚁财富-(.+)-(买入|卖出)$")
+_alipay_product_pattern = re.compile(r"^蚂蚁财富-(.+)-(买入|卖出)$")
 
 # 导入模式
 ImportMode = Literal["dry_run", "apply"]
@@ -143,7 +143,7 @@ def import_trades_from_csv(
             elif record.is_valid:
                 succeeded += 1
 
-    # 步骤 7: 构建结果
+    # 步骤 8: 构建结果
     return _build_result(records, succeeded, fund_repo)
 
 
@@ -181,42 +181,41 @@ def _parse_alipay_csv(csv_path: str) -> list[ImportRecord]:
     """
     records: list[ImportRecord] = []
 
-    with open(csv_path, encoding=_ALIPAY_ENCODING, newline="") as f:
-        # 跳过头部行
-        for _ in range(_ALIPAY_SKIP_ROWS):
+    # 1. 打开文件并跳过头部行
+    with open(csv_path, encoding=_alipay_encoding, newline="") as f:
+        for _ in range(_alipay_skip_rows):
             f.readline()
 
         reader = csv.reader(f)
-        for row_num, row in enumerate(reader, start=_ALIPAY_SKIP_ROWS + 1):
-            # 跳过空行或列数不足的行
+        # 2. 逐行解析
+        for row_num, row in enumerate(reader, start=_alipay_skip_rows + 1):
+            # 2.1 跳过空行或列数不足的行
             if len(row) < 16:
                 continue
 
-            # 清理每列首尾空白和制表符
+            # 2.2 清理每列首尾空白和制表符
             row = [col.strip() for col in row]
 
-            # 过滤基金交易：交易对方 + 资金状态
+            # 2.3 过滤基金交易：交易对方 + 资金状态
             counterparty = row[7]
             fund_status = row[15]
-            if counterparty != _ALIPAY_FUND_COUNTERPARTY:
+            if counterparty != _alipay_fund_counterparty:
                 continue
-            if fund_status != _ALIPAY_FUND_STATUS:
+            if fund_status != _alipay_fund_status:
                 continue
 
-            # 解析交易状态，跳过"交易关闭"
+            # 2.4 解析交易状态，跳过"交易关闭"
             alipay_status = row[11]
             target_status = _map_alipay_status(alipay_status)
             if target_status is None:
                 continue  # 交易关闭，跳过
 
-            # 解析商品名称 → 基金名称 + 交易类型
+            # 2.5 解析商品名称 → 基金名称 + 交易类型
             product_name = row[8]
             parsed = _parse_alipay_product(product_name)
             if parsed is None:
-                # 商品名称格式异常，创建错误记录
                 records.append(
-                    ImportRecord(
-                        source="alipay",
+                    _create_error_record(
                         external_id=row[0],
                         raw_fund_name=product_name,
                         trade_type="buy",  # 占位
@@ -231,13 +230,12 @@ def _parse_alipay_csv(csv_path: str) -> list[ImportRecord]:
 
             fund_name, trade_type = parsed
 
-            # 解析交易时间
+            # 2.6 解析交易时间
             try:
                 trade_time = datetime.strptime(row[2], "%Y-%m-%d %H:%M:%S")
             except ValueError:
                 records.append(
-                    ImportRecord(
-                        source="alipay",
+                    _create_error_record(
                         external_id=row[0],
                         raw_fund_name=fund_name,
                         trade_type=trade_type,
@@ -250,15 +248,14 @@ def _parse_alipay_csv(csv_path: str) -> list[ImportRecord]:
                 )
                 continue
 
-            # 解析金额
+            # 2.7 解析金额
             try:
                 amount = Decimal(row[9])
                 if amount <= 0:
                     raise InvalidOperation("金额必须为正数")
             except InvalidOperation:
                 records.append(
-                    ImportRecord(
-                        source="alipay",
+                    _create_error_record(
                         external_id=row[0],
                         raw_fund_name=fund_name,
                         trade_type=trade_type,
@@ -271,7 +268,7 @@ def _parse_alipay_csv(csv_path: str) -> list[ImportRecord]:
                 )
                 continue
 
-            # 创建有效记录（使用支付宝订单号作为 external_id）
+            # 2.8 创建有效记录（使用支付宝订单号作为 external_id）
             records.append(
                 ImportRecord(
                     source="alipay",
@@ -284,6 +281,7 @@ def _parse_alipay_csv(csv_path: str) -> list[ImportRecord]:
                 )
             )
 
+    # 3. 返回解析结果
     return records
 
 
@@ -311,12 +309,51 @@ def _parse_alipay_product(product_name: str) -> tuple[str, TradeType] | None:
     Returns:
         (基金名称, 交易类型) 或 None（格式异常）。
     """
-    match = _ALIPAY_PRODUCT_PATTERN.match(product_name)
+    match = _alipay_product_pattern.match(product_name)
     if not match:
         return None
     fund_name = match.group(1)
     trade_type: TradeType = "buy" if match.group(2) == "买入" else "sell"
     return fund_name, trade_type
+
+
+def _create_error_record(
+    external_id: str,
+    raw_fund_name: str,
+    trade_type: TradeType,
+    trade_time: datetime,
+    amount: Decimal,
+    target_status: TradeStatus,
+    error_type: str,
+    error_message: str,
+) -> ImportRecord:
+    """
+    创建错误记录（统一构造逻辑）。
+
+    Args:
+        external_id: 外部订单号。
+        raw_fund_name: 原始基金名称。
+        trade_type: 交易类型。
+        trade_time: 交易时间。
+        amount: 金额。
+        target_status: 目标状态。
+        error_type: 错误类型。
+        error_message: 错误消息。
+
+    Returns:
+        ImportRecord 错误记录。
+    """
+    return ImportRecord(
+        source="alipay",
+        external_id=external_id,
+        raw_fund_name=raw_fund_name,
+        trade_type=trade_type,
+        trade_time=trade_time,
+        amount=amount,
+        target_status=target_status,
+        error_type=error_type,
+        error_message=error_message,
+    )
 
 
 def _auto_resolve_funds(
@@ -342,8 +379,7 @@ def _auto_resolve_funds(
         首次遇到新基金时，自动创建 funds 表记录。
         解析失败的基金会在后续 _map_funds 中被标记为 error。
     """
-
-    # 收集所有唯一的基金名称
+    # 1. 收集所有唯一的基金名称
     unique_fund_names = {
         record.raw_fund_name
         for record in records
@@ -355,14 +391,15 @@ def _auto_resolve_funds(
 
     log(f"[Flow:HistoryImport] 自动解析基金（共 {len(unique_fund_names)} 只）...")
 
+    # 2. 遍历基金名称，搜索并创建记录
     resolved_count = 0
     for fund_name in unique_fund_names:
-        # 步骤 1: 检查本地是否已存在
+        # 2.1 检查本地是否已存在
         if fund_repo.find_by_external_name(fund_name) is not None:
             resolved_count += 1
             continue
 
-        # 步骤 2: 调用东方财富搜索 API
+        # 2.2 调用东方财富搜索 API
         # TODO: EastmoneyClient 后续可直接返回 FundSearchResult，
         # 这里可相应改为使用强类型对象而非 dict。
         search_result = eastmoney_client.search_fund(fund_name)
@@ -370,7 +407,7 @@ def _auto_resolve_funds(
             log(f"[Flow:HistoryImport] 未找到匹配基金：{fund_name}")
             continue
 
-        # 步骤 3: 创建基金记录
+        # 2.3 创建基金记录
         fund_code = search_result["fund_code"]
         name = search_result["name"]
         market = search_result["market"]
@@ -379,11 +416,12 @@ def _auto_resolve_funds(
         log(f"[Flow:HistoryImport] 创建基金：{fund_name} → {fund_code} ({asset_class.value})")
         fund_repo.add(fund_code, name, asset_class, market, external_name=fund_name)
 
-        # 自动抓取费率（v0.4.3 新增）
+        # 2.4 自动抓取费率（v0.4.3 新增）
         sync_fund_fees(fund_code)
 
         resolved_count += 1
 
+    # 3. 记录解析结果
     log(f"[Flow:HistoryImport] 成功解析 {resolved_count}/{len(unique_fund_names)} 只基金")
 
 
@@ -495,18 +533,19 @@ def _fetch_navs(
         nav_repo: 净值仓储（缓存查询）。
         calendar_service: 日历服务（用于计算定价日）。
     """
-    # 缓存：(fund_code, pricing_date) → nav
+    # 1. 初始化缓存
     nav_cache: dict[tuple[str, str], Decimal | None] = {}
 
+    # 2. 遍历记录抓取 NAV
     for record in records:
-        # 跳过已有错误或未完成映射的记录
+        # 2.1 跳过已有错误或未完成映射的记录
         if record.error_type is not None or record.fund_code is None or record.market is None:
             continue
 
         fund_code = record.fund_code
         market: MarketType = record.market
 
-        # 计算定价日（关键修复：使用 pricing_date 而非 trade_date）
+        # 2.2 计算定价日（关键修复：使用 pricing_date 而非 trade_date）
         try:
             policy = default_policy(market)
             pricing_date = calc_pricing_date(record.trade_date, policy, calendar_service)
@@ -519,7 +558,7 @@ def _fetch_navs(
 
         cache_key = (fund_code, str(pricing_date))
 
-        # 查缓存
+        # 2.3 查询 NAV（内存缓存 → 本地数据库 → 东方财富 API）
         if cache_key in nav_cache:
             nav = nav_cache[cache_key]
         else:
@@ -533,6 +572,7 @@ def _fetch_navs(
                     nav_repo.upsert(fund_code, pricing_date, nav)
             nav_cache[cache_key] = nav
 
+        # 2.4 填充 NAV 或标记错误
         if nav is not None:
             record.nav = nav
         elif record.target_status == "confirmed":
@@ -644,15 +684,17 @@ def _write_trades(
     from src.core.models.action import ActionLog
     from src.core.models.trade import Trade
 
+    # 1. 初始化计数器和文件名
     succeeded = 0
     csv_name = Path(csv_path).name
 
+    # 2. 遍历记录并写入
     for record in records:
-        # 跳过重复记录
+        # 2.1 跳过重复记录
         if record.error_type == "duplicate":
             continue
 
-        # 判断是否可以写入
+        # 2.2 判断是否可以写入
         if record.target_status == "confirmed":
             # confirmed 记录需要 can_confirm
             if not record.can_confirm:
@@ -662,7 +704,7 @@ def _write_trades(
             if not record.is_valid:
                 continue
 
-        # 构造 Trade 对象（nav 已存入 navs 表，不冗余存储到 trades）
+        # 2.3 构造 Trade 对象（nav 已存入 navs 表，不冗余存储到 trades）
         trade = Trade(
             id=None,
             fund_code=record.fund_code,
@@ -676,11 +718,11 @@ def _write_trades(
             external_id=record.external_id,
         )
 
-        # 写入 trades 表
+        # 2.4 写入 trades 表
         saved_trade = trade_repo.add(trade)
         succeeded += 1
 
-        # 补录 ActionLog
+        # 2.5 补录 ActionLog
         if with_actions and action_repo is not None:
             action_log = ActionLog(
                 id=None,
@@ -696,6 +738,7 @@ def _write_trades(
             )
             action_repo.add(action_log)
 
+    # 3. 返回成功数量
     return succeeded
 
 
