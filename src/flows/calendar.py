@@ -11,36 +11,45 @@ from src.core.dependency import dependency
 from src.core.log import log
 from src.data.db.db_helper import DbHelper
 
+# ============================================================
+# 区域：结果数据模型（刷新 / 同步 / 修补）
+# ============================================================
+
 
 @dataclass(slots=True)
 class RefreshCalendarResult:
     """日历刷新结果统计。"""
 
-    total_rows: int
-    affected_rows: int
+    total_days: int
+    updated_days: int
 
 
 @dataclass(slots=True)
 class SyncCalendarResult:
     """日历同步结果统计。"""
 
-    total_rows: int
-    affected_rows: int
-    opens: int
+    total_days: int
+    updated_days: int
+    open_days: int
 
 
 @dataclass(slots=True)
 class PatchCalendarResult:
     """日历修补结果统计（当前仅支持 CN_A）。"""
 
-    total_rows: int
-    inserts: int
-    patches: int
+    total_days: int
+    insert_days: int
+    update_days: int
     start_date: date
     end_date: date
 
 
-def _ensure_calendar_table(conn) -> None:
+# ============================================================
+# 区域：内部工具函数（建表 / 市场映射）
+# ============================================================
+
+
+def _ensure_trading_calendar_table(conn) -> None:
     """确保 trading_calendar 表存在。"""
     conn.execute(
         """
@@ -61,7 +70,7 @@ def refresh_calendar(
     db_helper: DbHelper | None = None,
 ) -> RefreshCalendarResult:
     """
-    从 CSV 导入或更新交易日历（v0.3.4 新增）。
+    从 CSV 导入或更新交易日历。
 
     CSV 格式支持：
         1) 完整格式：market,day,is_trading_day
@@ -89,7 +98,7 @@ def refresh_calendar(
     conn = db_helper.get_connection()
 
     # 确保表存在
-    _ensure_calendar_table(conn)
+    _ensure_trading_calendar_table(conn)
 
     # 读取 CSV
     rows: list[tuple[str, str, int]] = []
@@ -120,11 +129,14 @@ def refresh_calendar(
         )
         affected = cur.rowcount or 0
 
-    log(f"[Calendar] CSV 导入完成：total={len(rows)} affected={affected}")
-    return RefreshCalendarResult(total_rows=len(rows), affected_rows=affected)
+    log(
+        "[Flow:Calendar][Refresh] CSV 导入完成："
+        f"total_days={len(rows)} updated_days={affected}"
+    )
+    return RefreshCalendarResult(total_days=len(rows), updated_days=affected)
 
 
-def _map_market_to_xc_code(market: str) -> str:
+def _map_market_to_exchange_code(market: str) -> str:
     """
     将本项目的 market 标识映射到 exchange_calendars 代码。
 
@@ -184,12 +196,15 @@ def sync_calendar(
             "  2. 或使用 'calendar refresh' 命令从 CSV 导入日历"
         ) from exc
 
-    ex_code = _map_market_to_xc_code(market)
+    ex_code = _map_market_to_exchange_code(market)
     cal = xc.get_calendar(ex_code)
     schedule = cal.schedule.loc[str(start) : str(end)]
     if schedule.empty:
-        log(f"[Calendar:sync] ⚠️ exchange_calendars 无数据：market={market} {start}..{end}")
-        return SyncCalendarResult(total_rows=0, affected_rows=0, opens=0)
+        log(
+            "[Flow:Calendar][Sync] ⚠️ exchange_calendars 无数据："
+            f"market={market} {start}..{end}"
+        )
+        return SyncCalendarResult(total_days=0, updated_days=0, open_days=0)
 
     trading_days_set = set(schedule.index.date)
     max_known = max(trading_days_set)
@@ -198,10 +213,10 @@ def sync_calendar(
     effective_end = min(end, max_known)
     if effective_end < start:
         log(
-            f"[Calendar:sync] ⚠️ 有效日期范围为空："
+            "[Flow:Calendar][Sync] ⚠️ 有效日期范围为空："
             f"market={market} start={start} effective_end={effective_end}"
         )
-        return SyncCalendarResult(total_rows=0, affected_rows=0, opens=0)
+        return SyncCalendarResult(total_days=0, updated_days=0, open_days=0)
 
     rows: list[tuple[str, str, int]] = []
     total_days = (effective_end - start).days + 1
@@ -211,7 +226,7 @@ def sync_calendar(
         rows.append((market, current.isoformat(), is_trading))
 
     conn = db_helper.get_connection()
-    _ensure_calendar_table(conn)
+    _ensure_trading_calendar_table(conn)
 
     with conn:
         cur = conn.executemany(
@@ -224,20 +239,17 @@ def sync_calendar(
         )
         affected = cur.rowcount or 0
 
-    opens = sum(1 for _, _, v in rows if v == 1)
+    open_days = sum(1 for _, _, v in rows if v == 1)
     log(
-        f"[Calendar:sync] 同步完成：market={market} "
-        f"range={start}..{effective_end} total={len(rows)} opens={opens}"
+        "[Flow:Calendar][Sync] 同步完成："
+        f"market={market} range={start}..{effective_end} "
+        f"total_days={len(rows)} updated_days={affected} open_days={open_days}"
     )
-    return SyncCalendarResult(
-        total_rows=len(rows),
-        affected_rows=affected,
-        opens=opens,
-    )
+    return SyncCalendarResult(total_days=len(rows), updated_days=affected, open_days=open_days)
 
 
 @dependency
-def patch_calendar_cn_a(
+def patch_cn_a_calendar(
     *,
     lookback_days: int = 30,
     forward_days: int = 365,
@@ -275,7 +287,7 @@ def patch_calendar_cn_a(
             "  3. 或使用 'calendar refresh' 命令从 CSV 导入日历"
         ) from exc
 
-    log("[Calendar:patch] 正在从新浪财经(Akshare)拉取最新 A 股日历…")
+    log("[Flow:Calendar][Patch] 正在从新浪财经(Akshare)拉取最新 A 股日历…")
 
     # 1) 获取交易日列表（全部为交易日）
     df = ak.tool_trade_date_hist_sina()
@@ -290,16 +302,16 @@ def patch_calendar_cn_a(
     today = date.today()
     start_date = today - timedelta(days=lookback_days)
     max_remote_date = max(trade_dates)
-    log(f"[Calendar:patch] 数据源最大已知日期: {max_remote_date}")
+    log(f"[Flow:Calendar][Patch] 数据源最大已知日期: {max_remote_date}")
 
     target_end_date = today + timedelta(days=forward_days)
     end_date = min(target_end_date, max_remote_date)
     if end_date < start_date:
-        log("[Calendar:patch] ⚠️ 数据源数据过旧，无需修补（end_date < start_date）")
+        log("[Flow:Calendar][Patch] ⚠️ 数据源数据过旧，无需修补（end_date < start_date）")
         return PatchCalendarResult(
-            total_rows=0,
-            inserts=0,
-            patches=0,
+            total_days=0,
+            insert_days=0,
+            update_days=0,
             start_date=start_date,
             end_date=end_date,
         )
@@ -312,7 +324,7 @@ def patch_calendar_cn_a(
         rows.append(("CN_A", current.isoformat(), is_trading))
 
     conn = db_helper.get_connection()
-    _ensure_calendar_table(conn)
+    _ensure_trading_calendar_table(conn)
 
     # 3) 统计“补修”与“新增”
     existing_rows = conn.execute(
@@ -325,14 +337,14 @@ def patch_calendar_cn_a(
     ).fetchall()
     existing: dict[str, int] = {str(r[0]): int(r[1]) for r in existing_rows}
 
-    inserts = 0
-    patches = 0
+    insert_days = 0
+    update_days = 0
     for _m, day_str, val in rows:
         old = existing.get(day_str)
         if old is None:
-            inserts += 1
+            insert_days += 1
         elif old != val:
-            patches += 1
+            update_days += 1
 
     with conn:
         cur = conn.executemany(
@@ -346,13 +358,13 @@ def patch_calendar_cn_a(
         _ = cur.rowcount or 0
 
     log(
-        f"[Calendar:patch] A 股日历修补完成：范围={start_date} -> {end_date}，"
-        f"补修天数={patches}，新增天数={inserts}"
+        "[Flow:Calendar][Patch] A 股日历修补完成："
+        f"范围={start_date} -> {end_date}，补修天数={update_days}，新增天数={insert_days}"
     )
     return PatchCalendarResult(
-        total_rows=len(rows),
-        inserts=inserts,
-        patches=patches,
+        total_days=len(rows),
+        insert_days=insert_days,
+        update_days=update_days,
         start_date=start_date,
         end_date=end_date,
     )

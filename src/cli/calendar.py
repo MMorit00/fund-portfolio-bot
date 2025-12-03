@@ -6,7 +6,7 @@ from datetime import date
 
 from src.core.log import log
 from src.flows.calendar import (
-    patch_calendar_cn_a,
+    patch_cn_a_calendar,
     refresh_calendar,
     sync_calendar,
 )
@@ -15,7 +15,7 @@ from src.flows.calendar import (
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="python -m src.cli.calendar",
-        description="交易日历管理（v0.3.4+）：CSV 刷新 / exchange_calendars 同步 / Akshare 修补",
+        description="交易日历管理：CSV 刷新 / exchange_calendars 同步 / Akshare 修补",
     )
     subparsers = parser.add_subparsers(dest="command", required=True, help="子命令")
 
@@ -77,7 +77,10 @@ def _do_refresh(args: argparse.Namespace) -> int:
         csv_path = args.csv
         log(f"[Calendar:refresh] 从 CSV 刷新日历：{csv_path}")
         result = refresh_calendar(csv_path=csv_path)
-        log(f"✅ 日历刷新成功：total={result.total_rows}, affected={result.affected_rows}")
+        log(
+            "✅ 日历刷新成功："
+            f"total_days={result.total_days}, updated_days={result.updated_days}"
+        )
         return 0
     except FileNotFoundError as err:
         log(f"❌ 文件不存在：{err}")
@@ -100,7 +103,8 @@ def _do_sync(args: argparse.Namespace) -> int:
         result = sync_calendar(market=market, start=start, end=end)
         log(
             "✅ 日历同步完成："
-            f"total={result.total_rows}, affected={result.affected_rows}, opens={result.opens}"
+            f"total_days={result.total_days}, updated_days={result.updated_days}, "
+            f"open_days={result.open_days}"
         )
         return 0
     except ValueError as err:
@@ -120,11 +124,11 @@ def _do_patch_cn_a(args: argparse.Namespace) -> int:
             "[Calendar:patch] 使用 Akshare 修补 CN_A 日历："
             f"back={back} days, forward={forward} days"
         )
-        result = patch_calendar_cn_a(
+        result = patch_cn_a_calendar(
             lookback_days=back,
             forward_days=forward,
         )
-        if result.total_rows == 0:
+        if result.total_days == 0:
             log(
                 "✅ 日历无需要修补的变更："
                 f"范围={result.start_date} -> {result.end_date}"
@@ -133,7 +137,7 @@ def _do_patch_cn_a(args: argparse.Namespace) -> int:
             log(
                 "✅ A 股日历修补完成："
                 f"范围={result.start_date} -> {result.end_date}，"
-                f"补修天数={result.patches}，新增天数={result.inserts}"
+                f"补修天数={result.update_days}，新增天数={result.insert_days}"
             )
         return 0
     except Exception as err:  # noqa: BLE001
@@ -143,7 +147,7 @@ def _do_patch_cn_a(args: argparse.Namespace) -> int:
 
 def main() -> int:
     """
-    交易日历管理 CLI（v0.3.4+）。
+    交易日历管理 CLI。
 
     Returns:
         退出码：0=成功；4=参数错误；5=其他失败。
