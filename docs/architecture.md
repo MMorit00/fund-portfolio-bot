@@ -117,10 +117,21 @@ scripts/       # 辅助脚本
 
 | 层 | 目录 | 职责 |
 |---|---|---|
-| 入口层 | `src/cli` | 命令行参数解析 + 一行调用 Flow 函数 |
+| 入口层 | `src/cli` | 命令行参数解析 + Flow 函数调用 + 结果格式化输出 |
 | 流程层 | `src/flows` | 业务逻辑编排（纯函数 + @dependency 装饰器） |
 | 核心层 | `src/core` | 配置 + 模型 + 规则 + 依赖注入（DI） |
 | 数据层 | `src/data` | 数据库访问 + 外部客户端 |
+
+**CLI 层标准结构**（v0.4.2+）：
+
+```python
+def _parse_args() -> argparse.Namespace: ...  # 参数解析
+def _format_*(...) -> None: ...                # 格式化输出（可选）
+def _do_*(...) -> int: ...                     # 执行命令（返回码：0/4/5）
+def main() -> int: ...                         # 路由入口
+```
+
+规范：职责分离 + 数字注释（`# 1.` `# 2.`）+ 统一 `log()` + 标准返回码
 
 **命名约定**：
 - Repo 类：`TradeRepo`、`NavRepo`、`FundRepo`（数据库访问）

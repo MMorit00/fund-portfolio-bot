@@ -26,6 +26,47 @@ uv run python -m src.cli.xxx
 
 配置统一在 `src/core/config.py` 读取。
 
+## CLI 命令速查表
+
+| 分类 | 命令 | 说明 |
+|------|------|------|
+| **配置管理** | | |
+| | `fund add` | 添加基金 |
+| | `fund list` | 查看基金列表 |
+| | `fund remove` | 删除基金 |
+| | `fund sync-fees` | 同步费率（从东方财富）|
+| | `fund fees` | 查看基金费率 |
+| | `dca_plan add` | 添加定投计划 |
+| | `dca_plan list` | 查看定投计划 |
+| | `dca_plan enable/disable` | 启用/禁用定投 |
+| | `dca_plan delete` | 删除定投计划 |
+| | `alloc set` | 设置资产配置目标 |
+| | `alloc show` | 查看资产配置 |
+| | `alloc delete` | 删除资产配置 |
+| **交易确认** | | |
+| | `trade buy` | 手动买入交易 |
+| | `trade sell` | 手动卖出交易 |
+| | `trade list` | 查询交易记录 |
+| | `trade cancel` | 取消 pending 交易 |
+| | `trade confirm-manual` | 手动确认交易（NAV 缺失场景）|
+| | `confirm` | 自动确认到期交易 |
+| | `dca run` | 执行定投（创建交易）|
+| | `dca skip` | 跳过定投 |
+| **数据报告** | | |
+| | `fetch_navs` | 抓取净值（单日/指定基金）|
+| | `fetch_navs_range` | 批量抓取净值（日期区间）|
+| | `report` | 生成日报（市值/份额视图）|
+| | `rebalance` | 再平衡建议（独立查看）|
+| | `market_value` | 持仓市值查询 |
+| **行为数据** | | |
+| | `action list` | 查询行为日志 |
+| **日历管理** | | |
+| | `calendar refresh` | 从 CSV 刷新日历 |
+| | `calendar sync` | 使用 exchange_calendars 同步 |
+| | `calendar patch-cn-a` | 使用 Akshare 修补 A 股日历 |
+
+> 每个命令的详细用法和参数见下文各章节。
+
 ## 数据库初始化
 
 ```bash

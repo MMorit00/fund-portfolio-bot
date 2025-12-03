@@ -33,6 +33,9 @@ description: Applies the fund-portfolio-bot Python coding conventions, including
   - 主要职责
   - 关键业务约束或注意点
 - Docstring 不需要重复类型信息（类型以注解为准）。
+- **数字标签注释**（CLI 层规范）：
+  - 函数内部用 `# 1.` `# 2.` `# 3.` 标记逻辑步骤
+  - 示例：`# 1. 解析参数` → `# 2. 调用 Flow` → `# 3. 格式化输出`
 - 注释只在业务规则不直观时补充解释，避免噪音注释。
 
 ## 模块与类内部结构
@@ -57,6 +60,11 @@ description: Applies the fund-portfolio-bot Python coding conventions, including
   - `"normal"`, `"delayed"`, `"pending"`
 - 文件名、函数名、变量名：`snake_case`
 - 类名：`PascalCase`
+- **CLI 层函数命名**（v0.4.2+ 统一规范）：
+  - `_parse_args()`：参数解析函数
+  - `_format_*()`：格式化输出辅助函数（如 `_format_result()`, `_format_fees()`）
+  - `_do_*()`：命令执行函数（如 `_do_buy()`, `_do_list()`, `_do_confirm()`）
+  - `main()`：CLI 主入口，只做路由
 
 ## 分层与配置相关约束
 
