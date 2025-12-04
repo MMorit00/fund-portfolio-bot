@@ -135,6 +135,22 @@ class DcaPlanRepo:
             raise ValueError(f"定投计划不存在：{fund_code}")
         self.conn.commit()
 
+    def list_by_fund(self, fund_code: str) -> list[DcaPlan]:
+        """
+        查询指定基金的所有定投计划（v0.4.3 DCA 回填使用）。
+
+        Args:
+            fund_code: 基金代码。
+
+        Returns:
+            该基金的定投计划列表（active + disabled），当前约束下最多 1 个。
+        """
+        rows = self.conn.execute(
+            "SELECT * FROM dca_plans WHERE fund_code = ?",
+            (fund_code,),
+        ).fetchall()
+        return [_row_to_plan(r) for r in rows]
+
 
 def _row_to_plan(row: sqlite3.Row) -> DcaPlan:
     """将 SQLite Row 转换为 DcaPlan 对象。"""

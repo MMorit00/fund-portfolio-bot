@@ -46,6 +46,7 @@ from src.data.db.db_helper import DbHelper
 from src.data.db.dca_plan_repo import DcaPlanRepo
 from src.data.db.fund_fee_repo import FundFeeRepo
 from src.data.db.fund_repo import FundRepo
+from src.data.db.import_batch_repo import ImportBatchRepo
 from src.data.db.nav_repo import NavRepo
 from src.data.db.trade_repo import TradeRepo
 
@@ -241,3 +242,20 @@ def get_action_repo() -> ActionRepo:
     """
     conn = get_db_connection()
     return ActionRepo(conn)
+
+
+@register("import_batch_repo")
+def get_import_batch_repo() -> ImportBatchRepo:
+    """
+    获取导入批次仓储（v0.4.3 新增）。
+
+    Returns:
+        导入批次仓储实例。
+
+    注册名：import_batch_repo
+
+    说明：
+        用于历史导入的批次追溯和撤销，不影响手动/自动交易。
+    """
+    conn = get_db_connection()
+    return ImportBatchRepo(conn)

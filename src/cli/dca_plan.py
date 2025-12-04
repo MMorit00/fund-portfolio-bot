@@ -12,6 +12,7 @@ from src.flows.config import (
     enable_dca_plan,
     list_dca_plans,
 )
+from src.flows.dca_backfill import backfill_dca_for_batch
 from src.flows.dca_infer import infer_dca_plans
 
 
@@ -83,6 +84,27 @@ def _parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help="只分析指定基金代码（默认分析所有基金）",
+    )
+
+    # ========== backfill 子命令 ==========
+    backfill_parser = subparsers.add_parser("backfill", help="回填历史导入交易的 DCA 归属")
+    backfill_parser.add_argument(
+        "--batch-id",
+        type=int,
+        required=True,
+        help="导入批次 ID",
+    )
+    backfill_parser.add_argument(
+        "--mode",
+        choices=["dry-run", "apply"],
+        default="dry-run",
+        help="运行模式（默认 dry-run）",
+    )
+    backfill_parser.add_argument(
+        "--fund",
+        type=str,
+        default=None,
+        help="只回填指定基金代码（默认全部）",
     )
 
     return parser.parse_args()
@@ -238,9 +260,82 @@ def _do_infer(args: argparse.Namespace) -> int:
         return 5
 
 
+def _do_backfill(args: argparse.Namespace) -> int:
+    """执行 backfill 命令：回填历史导入交易的 DCA 归属。"""
+    try:
+        # 1. 解析参数
+        batch_id = args.batch_id
+        mode = args.mode.replace("-", "_")  # "dry-run" → "dry_run"
+        fund_code = args.fund
+
+        log(
+            f"[DCA:backfill] 回填 DCA 归属（{'干跑' if mode == 'dry_run' else '实际执行'}）："
+            f"batch_id={batch_id}, fund={fund_code or 'ALL'}"
+        )
+
+        # 2. 调用回填 Flow
+        result = backfill_dca_for_batch(
+            batch_id=batch_id,
+            mode=mode,
+            fund_code=fund_code,
+        )
+
+        # 3. 格式化输出
+        _format_backfill_result(result)
+
+        return 0
+    except Exception as err:  # noqa: BLE001
+        log(f"❌ 回填 DCA 归属失败：{err}")
+        return 5
+
+
+def _format_backfill_result(result) -> None:  # noqa: ANN001
+    """格式化回填结果输出。"""
+    mode_label = "dry-run" if result.mode == "dry_run" else "apply"
+    log(f"\n🔄 DCA 回填结果（{mode_label} 模式）")
+    log(f"   Batch ID: {result.batch_id}")
+    log(f"   基金范围: {result.fund_code_filter or '全部'}")
+    log(f"   总交易数: {result.total_trades} 笔（仅 buy）")
+    log(f"   匹配 DCA: {result.matched_count} 笔")
+    log(f"   匹配率: {result.match_rate * 100:.1f}%")
+
+    if result.mode == "apply":
+        log(f"   已更新: {result.updated_count} 笔")
+
+    # 按基金显示匹配详情
+    if result.fund_summaries:
+        log("\n📊 基金匹配详情:")
+        for summary in result.fund_summaries:
+            icon = "✅" if summary.has_dca_plan else "❌"
+            log(f"   {icon} {summary.fund_code} ({summary.total_trades} 笔交易)")
+
+            if summary.has_dca_plan:
+                log(f"      定投计划: {summary.dca_plan_info}")
+                log(f"      匹配结果: {summary.matched_trades}/{summary.total_trades} 笔")
+
+                # dry-run 模式显示详细匹配原因（仅显示前5笔）
+                if result.mode == "dry_run" and summary.matches:
+                    log("      样例:")
+                    for match in summary.matches[:5]:
+                        match_icon = "✓" if match.matched else "✗"
+                        log(
+                            f"        {match_icon} {match.trade_date}: {match.amount} 元 - {match.match_reason}"
+                        )
+                    if len(summary.matches) > 5:
+                        log(f"        ... (还有 {len(summary.matches) - 5} 笔)")
+            else:
+                log("      ❌ 无定投计划（跳过）")
+
+    # 提示信息
+    if result.mode == "dry_run":
+        log("\n提示：使用 --mode apply 执行实际回填")
+    else:
+        log("\n✅ 回填完成")
+
+
 def main() -> int:
     """
-    定投计划管理 CLI（v0.3.4）。
+    定投计划管理 CLI（v0.4.3）。
 
     Returns:
         退出码：0=成功；4=计划不存在；5=其他失败。
@@ -261,6 +356,8 @@ def main() -> int:
         return _do_delete(args)
     elif args.command == "infer":
         return _do_infer(args)
+    elif args.command == "backfill":
+        return _do_backfill(args)
     else:
         log(f"❌ 未知命令：{args.command}")
         return 1

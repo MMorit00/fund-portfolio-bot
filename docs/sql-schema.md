@@ -7,8 +7,8 @@
 
 ## 当前版本
 
-- Schema Version: **13** (SCHEMA_VERSION = 13)
-- 最后更新: 2025-12-03
+- Schema Version: **14** (SCHEMA_VERSION = 14)
+- 最后更新: 2025-12-04
 
 ## 核心表结构
 
@@ -20,11 +20,12 @@
 |------|------|---------|
 | `funds` | 基金基础信息 | fund_code, name, asset_class, market, alias |
 | `fund_fee_items` | 基金费率（v0.4.4 新增） | fund_code, fee_type, charge_basis, rate, min_hold_days, max_hold_days |
-| `trades` | 交易记录 | id, fund_code, trade_date, pricing_date, confirm_date, confirmation_status |
+| `trades` | 交易记录 | id, fund_code, trade_date, pricing_date, confirm_date, confirmation_status, import_batch_id, dca_plan_key |
 | `navs` | 净值数据 | fund_code, day, nav |
 | `trading_calendar` | 交易日历 | market, day, is_trading_day |
 | `dca_plans` | 定投计划 | fund_code, amount, frequency, rule, status |
 | `alloc_config` | 资产配置目标 | asset_class, target_weight, max_deviation |
+| `import_batches` | 导入批次（v0.4.3 新增） | id, source, created_at, note |
 | `action_log` | 用户行为日志 | id, action, actor, source, acted_at, fund_code, target_date, trade_id, intent, note |
 | `meta` | 元数据 | key, value (schema_version 等) |
 
@@ -39,8 +40,23 @@
 | `delayed_reason` | TEXT | 延迟原因：nav_missing / unknown | v0.2 |
 | `delayed_since` | DATE | 首次检测到延迟的日期 | v0.2 |
 | `external_id` | TEXT | 外部唯一标识（支付宝订单号等），用于历史导入去重 | v0.4.2 |
+| `import_batch_id` | INTEGER | 导入批次 ID（FK to import_batches），手动/自动交易为 NULL | v0.4.3 |
+| `dca_plan_key` | TEXT | 定投计划标识，用于 DCA 回填（当前格式=fund_code） | v0.4.3 |
 
 **业务规则**：见 `docs/settlement-rules.md`
+
+**import_batch_id 与 dca_plan_key 说明**：
+
+- `import_batch_id`：
+  - 用于追溯历史导入来源，支持批次级别的撤销和重跑；
+  - 仅历史导入（`history_import` Flow）时填写；
+  - 手动交易（`trade buy/sell`）和自动定投（`dca run`）为 NULL。
+
+- `dca_plan_key`：
+  - 用于标记交易属于哪个定投计划，供后续 Backfill 回填使用；
+  - **当前格式约定**：`dca_plan_key = fund_code`（因 dca_plans 表主键为 fund_code，一只基金最多一个计划）；
+  - **未来扩展**：如果支持一只基金多个定投计划，会升级为复合 key 格式（如 `"{fund_code}@{frequency}@{rule}"`），并通过迁移脚本更新该列；
+  - Phase 1（v0.4.3）暂不填充，Phase 2 通过 `dca_plan backfill` 命令回填。
 
 ### dca_plans 表关键字段
 

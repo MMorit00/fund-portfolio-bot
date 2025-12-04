@@ -121,6 +121,27 @@ class ActionRepo:
             ).fetchall()
         return [_row_to_action_log(r) for r in rows]
 
+    def update_strategy_by_trade_ids(self, trade_ids: list[int], strategy: str) -> int:
+        """
+        批量更新 action_log.strategy 字段（v0.4.3 DCA 回填使用）。
+
+        Args:
+            trade_ids: 交易 ID 列表。
+            strategy: 策略标签（如 "dca"）。
+
+        Returns:
+            实际更新的行数。
+        """
+        if not trade_ids:
+            return 0
+        placeholders = ",".join("?" for _ in trade_ids)
+        with self.conn:
+            cursor = self.conn.execute(
+                f"UPDATE action_log SET strategy = ? WHERE trade_id IN ({placeholders})",
+                [strategy, *trade_ids],
+            )
+        return cursor.rowcount
+
 
 def _row_to_action_log(row: sqlite3.Row) -> ActionLog:
     """将 action_log 表的 SQLite 行记录转换为 ActionLog 实体。"""

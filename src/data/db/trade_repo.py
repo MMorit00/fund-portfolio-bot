@@ -25,7 +25,7 @@ class TradeRepo:
         self.calendar = calendar
 
     def add(self, trade: Trade) -> Trade:
-        """新增一条交易记录，并按策略写入定价日/确认日。"""
+        """新增一条交易记录，并按策略写入定价日/确认日（v0.4.3：支持 batch + dca_plan_key）。"""
         normalized_amount = quantize_amount(trade.amount)
         policy = default_policy(trade.market)
         pricing_day, confirm_day = calc_settlement_dates(trade.trade_date, policy, self.calendar)
@@ -34,8 +34,8 @@ class TradeRepo:
                 (
                     "INSERT INTO trades (fund_code, type, amount, trade_date, status, market, "
                     "shares, remark, pricing_date, confirm_date, confirmation_status, "
-                    "delayed_reason, delayed_since, external_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    "delayed_reason, delayed_since, external_id, import_batch_id, dca_plan_key) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 ),
                 (
                     trade.fund_code,
@@ -52,6 +52,8 @@ class TradeRepo:
                     trade.delayed_reason,
                     trade.delayed_since.isoformat() if trade.delayed_since else None,
                     trade.external_id,
+                    trade.import_batch_id,
+                    trade.dca_plan_key,
                 ),
             )
             trade_id = cursor.lastrowid or 0
@@ -71,6 +73,8 @@ class TradeRepo:
             delayed_reason=trade.delayed_reason,
             delayed_since=trade.delayed_since,
             external_id=trade.external_id,
+            import_batch_id=trade.import_batch_id,
+            dca_plan_key=trade.dca_plan_key,
         )
 
     def list_pending(self, confirm_date: date) -> list[Trade]:
@@ -305,6 +309,58 @@ class TradeRepo:
         ).fetchall()
         return [_row_to_trade(r) for r in rows]
 
+    def list_by_batch(self, batch_id: int, fund_code: str | None = None) -> list[Trade]:
+        """
+        查询指定批次的交易（v0.4.3 DCA 回填使用）。
+
+        Args:
+            batch_id: 导入批次 ID。
+            fund_code: 可选的基金代码过滤（None=全部）。
+
+        Returns:
+            交易列表，按 fund_code, trade_date 升序排列。
+        """
+        if fund_code is not None:
+            rows = self.conn.execute(
+                """
+                SELECT * FROM trades
+                WHERE import_batch_id = ? AND fund_code = ?
+                ORDER BY fund_code, trade_date
+                """,
+                (batch_id, fund_code),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT * FROM trades
+                WHERE import_batch_id = ?
+                ORDER BY fund_code, trade_date
+                """,
+                (batch_id,),
+            ).fetchall()
+        return [_row_to_trade(r) for r in rows]
+
+    def update_dca_plan_key_bulk(self, trade_ids: list[int], dca_plan_key: str) -> int:
+        """
+        批量更新交易的 dca_plan_key 字段（v0.4.3 DCA 回填使用）。
+
+        Args:
+            trade_ids: 交易 ID 列表。
+            dca_plan_key: DCA 计划标识（当前格式=fund_code）。
+
+        Returns:
+            实际更新的行数。
+        """
+        if not trade_ids:
+            return 0
+        placeholders = ",".join("?" for _ in trade_ids)
+        with self.conn:
+            cursor = self.conn.execute(
+                f"UPDATE trades SET dca_plan_key = ? WHERE id IN ({placeholders})",
+                [dca_plan_key, *trade_ids],
+            )
+        return cursor.rowcount
+
 
 def _decimal_to_str(value: Decimal | None) -> str | None:
     """将 Decimal 转换为字符串格式，None 原样返回。"""
@@ -314,7 +370,7 @@ def _decimal_to_str(value: Decimal | None) -> str | None:
 
 
 def _row_to_trade(row: sqlite3.Row) -> Trade:
-    """将 trades 表的 SQLite 行记录转换为 Trade 实体。"""
+    """将 trades 表的 SQLite 行记录转换为 Trade 实体（v0.4.3：支持 batch + dca_plan_key）。"""
     shares = row["shares"]
     confirm_date_str = row["confirm_date"]
     delayed_since_str = row["delayed_since"]
@@ -335,4 +391,6 @@ def _row_to_trade(row: sqlite3.Row) -> Trade:
         delayed_reason=row["delayed_reason"],
         delayed_since=date.fromisoformat(delayed_since_str) if delayed_since_str else None,
         external_id=row["external_id"],
+        import_batch_id=row["import_batch_id"] if "import_batch_id" in row.keys() else None,
+        dca_plan_key=row["dca_plan_key"] if "dca_plan_key" in row.keys() else None,
     )

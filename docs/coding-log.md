@@ -5,6 +5,31 @@
 
 ---
 
+## 2025-12-04 Import Batch 机制（v0.4.3）
+
+**背景**：历史导入功能（v0.4.2）缺乏撤销和追溯能力，需要一个"安全边界"机制。
+
+### Phase 1：Batch 基础设施（✅ 已完成）
+
+**核心设计**：
+- `import_batches` 表记录导入批次（id, source, created_at, note）
+- `trades.import_batch_id` + `trades.dca_plan_key` 字段
+- 撤销机制：`WHERE import_batch_id = ?` 删除批次
+
+**dca_plan_key 约定**：当前为 `fund_code`，未来若支持多计划升级为 `{fund_code}@{freq}@{rule}`
+
+**Schema v14**：新增 `import_batches` 表，`trades` 增加 2 字段
+
+### Phase 2：DCA 回填功能（✅ 已完成）
+
+**命令**：`dca_plan backfill --batch-id <ID> [--mode apply]`
+
+**核心设计**：日期匹配（daily/weekly/monthly）+ 金额偏差±10%，批量更新 `trades.dca_plan_key`。
+
+**实现文件**：`src/flows/dca_backfill.py` / `src/cli/dca_plan.py`
+
+---
+
 ## 2025-12 行为语义增强 & DCA 推断日历优化
 
 **ActionLog v2 设计（已落地部分）**：引入 `strategy` 字段标记策略语境（`dca` / `rebalance` / `none`）

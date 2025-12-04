@@ -22,7 +22,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from src.core.models.asset_class import AssetClass
-from src.core.models.trade import Trade
+from src.core.models.trade import MarketType, Trade
 from src.core.rules.settlement import calc_settlement_dates, default_policy
 from src.data.db.alloc_config_repo import AllocConfigRepo
 from src.data.db.calendar import CalendarService
@@ -59,7 +59,9 @@ def _seed_basic_calendar(conn, today: date, days_back: int = 30) -> None:
     for i in range(days_back + 10):  # 多填充 10 天以覆盖 T+N
         d = today - timedelta(days=days_back - i)
         is_trading = 1 if d.weekday() < 5 else 0
+        # 同时填充 CN_A 和 US_NYSE（开发简化版）
         rows.append(("CN_A", d.isoformat(), is_trading))
+        rows.append(("US_NYSE", d.isoformat(), is_trading))
 
     with conn:
         conn.executemany(
@@ -70,7 +72,7 @@ def _seed_basic_calendar(conn, today: date, days_back: int = 30) -> None:
             """,
             rows,
         )
-    print(f"[DevSeed] 已填充 {len(rows)} 天的 CN_A 交易日历（工作日=交易日）")
+    print(f"[DevSeed] 已填充 {len(rows)} 天的交易日历（CN_A + US_NYSE，工作日=交易日）")
 
 
 def _prev_business_day(d: date, calendar: CalendarService, n: int = 1) -> date:
@@ -121,7 +123,7 @@ def main() -> None:
 
     # 填充基础交易日历（开发用简化版）
     today = date.today()
-    _seed_basic_calendar(conn, today, days_back=30)
+    _seed_basic_calendar(conn, today, days_back=90)
 
     # 初始化仓储和服务
     fund_repo = FundRepo(conn)
@@ -169,7 +171,7 @@ def main() -> None:
     trade_day_a = _prev_business_day(today, calendar, n=1)
 
     # 计算定价日和确认日（使用策略）
-    policy = default_policy("CN_A")
+    policy = default_policy(MarketType.CN_A)
     pricing_date, confirm_date = calc_settlement_dates(trade_day_a, policy, calendar)
 
     # Seed NAV：
@@ -189,7 +191,7 @@ def main() -> None:
         amount=Decimal("1000"),
         trade_date=trade_day_a,
         status="pending",
-        market="CN_A",
+        market=MarketType.CN_A,
     )
     saved = trade_repo.add(trade)
     print(
@@ -220,7 +222,7 @@ def main() -> None:
             amount=Decimal("500"),
             trade_date=delayed_trade_day,
             status="pending",
-            market="US_NYSE",
+            market=MarketType.US_NYSE,
         )
         saved_delayed = trade_repo.add(delayed_trade)
         print(

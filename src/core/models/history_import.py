@@ -7,6 +7,9 @@
 - 复用全局类型定义（TradeType, TradeStatus, MarketType）；
 - 单一数据源（trade_time 派生 trade_date）；
 - 数据闭环（预存 market 避免写库时重复查询）。
+
+v0.4.3 新增：
+- ImportBatch：导入批次记录，用于追溯和撤销。
 """
 
 from __future__ import annotations
@@ -29,6 +32,35 @@ ImportErrorType = Literal[
     "invalid_data",     # 数据校验失败（金额为负等）
     "duplicate",        # 重复记录
 ]
+
+
+@dataclass(slots=True)
+class ImportBatch:
+    """
+    导入批次记录（v0.4.3 新增）。
+
+    用途：
+    - 作为"撤销点"和"追溯源"，确保每次历史导入都有明确边界；
+    - 支持批次级别的撤销、重跑、查询（WHERE import_batch_id = ?）；
+    - 手动/自动交易不关联批次（import_batch_id = NULL）。
+
+    生命周期：
+    - 在 import_trades_from_csv() 开始时创建（mode='apply'）；
+    - 返回的 batch_id 传递给后续 Trade 写入流程；
+    - 写入 import_batches 表后不再修改。
+    """
+
+    source: ImportSource
+    """来源平台（alipay / ttjj）。"""
+
+    created_at: datetime
+    """创建时间（ISO 格式）。"""
+
+    id: int | None = None
+    """批次 ID（写入数据库后自动生成）。"""
+
+    note: str | None = None
+    """可选备注（用于记录导入文件路径等）。"""
 
 
 @dataclass(slots=True)
@@ -134,7 +166,8 @@ class ImportResult:
     额外字段包括：
     - downgraded: 因 NAV 缺失自动降级为 pending 的数量；
     - fund_mapping: 基金映射摘要；
-    - error_summary: 错误分类统计。
+    - error_summary: 错误分类统计；
+    - batch_id: 本次导入创建的批次 ID（v0.4.3 新增）。
     """
 
     total: int = 0
@@ -160,6 +193,9 @@ class ImportResult:
 
     error_summary: dict[str, int] = field(default_factory=dict)
     """错误分类统计：{error_type: count}。"""
+
+    batch_id: int | None = None
+    """本次导入创建的 import_batches.id；仅在 mode='apply' 时非空。"""
 
     @property
     def success_rate(self) -> float:

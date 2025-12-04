@@ -108,23 +108,76 @@ python -m src.cli.dca_plan infer --min-samples 6 --min-span-days 30
 
 ### 注意事项
 
-- 工具只读取 `action_log` + `trades`：
-  - 仅使用 `action='buy'` 且 `source in ('manual', 'import')` 的行为；
-  - 通过 `trade_id` 关联到对应交易，使用交易日期与金额做节奏分析；
-- 判断规则为启发式，不能保证 100% 准确：
-  - 若已初始化交易日历（`trading_calendar`+CalendarService 可用）：
-    - 使用“交易日数量”作为间隔单位：
-      - 日度：90% 以上间隔为 1 个交易日以内；
-      - 周度：80% 以上间隔在 4–6 个交易日；
-      - 月度：80% 以上间隔在 18–25 个交易日；
-  - 若未初始化交易日历（或日历数据缺失）：
-    - 回退为“自然日差”判断：
-      - 日度：90% 以上间隔在 2 天以内；
-      - 周度：80% 以上间隔在 6–8 天；
-      - 月度：80% 以上间隔在 28–32 天；
-- 置信度说明：
-  - `high`：样本多、节奏稳定，较可能是真实定投计划；
-  - `medium`：样本和节奏基本合理，需要你人工再判断；
-  - `low`：当前实现中通常已被阈值过滤，仅作为兜底等级。
- - 在使用交易日历模式时，春节/国庆等长假对 daily/weekly 模式的影响会显著减弱；
-   若日历数据缺失导致回退到自然日差，则长假仍可能拉低识别率（偏保守漏报）。
+- 仅读 `action_log` + `trades`：使用交易日期和金额做节奏分析
+- 启发式规则：置信度分 `high/medium/low`
+- 有交易日历时按交易日判断，无时回退自然日差
+- 长假影响：日历模式下较弱，自然日差模式下可能漏报
+---
+
+## DCA 回填工具（dca_plan backfill）
+
+> v0.4.3 新增：将历史导入的交易标记为 DCA 归属，用于数据追溯和AI分析。
+
+### 用法示例
+
+```bash
+# 1. 干跑模式：检查批次 3 的匹配情况（不实际修改数据）
+uv run python -m src.cli.dca_plan backfill --batch-id 3 --mode dry-run
+
+# 2. 实际执行回填
+uv run python -m src.cli.dca_plan backfill --batch-id 3 --mode apply
+
+# 3. 只回填指定基金
+uv run python -m src.cli.dca_plan backfill --batch-id 3 --fund 016532 --mode apply
+```
+
+### 参数说明
+
+- `--batch-id`：导入批次 ID（必填，通过历史导入命令输出获得）；
+- `--mode`：运行模式，`dry-run`（默认，仅检查）或 `apply`（实际执行）；
+- `--fund`：可选，只回填指定基金代码，默认处理批次内所有基金。
+
+### 回填逻辑
+
+**匹配规则**：日期（daily/weekly/monthly）+ 金额（±10%）
+**更新**：`trades.dca_plan_key` 和 `action_log.strategy` from `"none"` to `"dca"`
+
+### 输出示例
+
+```text
+[DCA:backfill] 回填 DCA 归属（干跑）：batch_id=3, fund=ALL
+[Backfill] 正在分析批次 3 的交易...
+[Backfill] 发现 103 笔买入交易
+[Backfill] 涉及 5 只基金
+
+🔄 DCA 回填结果（dry-run 模式）
+   Batch ID: 3
+   基金范围: 全部
+   总交易数: 103 笔（仅 buy）
+   匹配 DCA: 12 笔
+   匹配率: 11.7%
+
+📊 基金匹配详情:
+   ✅ 016532 (20 笔交易)
+      定投计划: 100 元/monthly/28 (active)
+      匹配结果: 8/20 笔
+      样例:
+        ✓ 2025-11-28: 100.00 元 - monthly: 28 == 28; 金额匹配: 100.00 ∈ [90, 110]
+        ✓ 2025-10-28: 100.00 元 - monthly: 28 == 28; 金额匹配: 100.00 ∈ [90, 110]
+        ✗ 2025-11-01: 150.00 元 - monthly: 1 != 28; 金额不符: 150.00 ∉ [90, 110]
+        ... (还有 17 笔)
+
+   ❌ 018044 (15 笔交易)
+      ❌ 无定投计划（跳过）
+
+提示：使用 --mode apply 执行实际回填
+```
+
+### 注意事项
+
+- **前置条件**：必须先创建 DCA 计划（通过 `dca_plan add`）才能回填；
+- **幂等安全**：可重复运行，不会产生副作用；
+- **作用范围**：只回填 `import_batch_id IS NOT NULL` 的交易（历史导入数据）；
+- **不修改事实字段**：只更新 `dca_plan_key` 和 `strategy`，不改 amount/trade_date/status；
+- **回填可选**：不影响持仓和收益计算，主要用于数据追溯和 AI 分析；
+- **金额浮动**：±10% 容差考虑用户可能微调定投金额的情况。

@@ -6,7 +6,7 @@ from typing import Optional
 
 from src.core.config import enable_sql_debug, get_db_path
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 SCHEMA_DDL = """
 CREATE TABLE IF NOT EXISTS funds (
@@ -44,7 +44,9 @@ CREATE TABLE IF NOT EXISTS trades (
     confirmation_status TEXT DEFAULT 'normal',
     delayed_reason TEXT,
     delayed_since TEXT,
-    external_id TEXT UNIQUE
+    external_id TEXT UNIQUE,
+    import_batch_id INTEGER,
+    dca_plan_key TEXT
 );
 
 CREATE TABLE IF NOT EXISTS navs (
@@ -85,6 +87,13 @@ CREATE TABLE IF NOT EXISTS action_log (
     intent TEXT,
     note TEXT,
     strategy TEXT
+);
+
+CREATE TABLE IF NOT EXISTS import_batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    note TEXT
 );
 """
 

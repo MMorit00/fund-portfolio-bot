@@ -129,6 +129,10 @@ def _format_result(result: ImportResult, mode: str) -> None:
         log(f"   跳过: {result.skipped} 笔")
         log(f"   成功率: {result.success_rate:.1%}")
 
+    # 1.5 输出 Batch ID（v0.4.3 新增，仅 apply 模式）
+    if mode == "apply" and result.batch_id is not None:
+        log(f"   📦 Batch ID: {result.batch_id}")
+
     # 2. 输出降级提示
     if result.downgraded > 0:
         log(f"   ⚠️  降级为 pending: {result.downgraded} 笔（NAV 暂缺，后续自动确认）")

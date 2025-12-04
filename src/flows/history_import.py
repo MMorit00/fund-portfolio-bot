@@ -29,6 +29,7 @@ from src.data.client.eastmoney import EastmoneyClient
 from src.data.db.action_repo import ActionRepo
 from src.data.db.calendar import CalendarService
 from src.data.db.fund_repo import FundRepo
+from src.data.db.import_batch_repo import ImportBatchRepo
 from src.data.db.nav_repo import NavRepo
 from src.data.db.trade_repo import TradeRepo
 from src.flows.fund_fees import sync_fund_fees
@@ -59,6 +60,7 @@ def import_trades_from_csv(
     action_repo: ActionRepo | None = None,
     eastmoney_service: EastmoneyClient | None = None,
     calendar_service: CalendarService | None = None,
+    import_batch_repo: ImportBatchRepo | None = None,
 ) -> ImportResult:
     """
     从 CSV 文件导入历史交易。
@@ -106,6 +108,15 @@ def import_trades_from_csv(
     # 步骤 1: 解析 CSV
     records = _parse_csv(csv_path, source)
 
+    # 步骤 1.5: 创建 ImportBatch（仅 apply 模式，v0.4.3 新增）
+    batch_id: int | None = None
+    if mode == "apply" and import_batch_repo is not None:
+        batch_id = import_batch_repo.create(
+            source=source,
+            note=f"Import from {csv_path}",
+        )
+        log(f"[Flow:HistoryImport] 创建导入批次：batch_id={batch_id}")
+
     # 步骤 2: 自动解析基金（仅 apply 模式，v0.4.2 修复）
     # 原因：dry-run 不应写入数据库，apply 时才自动创建基金记录
     if mode == "apply" and fund_repo is not None and eastmoney_service is not None:
@@ -130,7 +141,7 @@ def import_trades_from_csv(
     succeeded = 0
     if mode == "apply" and trade_repo is not None:
         succeeded = _write_trades(
-            records, trade_repo, action_repo, with_actions, csv_path
+            records, trade_repo, action_repo, with_actions, csv_path, batch_id
         )
     elif mode == "dry_run":
         # dry_run 模式：统计可导入数量（不实际写入）
@@ -144,7 +155,7 @@ def import_trades_from_csv(
                 succeeded += 1
 
     # 步骤 8: 构建结果
-    return _build_result(records, succeeded, fund_repo)
+    return _build_result(records, succeeded, fund_repo, batch_id)
 
 
 def _parse_csv(csv_path: str, source: ImportSource) -> list[ImportRecord]:
@@ -659,14 +670,15 @@ def _write_trades(
     action_repo: ActionRepo | None,
     with_actions: bool,
     csv_path: str,
+    batch_id: int | None,
 ) -> int:
     """
-    写入 trades 表（+ 可选 action_log）。
+    写入 trades 表（+ 可选 action_log，v0.4.3：支持 batch_id）。
 
     逻辑：
     1. confirmed 记录：can_confirm（有 NAV + 有份额）
     2. pending 记录：is_valid（有 fund_code + market）
-    3. 构造 Trade 对象，写入 trade_repo
+    3. 构造 Trade 对象，写入 trade_repo（带 import_batch_id）
     4. 如果 with_actions=True，补录 action_log
 
     Args:
@@ -675,6 +687,7 @@ def _write_trades(
         action_repo: 行为日志仓储（可选）。
         with_actions: 是否补录 ActionLog。
         csv_path: CSV 文件路径（用于 ActionLog.note）。
+        batch_id: 导入批次 ID（v0.4.3 新增，仅 apply 模式有值）。
 
     Returns:
         成功写入的交易数量。
@@ -716,6 +729,8 @@ def _write_trades(
             shares=record.shares,  # confirmed 有值，pending 为 None
             remark=f"导入自 {record.source}（{csv_name}）",
             external_id=record.external_id,
+            import_batch_id=batch_id,  # v0.4.3 新增
+            dca_plan_key=None,  # Phase 1 暂不填，Phase 2 回填时使用
         )
 
         # 2.4 写入 trades 表
@@ -747,9 +762,10 @@ def _build_result(
     records: list[ImportRecord],
     succeeded: int,
     fund_repo: FundRepo | None = None,
+    batch_id: int | None = None,
 ) -> ImportResult:
     """
-    根据处理后的 records 构建 ImportResult。
+    根据处理后的 records 构建 ImportResult（v0.4.3：支持 batch_id）。
 
     统计逻辑：
     - total: 所有记录数（包括错误记录）
@@ -757,11 +773,13 @@ def _build_result(
     - failed: 有错误的记录数
     - skipped: 重复记录数（error_type="duplicate"）
     - downgraded: 因 NAV 缺失降级为 pending 的数量（v0.4.2+）
+    - batch_id: 导入批次 ID（v0.4.3 新增）
 
     Args:
         records: ImportRecord 列表。
         succeeded: 成功写入的交易数量。
         fund_repo: 基金仓储（用于构建映射摘要）。
+        batch_id: 导入批次 ID（v0.4.3 新增，仅 apply 模式有值）。
 
     Returns:
         ImportResult 统计结果。
@@ -804,4 +822,5 @@ def _build_result(
         failed_records=failed_records,
         fund_mapping=fund_mapping,
         error_summary=error_summary,
+        batch_id=batch_id,  # v0.4.3 新增
     )

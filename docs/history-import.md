@@ -216,52 +216,24 @@ NAV 抓取: 98/103 成功
 
 ## 导入账单与 DCA 语义
 
-### 初始策略标记
+### 导入与 DCA 语义
 
-**导入时的默认行为**：
-- 所有导入交易的 `strategy` 字段初始值为 `"none"`
-- 原因：导入时无法判断该笔交易是否属于定投计划
+**初始状态**：导入交易的 `strategy="none"`，因无法区分手动/定投。
 
-**为什么不在导入时就标记为 DCA？**
-1. **缺乏足够信息**：CSV 中只有交易金额和日期，没有计划标识
-2. **避免误判**：手动单笔买入和定投执行在账单中无法区分
-3. **保持灵活性**：后续可通过推断工具分析和回填
+**后续回填**：通过 `dca_plan backfill` 为符合定投规则的交易标记 `strategy="dca"`。
 
-### DCA 语义回填（未来功能 TODO）
+> 详见 `CLAUDE.md`"算法 vs AI 分工"节：导入/回填只负责事实（规则匹配），语义判断交给 AI。
 
-**实现时机**：v0.4.3+ 引入 DCA 推断工具后
+### DCA 语义回填（✅ 已实现，v0.4.3）
 
-**回填流程**（规划）：
-1. 使用 `dca_plan infer` 从历史数据推断可能的定投计划
-2. 人工确认推断结果，创建对应的 `dca_plans`
-3. 运行回填工具（未来实现）：
-   - 匹配符合定投规则的历史交易（日期 + 金额 + 频率）
-   - 更新 `action_log.strategy` 从 `"none"` 到 `"dca"`
-   - （可选）写入 `is_dca_execution` / `dca_plan_key` 等深度字段
-4. 回填只更新"解释字段"，不修改"事实字段"（action/actor/source/acted_at）
+**命令**：`dca_plan backfill --batch-id <ID> [--mode apply] [--fund <CODE>]`
 
-**示例场景**：
+**流程**：
+1. 推断定投计划（`dca_plan infer`）并创建 DCA 计划
+2. 运行回填：`dca_plan backfill --batch-id <ID> --mode dry-run`（检查）或 `--mode apply`（执行）
+3. 匹配规则：日期（daily/weekly/monthly） + 金额（±10%）
 
-导入账单时：
-```
-001551  2024-01-10  1000元  → strategy="none"
-001551  2024-02-10  1000元  → strategy="none"
-001551  2024-03-10  1000元  → strategy="none"
-```
-
-推断后发现：这是月度定投（rule=10, amount=1000）
-
-回填后：
-```
-001551  2024-01-10  1000元  → strategy="dca"
-001551  2024-02-10  1000元  → strategy="dca"
-001551  2024-03-10  1000元  → strategy="dca"
-```
-
-**注意事项**：
-- 回填是可选操作，不影响持仓和收益计算
-- 回填的主要价值：为 AI 分析提供更准确的行为标签
-- 不确定的交易保持 `strategy="none"`，避免误标记
+**核心逻辑**：为符合规则的交易更新 `dca_plan_key` 和 `strategy="dca"`
 
 ---
 
@@ -283,45 +255,51 @@ ALTER TABLE trades ADD COLUMN external_id TEXT UNIQUE;
 
 **注**：`source` 字段已取消（不需要区分来源，`external_id` 足够用于去重）
 
-### 导入批次表（远期，按需）
+### 导入批次表（✅ 已实现，v0.4.3）
 
 ```sql
--- 记录每次导入的元数据
+-- 记录每次导入的元数据（用于追溯和撤销）
 CREATE TABLE import_batches (
-    id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,
-    file_name TEXT NOT NULL,
-    imported_at TEXT NOT NULL,
-    total INTEGER NOT NULL,
-    succeeded INTEGER NOT NULL,
-    failed INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
     note TEXT
 );
+
+-- trades 表增加批次关联
+ALTER TABLE trades ADD COLUMN import_batch_id INTEGER;  -- FK to import_batches
+ALTER TABLE trades ADD COLUMN dca_plan_key TEXT;        -- 定投计划标识
+```
+
+**Batch 机制说明（v0.4.3）**：
+
+每次历史导入（`mode='apply'`）会自动创建一个 `import_batch` 记录：
+- **`batch_id`**：导入批次的唯一标识
+- **作用范围**：
+  - 仅历史导入的交易会关联 `import_batch_id`
+  - 手动交易（`trade buy/sell`）和自动定投（`dca run`）的 `import_batch_id` 为 NULL
+- **使用场景**：
+  - 撤销导入：`DELETE FROM trades WHERE import_batch_id = ?`
+  - 查询批次：`SELECT * FROM trades WHERE import_batch_id = ?`
+  - DCA 回填（Phase 2）：只作用于指定 batch 的数据
+
+**CLI 输出示例**：
+```
+✅ 导入完成
+   总计: 103 笔
+   成功: 103 笔
+   失败: 0 笔
+   跳过: 0 笔
+   成功率: 100.0%
+   📦 Batch ID: 1
 ```
 
 ---
 
-## 实现清单
+## 实现状态
 
-**已完成（v0.4.2）**：
-- [x] Schema 扩展（`funds.alias` + `trades.external_id`）
-- [x] `FundRepo.find_by_alias()` 方法
-- [x] CSV 解析器（GBK 编码 + 基金交易过滤）
-- [x] 基金名称 → 代码映射逻辑（alias）
-- [x] 自动创建基金（apply 模式）
-- [x] 历史 NAV 批量抓取（使用定价日策略）
-- [x] NAV 缺失自动降级（confirmed → pending）
-- [x] 份额计算逻辑（amount / nav）
-- [x] 去重检查（external_id + 数据库 UNIQUE 约束）
-- [x] ActionLog 补录（buy/sell + actor=human）
-- [x] CLI 参数解析（dry-run / apply / --no-actions）
-- [x] 导入报告增强（基金映射摘要、错误分类统计、降级提示）
-
-**待优化（非阻塞）**：
-- [ ] 进度条显示（大文件导入体验优化）
-- [ ] 交互式 alias 修正 + 重试机制
-- [ ] 导入事务优化（批量写入性能）
-- [ ] 导入批次表（远期，按需）
+✅ v0.4.2 完成：CSV 解析 → 基金映射 → NAV 抓取 → 份额计算 → 去重 → ActionLog 补录
+✅ v0.4.3 完成：Import Batch 机制 + DCA 回填工具
 
 ---
 
