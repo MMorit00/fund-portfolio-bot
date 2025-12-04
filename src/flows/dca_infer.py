@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from statistics import median
 from typing import Iterable
 
 from src.core.dependency import dependency
-from src.core.models import DcaPlanCandidate
+from src.core.models import DcaPlanCandidate, MarketType
 from src.data.db.action_repo import ActionRepo
+from src.data.db.calendar import CalendarService
 from src.data.db.trade_repo import TradeRepo
 
 
@@ -22,6 +23,7 @@ def infer_dca_plans(
     fund_code: str | None = None,
     action_repo: ActionRepo | None = None,
     trade_repo: TradeRepo | None = None,
+    calendar_service: CalendarService | None = None,
 ) -> list[DcaPlanCandidate]:
     """
     从历史行为推断定投计划（只读，不写库）。
@@ -40,21 +42,28 @@ def infer_dca_plans(
        - 若 `sample_count < min_samples` 或 `span_days < min_span_days`，则跳过该基金。
 
     3. 频率识别（daily/weekly/monthly）：
-       - 计算相邻交易日之间的日差列表 `diffs`；
-       - 统计三类间隔：
-         * 日度：`diff <= 2`
-         * 周度：`6 <= diff <= 8`
-         * 月度：`28 <= diff <= 32`
+       - 计算相邻交易日之间的间隔列表 `diffs`；
+       - 当存在交易日历（calendar_service 不为 None）时：
+         * 使用“交易日数量”作为间隔单位：
+           - 日度：`diff <= 1`
+           - 周度：`4 <= diff <= 6`
+           - 月度：`18 <= diff <= 25`
+       - 当不存在交易日历时（回退模式）：
+         * 使用自然日间隔判断节奏：
+           - 日度：`diff <= 2`
+           - 周度：`6 <= diff <= 8`
+           - 月度：`28 <= diff <= 32`
        - 计算三类间隔占比，按以下优先级与阈值选择频率：
          * 日度：比例 >= 0.9 → daily
          * 周度：比例 >= 0.8 → weekly
          * 月度：比例 >= 0.8 → monthly
        - 若三类均不满足阈值，则视为无明显定投模式，跳过该基金。
 
-       TODO（未来优化）：
-       - 当前使用“自然日差”判断节奏，长假（春节/国庆）会降低 daily/weekly 的识别率；
-       - 后续可考虑注入 CalendarService，改为基于“交易日索引差”计算间隔，
-         以提高在长假期间的识别稳定性（无日历时可回退到自然日差）。
+    日历处理说明：
+       - 优先使用 trading_calendar（通过 CalendarService）计算“交易日间隔”，
+         长假（春节/国庆）对 daily/weekly 识别的影响更小；
+       - 若 CalendarService 不可用或日历数据缺失，则自动回退为自然日差，
+         该情况下长假仍可能降低 daily/weekly 模式的识别率（偏保守漏报）。
 
     4. 规则识别（rule）：
        - daily：rule 设为空字符串 `""`；
@@ -89,12 +98,12 @@ def infer_dca_plans(
     trades_by_id = {t.id: t for t in trades if t.id is not None}
 
     # 3. 按基金分组交易（只保留买入）
-    trades_by_fund: dict[str, list[tuple[date, Decimal]]] = defaultdict(list)
+    trades_by_fund: dict[str, list[tuple[date, Decimal, MarketType]]] = defaultdict(list)
     for log in filtered_logs:
         trade = trades_by_id.get(log.trade_id or 0)
         if trade is None or trade.type != "buy":
             continue
-        trades_by_fund[log.fund_code].append((trade.trade_date, trade.amount))
+        trades_by_fund[log.fund_code].append((trade.trade_date, trade.amount, trade.market))
 
     candidates: list[DcaPlanCandidate] = []
 
@@ -107,6 +116,7 @@ def infer_dca_plans(
         items.sort(key=lambda x: x[0])
         dates = [it[0] for it in items]
         amounts = [it[1] for it in items]
+        market = items[0][2]
         sample_count = len(items)
         span_days = (dates[-1] - dates[0]).days
 
@@ -114,12 +124,17 @@ def infer_dca_plans(
         if sample_count < min_samples or span_days < min_span_days:
             continue
 
-        diffs = _calc_day_diffs(dates)
+        diffs = _calc_day_diffs(
+            dates,
+            calendar_service=calendar_service,
+            calendar_key=market.value if calendar_service is not None else None,
+        )
         if not diffs:
             continue
 
         # 4.2 识别频率与间隔占比
-        freq, rule, ratio = _infer_frequency_and_rule(dates, diffs)
+        use_trading_days = calendar_service is not None
+        freq, rule, ratio = _infer_frequency_and_rule(dates, diffs, use_trading_days)
         if freq is None or rule is None:
             continue
 
@@ -144,14 +159,51 @@ def infer_dca_plans(
     return sorted(candidates, key=lambda c: (c.fund_code, c.frequency, c.rule))
 
 
-def _calc_day_diffs(dates: list[date]) -> list[int]:
-    """计算相邻日期之间的日差。"""
+def _calc_day_diffs(
+    dates: list[date],
+    *,
+    calendar_service: CalendarService | None = None,
+    calendar_key: str | None = None,
+) -> list[int]:
+    """
+    计算相邻日期之间的间隔。
+
+    - 当提供 calendar_service + calendar_key 时：
+        使用“交易日数量”作为间隔单位（prev..curr 之间的开市天数）；
+    - 否则：回退为自然日差。
+    """
     if len(dates) < 2:
         return []
-    return [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
+
+    # 回退模式：自然日差
+    if calendar_service is None or calendar_key is None:
+        return [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
+
+    # 交易日模式：统计 prev..curr 之间的开市日数量
+    diffs: list[int] = []
+    for i in range(1, len(dates)):
+        start = dates[i - 1]
+        end = dates[i]
+        if end <= start:
+            continue
+
+        d = start
+        trading_gap = 0
+        while d < end:
+            d = d + timedelta(days=1)
+            try:
+                if calendar_service.is_open(calendar_key, d):
+                    trading_gap += 1
+            except RuntimeError:
+                # 日历缺失时降级为自然日差，避免推断直接失败
+                trading_gap = (end - start).days
+                break
+        diffs.append(trading_gap)
+
+    return diffs
 
 
-def _count_intervals(diffs: Iterable[int]) -> tuple[int, int, int, int]:
+def _count_intervals(diffs: Iterable[int], use_trading_days: bool) -> tuple[int, int, int, int]:
     """统计各类间隔数量：日度 / 周度 / 月度 / 总数。"""
     daily = weekly = monthly = 0
     total = 0
@@ -159,18 +211,29 @@ def _count_intervals(diffs: Iterable[int]) -> tuple[int, int, int, int]:
         if d <= 0:
             continue
         total += 1
-        if d <= 2:
-            daily += 1
-        if 6 <= d <= 8:
-            weekly += 1
-        if 28 <= d <= 32:
-            monthly += 1
+        if use_trading_days:
+            # 交易日模式：daily≈1，weekly≈5，monthly≈20
+            if d <= 1:
+                daily += 1
+            if 4 <= d <= 6:
+                weekly += 1
+            if 18 <= d <= 25:
+                monthly += 1
+        else:
+            # 自然日模式：保留原有阈值
+            if d <= 2:
+                daily += 1
+            if 6 <= d <= 8:
+                weekly += 1
+            if 28 <= d <= 32:
+                monthly += 1
     return daily, weekly, monthly, total
 
 
 def _infer_frequency_and_rule(
     dates: list[date],
     diffs: list[int],
+    use_trading_days: bool,
 ) -> tuple[str | None, str | None, float]:
     """
     根据日期与间隔推断频率与规则。
@@ -181,7 +244,7 @@ def _infer_frequency_and_rule(
         - rule: 对应规则字符串；无法识别时为 None
         - ratio: 选定频率下的“有效间隔占比”（0..1）
     """
-    daily_count, weekly_count, monthly_count, total = _count_intervals(diffs)
+    daily_count, weekly_count, monthly_count, total = _count_intervals(diffs, use_trading_days)
     if total == 0:
         return None, None, 0.0
 

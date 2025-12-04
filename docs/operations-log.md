@@ -80,26 +80,26 @@ python -m src.cli.calendar patch-cn-a --back 30 --forward 365
 ### 用法示例
 
 ```bash
-# 从全部历史买入记录中推断定投候选（默认：样本数 ≥ 6，跨度 ≥ 90 天）
+# 从全部历史买入记录中推断定投候选（默认：样本数 ≥ 2，跨度 ≥ 7 天）
 python -m src.cli.dca_plan infer
 
 # 只分析某只基金
 python -m src.cli.dca_plan infer --fund 001551
 
-# 调整阈值：至少 12 个样本、跨度至少 180 天
-python -m src.cli.dca_plan infer --min-samples 12 --min-span-days 180
+# 调整阈值：至少 6 个样本、跨度至少 30 天（提高门槛，减少候选）
+python -m src.cli.dca_plan infer --min-samples 6 --min-span-days 30
 ```
 
 ### 参数说明
 
-- `--min-samples`：最小样本数（买入笔数），默认 6；
-- `--min-span-days`：样本覆盖的最小时间跨度（首尾交易日的日期差），默认 90 天；
+- `--min-samples`：最小样本数（买入笔数），默认 2；
+- `--min-span-days`：样本覆盖的最小时间跨度（首尾交易日的日期差），默认 7 天；
 - `--fund`：可选，只分析指定基金代码，默认分析所有基金。
 
 ### 输出示例
 
 ```text
-[DCA:infer] 推断定投计划候选：min_samples=6, min_span_days=90, fund=ALL
+[DCA:infer] 推断定投计划候选：min_samples=2, min_span_days=7, fund=ALL
 共 2 个候选计划：
   ⭐ 001551 | monthly/10 | 1000 元 | samples=18, span=365 天, confidence=high | 2024-01-10 → 2024-12-10
   ✨ 110011 | weekly/MON | 500 元  | samples=8,  span=120 天, confidence=medium | 2024-03-04 → 2024-07-01
@@ -112,12 +112,19 @@ python -m src.cli.dca_plan infer --min-samples 12 --min-span-days 180
   - 仅使用 `action='buy'` 且 `source in ('manual', 'import')` 的行为；
   - 通过 `trade_id` 关联到对应交易，使用交易日期与金额做节奏分析；
 - 判断规则为启发式，不能保证 100% 准确：
-  - 日度：90% 以上间隔在 2 天以内；
-  - 周度：80% 以上间隔在 6–8 天；
-  - 月度：80% 以上间隔在 28–32 天；
+  - 若已初始化交易日历（`trading_calendar`+CalendarService 可用）：
+    - 使用“交易日数量”作为间隔单位：
+      - 日度：90% 以上间隔为 1 个交易日以内；
+      - 周度：80% 以上间隔在 4–6 个交易日；
+      - 月度：80% 以上间隔在 18–25 个交易日；
+  - 若未初始化交易日历（或日历数据缺失）：
+    - 回退为“自然日差”判断：
+      - 日度：90% 以上间隔在 2 天以内；
+      - 周度：80% 以上间隔在 6–8 天；
+      - 月度：80% 以上间隔在 28–32 天；
 - 置信度说明：
   - `high`：样本多、节奏稳定，较可能是真实定投计划；
   - `medium`：样本和节奏基本合理，需要你人工再判断；
   - `low`：当前实现中通常已被阈值过滤，仅作为兜底等级。
- - 当前实现使用“自然日差”衡量节奏，长假（春节/国庆）会拉低 daily/weekly 模式的识别率（更容易被判为“无明显定投模式”）；
-   后续可以考虑基于交易日历（trading_calendar）改进间隔计算，以提升长假期间的识别稳定性。
+ - 在使用交易日历模式时，春节/国庆等长假对 daily/weekly 模式的影响会显著减弱；
+   若日历数据缺失导致回退到自然日差，则长假仍可能拉低识别率（偏保守漏报）。

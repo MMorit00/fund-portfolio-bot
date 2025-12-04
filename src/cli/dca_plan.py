@@ -69,14 +69,14 @@ def _parse_args() -> argparse.Namespace:
     infer_parser.add_argument(
         "--min-samples",
         type=int,
-        default=6,
-        help="最小样本数（默认 6）",
+        default=2,
+        help="最小样本数（默认 2）",
     )
     infer_parser.add_argument(
         "--min-span-days",
         type=int,
-        default=90,
-        help="最小时间跨度（天，默认 90）",
+        default=7,
+        help="最小时间跨度（天，默认 7）",
     )
     infer_parser.add_argument(
         "--fund",

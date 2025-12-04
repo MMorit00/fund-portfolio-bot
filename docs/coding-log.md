@@ -5,14 +5,23 @@
 
 ---
 
-## 2025-12 行为语义增强
+## 2025-12 行为语义增强 & DCA 推断日历优化
 
-**ActionLog v2 设计**：引入 `strategy` 字段标记策略语境（`dca` / `rebalance` / `none`）
+**ActionLog v2 设计（已落地部分）**：引入 `strategy` 字段标记策略语境（`dca` / `rebalance` / `none`）
 - 真相层：trades/navs/dca_plans 记录底层事实
 - 故事层：action_log 记录行为时间线
 - 简化实现：仅新增 strategy 字段，深度 DCA 字段留作 TODO
 
 **Schema v13**：ActionLog 新增 `strategy TEXT` 字段，Flows 层埋点适配
+
+**DCA 推断（dca_plan infer）日历集成**：
+- 推断间隔时优先使用交易日历（trading_calendar + CalendarService）：
+  - 日度：≈1 个交易日；
+  - 周度：≈4–6 个交易日；
+  - 月度：≈18–25 个交易日；
+- 当日历服务不可用或缺失记录时，自动回退为自然日差：
+  - 保持原有阈值（2/6–8/28–32），但春节/国庆等长假会降低 daily/weekly 识别率（偏保守漏报）；
+- 推断仍为只读分析，不写入任何数据，所有候选计划需通过 `dca_plan add` 手动确认。
 
 ---
 
