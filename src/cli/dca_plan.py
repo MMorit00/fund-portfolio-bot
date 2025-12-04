@@ -12,6 +12,7 @@ from src.flows.config import (
     enable_dca_plan,
     list_dca_plans,
 )
+from src.flows.dca_infer import infer_dca_plans
 
 
 def _parse_args() -> argparse.Namespace:
@@ -62,6 +63,27 @@ def _parse_args() -> argparse.Namespace:
     # ========== delete 子命令 ==========
     delete_parser = subparsers.add_parser("delete", help="删除定投计划")
     delete_parser.add_argument("--fund", required=True, help="基金代码")
+
+    # ========== infer 子命令 ==========
+    infer_parser = subparsers.add_parser("infer", help="从历史买入记录推断定投计划候选")
+    infer_parser.add_argument(
+        "--min-samples",
+        type=int,
+        default=6,
+        help="最小样本数（默认 6）",
+    )
+    infer_parser.add_argument(
+        "--min-span-days",
+        type=int,
+        default=90,
+        help="最小时间跨度（天，默认 90）",
+    )
+    infer_parser.add_argument(
+        "--fund",
+        type=str,
+        default=None,
+        help="只分析指定基金代码（默认分析所有基金）",
+    )
 
     return parser.parse_args()
 
@@ -174,6 +196,48 @@ def _do_delete(args: argparse.Namespace) -> int:
         return 5
 
 
+def _do_infer(args: argparse.Namespace) -> int:
+    """执行 infer 命令：从历史数据推断定投计划候选。"""
+    try:
+        # 1. 解析参数
+        min_samples = args.min_samples
+        min_span_days = args.min_span_days
+        fund_code = args.fund
+
+        log(
+            "[DCA:infer] 推断定投计划候选："
+            f"min_samples={min_samples}, min_span_days={min_span_days}, fund={fund_code or 'ALL'}"
+        )
+
+        # 2. 调用推断 Flow（只读）
+        candidates = infer_dca_plans(
+            min_samples=min_samples,
+            min_span_days=min_span_days,
+            fund_code=fund_code,
+        )
+
+        # 3. 输出结果
+        if not candidates:
+            log("（未发现符合条件的定投模式）")
+            return 0
+
+        log(f"共发现 {len(candidates)} 个候选计划：")
+        for c in candidates:
+            icon = "⭐" if c.confidence == "high" else ("✨" if c.confidence == "medium" else "•")
+            freq_rule = f"{c.frequency}/{c.rule}" if c.frequency != "daily" else "daily"
+            log(
+                f"  {icon} {c.fund_code} | {freq_rule} | {c.amount} 元 "
+                f"| samples={c.sample_count}, span={c.span_days} 天, confidence={c.confidence} "
+                f"| {c.first_date} → {c.last_date}"
+            )
+
+        log("提示：请根据以上结果，使用 `dca_plan add` 手动创建/调整正式定投计划。")
+        return 0
+    except Exception as err:  # noqa: BLE001
+        log(f"❌ 推断定投计划失败：{err}")
+        return 5
+
+
 def main() -> int:
     """
     定投计划管理 CLI（v0.3.4）。
@@ -195,6 +259,8 @@ def main() -> int:
         return _do_enable(args)
     elif args.command == "delete":
         return _do_delete(args)
+    elif args.command == "infer":
+        return _do_infer(args)
     else:
         log(f"❌ 未知命令：{args.command}")
         return 1

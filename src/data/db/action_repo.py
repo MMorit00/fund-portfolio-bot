@@ -30,9 +30,10 @@ class ActionRepo:
                     target_date,
                     trade_id,
                     intent,
-                    note
+                    note,
+                    strategy
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     log.action,
@@ -44,6 +45,7 @@ class ActionRepo:
                     log.trade_id,
                     log.intent,
                     log.note,
+                    log.strategy,
                 ),
             )
             log_id = cursor.lastrowid or 0
@@ -58,6 +60,7 @@ class ActionRepo:
             trade_id=log.trade_id,
             intent=log.intent,
             note=log.note,
+            strategy=log.strategy,
         )
 
     def list_by_action(self, action: ActionType) -> list[ActionLog]:
@@ -88,6 +91,36 @@ class ActionRepo:
         ).fetchall()
         return [_row_to_action_log(r) for r in rows]
 
+    def list_buy_actions(self, days: int | None = None) -> list[ActionLog]:
+        """
+        查询用于 DCA 推断的买入行为日志。
+
+        仅包含：
+        - action = 'buy'
+        - source in ('manual', 'import')
+        """
+        if days is not None:
+            rows = self.conn.execute(
+                """
+                SELECT * FROM action_log
+                WHERE action = 'buy'
+                  AND source IN ('manual', 'import')
+                  AND acted_at >= datetime('now', '-' || ? || ' days')
+                ORDER BY acted_at DESC
+                """,
+                (days,),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT * FROM action_log
+                WHERE action = 'buy'
+                  AND source IN ('manual', 'import')
+                ORDER BY acted_at DESC
+                """
+            ).fetchall()
+        return [_row_to_action_log(r) for r in rows]
+
 
 def _row_to_action_log(row: sqlite3.Row) -> ActionLog:
     """将 action_log 表的 SQLite 行记录转换为 ActionLog 实体。"""
@@ -105,4 +138,5 @@ def _row_to_action_log(row: sqlite3.Row) -> ActionLog:
         trade_id=int(row["trade_id"]) if row["trade_id"] is not None else None,
         intent=row["intent"],
         note=row["note"],
+        strategy=row["strategy"],
     )

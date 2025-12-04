@@ -221,6 +221,65 @@ def main() -> int: ...                         # 路由入口
 
 > 详细用法见 `docs/operations-log.md`
 
+## ActionLog 角色 & strategy 字段
+
+### 设计定位
+
+项目数据分为两层：
+
+- **真相层**（trades/navs/dca_plans/calendar）：底层事实数据，记录"钱怎么动的、持仓是多少、规则是什么"
+- **故事层**（action_log）：行为时间线，记录"谁在什么时候对什么做了什么、出于什么意图、属于什么策略"
+
+**ActionLog 的作用**：
+- 为 AI/人类提供结构化的行为数据（时间序列 + 标签）
+- 区分行为的策略语境（定投 vs 再平衡 vs 普通买卖）
+- 记录操作意图和人话备注，便于后续分析
+
+### strategy 字段（v0.4.3）
+
+**定义**：
+```python
+Strategy = Literal["dca", "rebalance", "none"]
+```
+
+- `dca`：定投相关行为（含跳过定投）
+- `rebalance`：再平衡相关行为
+- `none`：普通手动买卖、历史导入等
+
+**使用场景**：
+
+| 行为来源 | strategy 取值 |
+|---------|--------------|
+| 手动买入/卖出 | `none` |
+| DCA 自动执行 | 不记录 ActionLog（系统行为） |
+| DCA 跳过 | `dca` |
+| 历史账单导入 | `none`（初始值，可后续回填） |
+| 再平衡执行 | `rebalance`（未来） |
+
+**字段特性**：
+- 属于"解释字段"：允许后续回填/修正，不改变事实层数据
+- 与"事实字段"（action/actor/source/acted_at/trade_id）区分：事实字段只能 append-only
+
+### 未来扩展（TODO）
+
+当需要"DCA 执行率统计"或"导入回填 DCA 归属"时，考虑启用以下字段：
+
+**ActionLog 深度字段**：
+- `is_dca_execution: bool | None` - 是否为 DCA 执行
+- `dca_plan_key: str | None` - 关联的定投计划标识
+- `dca_tag_source: "auto_run" | "import_infer" | "manual" | None` - DCA 归属来源
+
+**Trade 层 DCA 归属**：
+- `dca_plan_key: str | None` - 交易归属的定投计划
+- `dca_tag_source` - 归属来源标记
+
+**实现时机**：
+- 需要执行率报表（实际执行数 / 计划执行数）
+- 需要导入回填（将历史交易标记为 DCA）
+- 需要 DCA 归因分析
+
+> 详细设计见 `docs/sql-schema.md` 的"ActionLog v2 演进规划"章节
+
 ## 错误与日志
 
 - 核心层抛异常，入口层捕获并记录

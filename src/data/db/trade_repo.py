@@ -43,7 +43,7 @@ class TradeRepo:
                     format(normalized_amount, "f"),
                     trade.trade_date.isoformat(),
                     trade.status,
-                    trade.market.value,
+                    trade.market,
                     _decimal_to_str(trade.shares),
                     trade.remark,
                     pricing_day.isoformat(),
@@ -284,6 +284,26 @@ class TradeRepo:
             (external_id,),
         ).fetchone()
         return row is not None
+
+    def list_by_ids(self, trade_ids: list[int]) -> list[Trade]:
+        """
+        按 ID 列表批量查询交易记录（用于分析场景，如 DCA 推断）。
+
+        Args:
+            trade_ids: 交易主键 ID 列表（可包含重复值）。
+
+        Returns:
+            对应的 Trade 列表，顺序按 id 升序。
+        """
+        if not trade_ids:
+            return []
+        unique_ids = sorted(set(trade_ids))
+        placeholders = ",".join("?" for _ in unique_ids)
+        rows = self.conn.execute(
+            f"SELECT * FROM trades WHERE id IN ({placeholders}) ORDER BY id",
+            unique_ids,
+        ).fetchall()
+        return [_row_to_trade(r) for r in rows]
 
 
 def _decimal_to_str(value: Decimal | None) -> str | None:

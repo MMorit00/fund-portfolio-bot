@@ -1,6 +1,7 @@
-from .action import ActionLog, ActionSource, ActionType, Actor, Intent
+from .action import ActionLog, ActionSource, ActionType, Actor, Intent, Strategy
 from .alloc_config import AllocConfig
 from .asset_class import AssetClass
+from .dca_infer import DcaPlanCandidate
 from .dca_plan import DcaPlan, Frequency, Status
 from .fund import Fund, FundFees, RedemptionTier
 from .history_import import ImportErrorType, ImportRecord, ImportResult, ImportSource
@@ -32,6 +33,7 @@ __all__ = [
     "DcaPlan",
     "Frequency",
     "Status",
+    "DcaPlanCandidate",
     # 历史导入
     "ImportRecord",
     "ImportResult",
@@ -46,4 +48,5 @@ __all__ = [
     "ActionType",
     "Actor",
     "Intent",
+    "Strategy",
 ]

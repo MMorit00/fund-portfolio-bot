@@ -84,6 +84,7 @@ def create_trade(
                 target_date=trade_day,
                 trade_id=saved_trade.id,
                 intent=intent,
+                strategy="none",
                 note=note,
             )
         )
@@ -255,6 +256,7 @@ def cancel_trade(
                 target_date=None,
                 trade_id=trade_id,
                 intent=None,
+                strategy="none",
                 note=note,
             )
         )

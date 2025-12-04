@@ -6,7 +6,7 @@ from typing import Optional
 
 from src.core.config import enable_sql_debug, get_db_path
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 SCHEMA_DDL = """
 CREATE TABLE IF NOT EXISTS funds (
@@ -83,7 +83,8 @@ CREATE TABLE IF NOT EXISTS action_log (
     target_date TEXT,
     trade_id INTEGER,
     intent TEXT,
-    note TEXT
+    note TEXT,
+    strategy TEXT
 );
 """
 

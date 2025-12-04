@@ -41,6 +41,8 @@
 
 ## v0.4.3+（行为分析，待规划）
 
+- [ ] ActionLog v2：行为语义增强（strategy 字段 + DCA 推断工具）
+- [ ] DCA 推断工具（`dca_plan infer`）：从历史数据推断定投计划
 - [ ] 周报/月报（交易频率、定投执行率、intent 分布）
 - [ ] `action stats` 统计摘要
 - [ ] ContextSnapshot / Outcome 表（按需，验证驱动）

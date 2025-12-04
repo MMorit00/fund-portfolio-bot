@@ -16,6 +16,9 @@ Intent = Literal["planned", "impulse", "opportunistic", "exit", "rebalance"]
 ActionSource = Literal["manual", "import", "automation", "migration"]
 """行为来源枚举：手动、导入、自动规则、迁移等。"""
 
+Strategy = Literal["dca", "rebalance", "none"]
+"""行为所属的策略语境。"""
+
 
 @dataclass(slots=True)
 class ActionLog:
@@ -53,6 +56,8 @@ class ActionLog:
     actor: Actor
     source: ActionSource
     acted_at: datetime
+    strategy: Strategy | None = None
+    """行为所属的策略语境（可空，默认 None）。"""
     fund_code: str | None = None
     """关联的基金代码（可空）。"""
     target_date: date | None = None

@@ -10,7 +10,7 @@ TradeType = Literal["buy", "sell"]
 TradeStatus = Literal["pending", "confirmed", "skipped"]
 
 
-class MarketType(Enum):
+class MarketType(str, Enum):
     """
     市场类型枚举（使用标准市场标识）。
 

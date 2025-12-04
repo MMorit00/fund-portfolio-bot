@@ -35,7 +35,7 @@ class FundRepo:
                     "asset_class=excluded.asset_class, market=excluded.market, "
                     "alias=excluded.alias"
                 ),
-                (fund_code, name, asset_class.value, market.value, external_name),
+                (fund_code, name, asset_class, market, external_name),
             )
 
     def get(self, fund_code: str) -> Fund | None:

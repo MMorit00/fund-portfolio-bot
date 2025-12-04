@@ -407,7 +407,7 @@ class EastmoneyClient:
 
             # 如果指定了份额类型，检查是否匹配
             if share_class:
-                item_class = self._extract_share_class(name)
+                item_class = self._search_extract_share_class(name)
                 if item_class == share_class:
                     selected_item = item
                     break  # 找到匹配的份额类型

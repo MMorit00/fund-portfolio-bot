@@ -96,6 +96,7 @@ def skip_dca(
                 target_date=day,
                 trade_id=None,  # 可能影响多条，不关联具体 trade
                 intent=None,
+                strategy="dca",
                 note=note or f"{fund_code} @ {day}",
             )
         )

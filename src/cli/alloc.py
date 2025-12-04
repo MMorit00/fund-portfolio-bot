@@ -72,7 +72,7 @@ def _do_set(args: argparse.Namespace) -> int:
 
         # 3. 设置资产配置
         log(
-            f"[Alloc:set] 设置配置：{asset_class.value} - 目标 {target_weight*100:.1f}%，偏离 ±{max_deviation*100:.1f}%"
+            f"[Alloc:set] 设置配置：{asset_class} - 目标 {target_weight*100:.1f}%，偏离 ±{max_deviation*100:.1f}%"
         )
         set_allocation(
             asset_class=asset_class,

@@ -7,8 +7,8 @@
 
 ## 当前版本
 
-- Schema Version: **10** (SCHEMA_VERSION = 10)
-- 最后更新: 2025-12-02
+- Schema Version: **13** (SCHEMA_VERSION = 13)
+- 最后更新: 2025-12-03
 
 ## 核心表结构
 
@@ -68,6 +68,7 @@
 | `trade_id` | INTEGER | 关联 trades.id（可空） |
 | `intent` | TEXT | 意图标签：planned / impulse / opportunistic / exit / rebalance（可空） |
 | `note` | TEXT | 人话备注（可空） |
+| `strategy` | TEXT | 行为所属策略语境：dca / rebalance / none（可空） |
 
 **设计说明**：
 - 只记录“发生了什么”，不存储快照或结果（需要时从 trades/navs 动态计算）
@@ -94,6 +95,62 @@
 **TODO（未来扩展）**：
 - 引入 ContextSnapshot / Outcome 等表，通过 action_log.id 建立一对一关联；
 - 如需多账户/多组合，考虑在 action_log 增加 account_id/portfolio_id 字段。
+
+### ActionLog v2 演进规划（草案）
+
+**当前版本**（v0.4.3，Schema v13）：已新增 `strategy` 字段
+
+```sql
+-- v0.4.3 已实现
+ALTER TABLE action_log ADD COLUMN strategy TEXT;
+-- 取值：'dca' / 'rebalance' / 'none'
+-- 用途：标记行为的策略语境
+```
+
+**未来版本**（v0.x TODO）：深度 DCA 归属字段
+
+以下字段作为未来演进方向，当前**不实现**：
+
+```sql
+-- ActionLog 深度 DCA 归属（TODO）
+ALTER TABLE action_log ADD COLUMN is_dca_execution INTEGER;
+-- 是否为 DCA 执行（0/1/NULL）
+
+ALTER TABLE action_log ADD COLUMN dca_plan_key TEXT;
+-- 定投计划标识（如 "001551@monthly@10"）
+
+ALTER TABLE action_log ADD COLUMN dca_tag_source TEXT;
+-- DCA 归属来源：'auto_run' / 'import_infer' / 'manual'
+```
+
+```sql
+-- Trade 层 DCA 归属（TODO）
+ALTER TABLE trades ADD COLUMN dca_plan_key TEXT;
+-- 交易归属的定投计划
+
+ALTER TABLE trades ADD COLUMN dca_tag_source TEXT;
+-- DCA 归属来源标记
+```
+
+**字段分类**：
+
+| 字段 | 类型 | 状态 |
+|------|------|------|
+| `strategy` | 解释字段 | v0.4.3 实现 |
+| `is_dca_execution` | 解释字段 | TODO |
+| `dca_plan_key` | 解释字段 | TODO |
+| `dca_tag_source` | 解释字段 | TODO |
+| action/actor/source/acted_at/trade_id | 事实字段 | 已有（只能 append-only） |
+
+**实现时机**：
+- 需要"DCA 执行率统计"（实际执行数 / 计划执行数）
+- 需要"导入回填 DCA 归属"（将历史交易标记为定投）
+- 需要"DCA 归因分析"（区分自动执行 vs 导入推断 vs 手动标记）
+
+**设计原则**：
+- **事实字段**：只能新增，不可修改（append-only）
+- **解释字段**：允许后续回填/修正，不改变真相层数据
+- 回填操作只更新解释字段，不修改 action/actor/source/acted_at 等事实字段
 
 ### fund_fee_items 表（v0.4.4 新增）
 

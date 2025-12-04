@@ -265,7 +265,7 @@ def _render_report(
 
     lines.append("\n资产配置：\n")
 
-    for asset_class in sorted(target.keys(), key=lambda x: x.value):
+    for asset_class in sorted(target.keys(), key=lambda x: x):
         actual_weight = data.class_weight.get(asset_class, Decimal("0"))
         target_weight = target[asset_class]
         dev = data.deviation.get(asset_class, Decimal("0"))
@@ -281,16 +281,16 @@ def _render_report(
         else:
             status = "正常"
 
-        lines.append(f"- {asset_class.value}：{actual_pct:.1f}% (目标 {target_pct:.1f}%，{status})\n")
+        lines.append(f"- {asset_class}：{actual_pct:.1f}% (目标 {target_pct:.1f}%，{status})\n")
 
     lines.append("\n⚠️ 再平衡提示：\n")
     has_rebalance_hint = False
     for asset_class, dev in data.deviation.items():
         if dev > Decimal("0.05"):
-            lines.append(f"- {asset_class.value} 超配，建议减持\n")
+            lines.append(f"- {asset_class} 超配，建议减持\n")
             has_rebalance_hint = True
         elif dev < Decimal("-0.05"):
-            lines.append(f"- {asset_class.value} 低配，建议增持\n")
+            lines.append(f"- {asset_class} 低配，建议增持\n")
             has_rebalance_hint = True
 
     if not has_rebalance_hint:

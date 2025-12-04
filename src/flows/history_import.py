@@ -413,7 +413,7 @@ def _auto_resolve_funds(
         market = search_result["market"]
         asset_class = _infer_asset_class(search_result)
 
-        log(f"[Flow:HistoryImport] 创建基金：{fund_name} → {fund_code} ({asset_class.value})")
+        log(f"[Flow:HistoryImport] 创建基金：{fund_name} → {fund_code} ({asset_class})")
         fund_repo.add(fund_code, name, asset_class, market, external_name=fund_name)
 
         # 2.4 自动抓取费率（v0.4.3 新增）
@@ -734,6 +734,7 @@ def _write_trades(
                 target_date=record.trade_date,
                 trade_id=saved_trade.id,
                 intent="planned",  # 历史行为无法判断，默认 planned
+                strategy="none",
                 note=f"导入自{record.source}账单（{csv_name}）",
             )
             action_repo.add(action_log)

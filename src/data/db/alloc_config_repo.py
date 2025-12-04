@@ -58,7 +58,7 @@ class AllocConfigRepo:
                 target_weight = excluded.target_weight,
                 max_deviation = excluded.max_deviation
             """,
-            (asset_class.value, str(target_weight), str(max_deviation)),
+            (asset_class, str(target_weight), str(max_deviation)),
         )
         self.conn.commit()
 
