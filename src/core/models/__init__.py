@@ -2,13 +2,13 @@ from .action import ActionLog, ActionSource, ActionType, Actor, Intent, Strategy
 from .alloc_config import AllocConfig
 from .asset_class import AssetClass
 from .dca_backfill import (
-    BackfillMatch,
     BackfillResult,
+    DcaTradeCheck,
     FundBackfillSummary,
     FundDcaFacts,
-    TradeAnomaly,
+    TradeFlag,
 )
-from .dca_infer import DcaPlanCandidate
+from .dca_infer import DcaPlanDraft
 from .dca_plan import DcaPlan, Frequency, Status
 from .fund import Fund, FundFees, RedemptionTier
 from .history_import import (
@@ -46,13 +46,13 @@ __all__ = [
     "DcaPlan",
     "Frequency",
     "Status",
-    "DcaPlanCandidate",
+    "DcaPlanDraft",
     # DCA 回填
     "BackfillResult",
-    "BackfillMatch",
+    "DcaTradeCheck",
     "FundBackfillSummary",
     "FundDcaFacts",
-    "TradeAnomaly",
+    "TradeFlag",
     # 历史导入
     "ImportBatch",
     "ImportRecord",

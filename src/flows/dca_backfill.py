@@ -15,11 +15,11 @@ from decimal import Decimal
 from src.core.dependency import dependency
 from src.core.log import log
 from src.core.models import (
-    BackfillMatch,
     BackfillResult,
+    DcaTradeCheck,
     FundBackfillSummary,
     FundDcaFacts,
-    TradeAnomaly,
+    TradeFlag,
 )
 from src.core.models.dca_plan import DcaPlan
 from src.data.db.action_repo import ActionRepo
@@ -139,15 +139,15 @@ def backfill_dca_for_batch(
                 selected_ids.add(best[0].id)
 
         # 3.5 生成匹配结果
-        matches: list[BackfillMatch] = []
+        checks: list[DcaTradeCheck] = []
         for trade, date_match, amount_deviation, reason in trade_facts:
             # 归属条件：日期匹配 + 被选中（同一天只选一笔）
             is_selected = trade.id in selected_ids
             if date_match and not is_selected:
                 reason = f"{reason} [同日有更接近的交易]"
 
-            matches.append(
-                BackfillMatch(
+            checks.append(
+                DcaTradeCheck(
                     trade_id=trade.id,
                     fund_code=trade.fund_code,
                     trade_date=trade.trade_date.isoformat(),
@@ -162,7 +162,7 @@ def backfill_dca_for_batch(
             if is_selected:
                 all_matched_trade_ids.append(trade.id)
 
-        matched_count = sum(1 for m in matches if m.matched)
+        matched_count = sum(1 for c in checks if c.matched)
         fund_summaries.append(
             FundBackfillSummary(
                 fund_code=code,
@@ -170,7 +170,7 @@ def backfill_dca_for_batch(
                 matched_trades=matched_count,
                 has_dca_plan=True,
                 dca_plan_info=plan_info,
-                matches=matches,
+                matches=checks,
             )
         )
 
@@ -342,7 +342,7 @@ def build_dca_facts_for_batch(
                 break
 
         # 识别特殊交易
-        anomalies: list[TradeAnomaly] = []
+        flags: list[TradeFlag] = []
         prev_amount: Decimal | None = None
         for i, trade in enumerate(sorted_trades):
             amt = trade.amount
@@ -365,12 +365,12 @@ def build_dca_facts_for_batch(
                 reasons.append(f"间隔异常: {intervals[i - 1]}天，正常{mode_interval}天")
 
             if reasons:
-                anomalies.append(
-                    TradeAnomaly(
+                flags.append(
+                    TradeFlag(
                         trade_id=trade.id,
                         trade_date=trade.trade_date,
                         amount=amt,
-                        anomaly_type="amount_outlier" if "金额异常" in reasons[0] else (
+                        flag_type="amount_outlier" if "金额异常" in reasons[0] else (
                             "amount_change" if "金额变化" in reasons[0] else "interval_outlier"
                         ),
                         detail="; ".join(reasons),
@@ -395,7 +395,7 @@ def build_dca_facts_for_batch(
                 amount_histogram=dict(amount_hist),
                 mode_interval=mode_interval,
                 interval_histogram=dict(interval_hist),
-                anomalies=anomalies,
+                flags=flags,
             )
         )
 

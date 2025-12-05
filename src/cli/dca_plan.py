@@ -13,7 +13,7 @@ from src.flows.config import (
     list_dca_plans,
 )
 from src.flows.dca_backfill import backfill_dca_for_batch, build_dca_facts_for_batch
-from src.flows.dca_infer import infer_dca_plans
+from src.flows.dca_infer import draft_dca_plans
 
 
 def _parse_args() -> argparse.Namespace:
@@ -261,18 +261,18 @@ def _format_dca_facts(facts_list: list) -> None:  # noqa: ANN001
         else:
             log(f"   间隔分布: {len(facts.interval_histogram)} 种不同间隔")
 
-        # 异常交易
-        if facts.anomalies:
-            log(f"   ⚠️ 特殊交易 ({len(facts.anomalies)} 笔):")
-            for anomaly in facts.anomalies[:5]:
-                log(f"      • trade_id={anomaly.trade_id} | {anomaly.trade_date} | {anomaly.amount} 元")
-                log(f"        {anomaly.detail}")
-            if len(facts.anomalies) > 5:
-                log(f"      ... (还有 {len(facts.anomalies) - 5} 笔)")
+        # 特殊交易标记
+        if facts.flags:
+            log(f"   ⚠️ 特殊交易 ({len(facts.flags)} 笔):")
+            for flag in facts.flags[:5]:
+                log(f"      • trade_id={flag.trade_id} | {flag.trade_date} | {flag.amount} 元")
+                log(f"        {flag.detail}")
+            if len(facts.flags) > 5:
+                log(f"      ... (还有 {len(facts.flags) - 5} 笔)")
 
 
 def _do_infer(args: argparse.Namespace) -> int:
-    """执行 infer 命令：从历史数据推断定投计划候选。"""
+    """执行 infer 命令：从历史数据推断定投计划草案（draft_*() 规范）。"""
     try:
         # 1. 解析参数
         min_samples = args.min_samples
@@ -281,7 +281,7 @@ def _do_infer(args: argparse.Namespace) -> int:
         batch_id = args.batch_id
 
         log(
-            "[DCA:infer] 推断定投计划候选："
+            "[DCA:infer] 推断定投计划草案："
             f"min_samples={min_samples}, min_span_days={min_span_days}, fund={fund_code or 'ALL'}"
         )
 
@@ -292,26 +292,26 @@ def _do_infer(args: argparse.Namespace) -> int:
             _format_dca_facts(facts_list)
             log("\n" + "-" * 60)
 
-        # 3. 调用推断 Flow（只读）
-        candidates = infer_dca_plans(
+        # 3. 调用推断 Flow（只读，返回草案）
+        drafts = draft_dca_plans(
             min_samples=min_samples,
             min_span_days=min_span_days,
             fund_code=fund_code,
         )
 
         # 4. 输出推断结果
-        if not candidates:
+        if not drafts:
             log("（未发现符合条件的定投模式）")
             return 0
 
-        log(f"\n🎯 推断候选计划（{len(candidates)} 个）：")
-        for c in candidates:
-            icon = "⭐" if c.confidence == "high" else ("✨" if c.confidence == "medium" else "•")
-            freq_rule = f"{c.frequency}/{c.rule}" if c.frequency != "daily" else "daily"
+        log(f"\n🎯 推断草案计划（{len(drafts)} 个）：")
+        for d in drafts:
+            icon = "⭐" if d.confidence == "high" else ("✨" if d.confidence == "medium" else "•")
+            freq_rule = f"{d.frequency}/{d.rule}" if d.frequency != "daily" else "daily"
             log(
-                f"  {icon} {c.fund_code} | {freq_rule} | {c.amount} 元 "
-                f"| samples={c.sample_count}, span={c.span_days} 天, confidence={c.confidence} "
-                f"| {c.first_date} → {c.last_date}"
+                f"  {icon} {d.fund_code} | {freq_rule} | {d.amount} 元 "
+                f"| samples={d.sample_count}, span={d.span_days} 天, confidence={d.confidence} "
+                f"| {d.first_date} → {d.last_date}"
             )
 
         log("\n提示：请根据以上结果，使用 `dca_plan add` 手动创建/调整正式定投计划。")

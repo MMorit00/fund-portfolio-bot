@@ -9,14 +9,14 @@ from statistics import median
 from typing import Iterable
 
 from src.core.dependency import dependency
-from src.core.models import DcaPlanCandidate, MarketType
+from src.core.models import DcaPlanDraft, MarketType
 from src.data.db.action_repo import ActionRepo
 from src.data.db.calendar import CalendarService
 from src.data.db.trade_repo import TradeRepo
 
 
 @dependency
-def infer_dca_plans(
+def draft_dca_plans(
     *,
     min_samples: int = 6,
     min_span_days: int = 90,
@@ -24,9 +24,9 @@ def infer_dca_plans(
     action_repo: ActionRepo | None = None,
     trade_repo: TradeRepo | None = None,
     calendar_service: CalendarService | None = None,
-) -> list[DcaPlanCandidate]:
+) -> list[DcaPlanDraft]:
     """
-    从历史行为推断定投计划（只读，不写库）。
+    从历史行为推断定投计划草案（只读，不写库，符合 draft_*() 规范）。
 
     推断规则（简化实现，便于后续迭代）：
 
@@ -78,7 +78,7 @@ def infer_dca_plans(
          * low: 其他情况（理论上已被 min_samples/min_span_days 剪枝，但保留作兜底）。
 
     返回：
-        DcaPlanCandidate 列表，每个元素对应一个 fund_code 的定投候选方案。
+        DcaPlanDraft 列表，每个元素对应一个 fund_code 的定投草案方案。
     """
     # 1. 读取行为日志并按基金过滤
     logs = action_repo.list_buy_actions(days=None)
@@ -105,7 +105,7 @@ def infer_dca_plans(
             continue
         trades_by_fund[log.fund_code].append((trade.trade_date, trade.amount, trade.market))
 
-    candidates: list[DcaPlanCandidate] = []
+    drafts: list[DcaPlanDraft] = []
 
     # 4. 对每只基金做节奏分析
     for code, items in trades_by_fund.items():
@@ -142,8 +142,8 @@ def infer_dca_plans(
         median_amount = _median_decimal(amounts)
         confidence = _infer_confidence(sample_count, ratio, freq)
 
-        candidates.append(
-            DcaPlanCandidate(
+        drafts.append(
+            DcaPlanDraft(
                 fund_code=code,
                 amount=median_amount,
                 frequency=freq,
@@ -156,7 +156,7 @@ def infer_dca_plans(
             )
         )
 
-    return sorted(candidates, key=lambda c: (c.fund_code, c.frequency, c.rule))
+    return sorted(drafts, key=lambda d: (d.fund_code, d.frequency, d.rule))
 
 
 def _calc_day_diffs(

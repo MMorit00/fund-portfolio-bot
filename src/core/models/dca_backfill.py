@@ -14,8 +14,12 @@ from decimal import Decimal
 
 
 @dataclass(slots=True)
-class BackfillMatch:
-    """单笔交易的匹配结果。"""
+class DcaTradeCheck:
+    """
+    单笔交易的 DCA 规则检查结果（*Check 规范）。
+
+    规则层只输出事实（日期匹配+金额偏差），不做语义判断。
+    """
 
     trade_id: int
     """交易 ID。"""
@@ -61,7 +65,7 @@ class FundBackfillSummary:
     dca_plan_info: str | None = None
     """DCA 计划摘要（如"100 元/monthly/28 (active)"）。"""
 
-    matches: list[BackfillMatch] = field(default_factory=list)
+    matches: list[DcaTradeCheck] = field(default_factory=list)
     """详细匹配结果（dry-run 模式使用）。"""
 
 
@@ -109,8 +113,12 @@ class BackfillResult:
 
 
 @dataclass(slots=True)
-class TradeAnomaly:
-    """特殊交易标记（供 AI 快速定位）。"""
+class TradeFlag:
+    """
+    特殊交易标记（*Flag 规范）。
+
+    规则识别的"值得注意"的点（异常、中断等），仅标记不定性，供 AI 分析。
+    """
 
     trade_id: int
     """交易 ID。"""
@@ -121,11 +129,11 @@ class TradeAnomaly:
     amount: Decimal
     """交易金额。"""
 
-    anomaly_type: str
-    """异常类型：amount_outlier / amount_change / interval_outlier。"""
+    flag_type: str
+    """标记类型：amount_outlier / amount_change / interval_outlier。"""
 
     detail: str
-    """人类可读说明。"""
+    """人类可读说明（事实描述，不做结论）。"""
 
 
 @dataclass(slots=True)
@@ -186,8 +194,8 @@ class FundDcaFacts:
     """间隔分布（天数 → 出现次数）。"""
 
     # 特殊交易
-    anomalies: list[TradeAnomaly] = field(default_factory=list)
-    """特殊交易列表（金额异常/变化点/间隔异常）。"""
+    flags: list[TradeFlag] = field(default_factory=list)
+    """特殊交易标记列表（金额异常/变化点/间隔异常）。"""
 
     @property
     def amount_changed(self) -> bool:

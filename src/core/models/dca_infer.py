@@ -11,9 +11,9 @@ Confidence = Literal["high", "medium", "low"]
 
 
 @dataclass(slots=True)
-class DcaPlanCandidate:
+class DcaPlanDraft:
     """
-    从历史买入记录推断出的定投计划候选。
+    从历史买入记录推断出的定投计划草案（*Draft 规范）。
 
     字段说明：
     - fund_code: 基金代码；
@@ -25,9 +25,9 @@ class DcaPlanCandidate:
     - confidence: 置信度等级（high/medium/low）。
 
     说明：
-    - 本数据类只用于"只读分析"，不会写回数据库；
-    - 由 DCA 推断 Flow 构建，供 CLI 展示和人工决策参考；
-    - 推断结果为候选方案，不代表最终定投计划，需手动确认创建。
+    - 本数据类是建议方案，永远不对应 DB 表，只是内存结构；
+    - 由 draft_dca_plans() Flow 构建，供 CLI 展示和人工决策参考；
+    - 推断结果需手动通过 dca_plan add 确认后才创建真实计划。
     """
 
     fund_code: str
