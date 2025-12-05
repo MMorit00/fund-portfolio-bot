@@ -12,7 +12,7 @@ from src.flows.config import (
     enable_dca_plan,
     list_dca_plans,
 )
-from src.flows.dca_backfill import backfill_dca_for_batch
+from src.flows.dca_backfill import backfill_dca_for_batch, build_dca_facts_for_batch
 from src.flows.dca_infer import infer_dca_plans
 
 
@@ -84,6 +84,12 @@ def _parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help="只分析指定基金代码（默认分析所有基金）",
+    )
+    infer_parser.add_argument(
+        "--batch-id",
+        type=int,
+        default=None,
+        help="导入批次 ID（提供时输出事实快照供 AI 分析）",
     )
 
     # ========== backfill 子命令 ==========
@@ -218,6 +224,53 @@ def _do_delete(args: argparse.Namespace) -> int:
         return 5
 
 
+def _format_dca_facts(facts_list: list) -> None:  # noqa: ANN001
+    """格式化输出 DCA 事实快照（供 AI 分析）。"""
+    if not facts_list:
+        log("（无事实快照）")
+        return
+
+    log(f"\n📊 DCA 事实快照（{len(facts_list)} 只基金）")
+    log("=" * 60)
+
+    for facts in facts_list:
+        log(f"\n🔹 {facts.fund_code} ({facts.trade_count} 笔交易)")
+        log(f"   时间范围: {facts.first_date} → {facts.last_date}")
+
+        # 金额统计
+        log(f"   金额变化: {facts.first_amount} → {facts.last_amount}")
+        if facts.mode_amount is not None:
+            log(f"   众数金额: {facts.mode_amount} 元")
+        if facts.stable_count > 1 and facts.stable_amount is not None:
+            log(f"   当前稳定: {facts.stable_amount} 元（从 {facts.stable_since} 起，连续 {facts.stable_count} 笔）")
+
+        # 间隔统计
+        log(f"   众数间隔: {facts.mode_interval} 天")
+
+        # 金额分布（简化显示）
+        if len(facts.amount_histogram) <= 5:
+            hist_str = ", ".join(f"{k}:{v}" for k, v in sorted(facts.amount_histogram.items()))
+            log(f"   金额分布: {hist_str}")
+        else:
+            log(f"   金额分布: {len(facts.amount_histogram)} 种不同金额")
+
+        # 间隔分布（简化显示）
+        if len(facts.interval_histogram) <= 5:
+            interval_str = ", ".join(f"{k}天:{v}" for k, v in sorted(facts.interval_histogram.items()))
+            log(f"   间隔分布: {interval_str}")
+        else:
+            log(f"   间隔分布: {len(facts.interval_histogram)} 种不同间隔")
+
+        # 异常交易
+        if facts.anomalies:
+            log(f"   ⚠️ 特殊交易 ({len(facts.anomalies)} 笔):")
+            for anomaly in facts.anomalies[:5]:
+                log(f"      • trade_id={anomaly.trade_id} | {anomaly.trade_date} | {anomaly.amount} 元")
+                log(f"        {anomaly.detail}")
+            if len(facts.anomalies) > 5:
+                log(f"      ... (还有 {len(facts.anomalies) - 5} 笔)")
+
+
 def _do_infer(args: argparse.Namespace) -> int:
     """执行 infer 命令：从历史数据推断定投计划候选。"""
     try:
@@ -225,25 +278,33 @@ def _do_infer(args: argparse.Namespace) -> int:
         min_samples = args.min_samples
         min_span_days = args.min_span_days
         fund_code = args.fund
+        batch_id = args.batch_id
 
         log(
             "[DCA:infer] 推断定投计划候选："
             f"min_samples={min_samples}, min_span_days={min_span_days}, fund={fund_code or 'ALL'}"
         )
 
-        # 2. 调用推断 Flow（只读）
+        # 2. 如果提供了 batch-id，先输出事实快照（供 AI 分析）
+        if batch_id is not None:
+            log(f"\n[DCA:infer] 构建批次 {batch_id} 的事实快照...")
+            facts_list = build_dca_facts_for_batch(batch_id=batch_id, fund_code=fund_code)
+            _format_dca_facts(facts_list)
+            log("\n" + "-" * 60)
+
+        # 3. 调用推断 Flow（只读）
         candidates = infer_dca_plans(
             min_samples=min_samples,
             min_span_days=min_span_days,
             fund_code=fund_code,
         )
 
-        # 3. 输出结果
+        # 4. 输出推断结果
         if not candidates:
             log("（未发现符合条件的定投模式）")
             return 0
 
-        log(f"共发现 {len(candidates)} 个候选计划：")
+        log(f"\n🎯 推断候选计划（{len(candidates)} 个）：")
         for c in candidates:
             icon = "⭐" if c.confidence == "high" else ("✨" if c.confidence == "medium" else "•")
             freq_rule = f"{c.frequency}/{c.rule}" if c.frequency != "daily" else "daily"
@@ -253,7 +314,7 @@ def _do_infer(args: argparse.Namespace) -> int:
                 f"| {c.first_date} → {c.last_date}"
             )
 
-        log("提示：请根据以上结果，使用 `dca_plan add` 手动创建/调整正式定投计划。")
+        log("\n提示：请根据以上结果，使用 `dca_plan add` 手动创建/调整正式定投计划。")
         return 0
     except Exception as err:  # noqa: BLE001
         log(f"❌ 推断定投计划失败：{err}")

@@ -3,11 +3,13 @@
 用途：
 - 将历史导入的交易标记为 DCA 归属（trades.dca_plan_key）
 - 更新行为日志策略标签（action_log.strategy）
+- 为 AI 提供结构化事实快照（FundDcaFacts）
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
 
 
@@ -28,13 +30,16 @@ class BackfillMatch:
     """交易金额。"""
 
     matched: bool
-    """是否匹配到 DCA 计划。"""
+    """是否归属 DCA（由日期决定，不考虑金额）。"""
+
+    amount_deviation: Decimal = Decimal("0")
+    """金额偏差率（事实字段）：正数=超出计划，负数=低于计划。如 0.15 表示超出15%。"""
 
     dca_plan_key: str | None = None
     """匹配到的 DCA 计划标识（当前格式=fund_code）。"""
 
     match_reason: str | None = None
-    """匹配原因说明（如"日期+金额匹配"/"金额超出±10%容差"等）。"""
+    """匹配说明（日期+金额偏差等事实信息）。"""
 
 
 @dataclass(slots=True)
@@ -101,3 +106,90 @@ class BackfillResult:
         if self.total_trades == 0:
             return 0.0
         return self.matched_count / self.total_trades
+
+
+@dataclass(slots=True)
+class TradeAnomaly:
+    """特殊交易标记（供 AI 快速定位）。"""
+
+    trade_id: int
+    """交易 ID。"""
+
+    trade_date: date
+    """交易日期。"""
+
+    amount: Decimal
+    """交易金额。"""
+
+    anomaly_type: str
+    """异常类型：amount_outlier / amount_change / interval_outlier。"""
+
+    detail: str
+    """人类可读说明。"""
+
+
+@dataclass(slots=True)
+class FundDcaFacts:
+    """
+    单只基金的 DCA 事实快照（供 AI 分析使用）。
+
+    规则层只输出事实，不做语义判断。AI 基于这些事实做：
+    - 判断金额变化是限额还是策略调整
+    - 识别异常交易模式
+    - 生成分析报告
+    """
+
+    fund_code: str
+    """基金代码。"""
+
+    batch_id: int | None
+    """导入批次 ID（None=全部交易）。"""
+
+    trade_count: int
+    """交易笔数。"""
+
+    # 时间范围
+    first_date: date | None = None
+    """首笔日期。"""
+
+    last_date: date | None = None
+    """末笔日期。"""
+
+    # 金额统计
+    first_amount: Decimal | None = None
+    """首笔金额。"""
+
+    last_amount: Decimal | None = None
+    """末笔金额。"""
+
+    mode_amount: Decimal | None = None
+    """众数金额（出现最多的金额，用于识别异常）。"""
+
+    # 最近稳定值（当前定投金额）
+    stable_amount: Decimal | None = None
+    """最近稳定金额（连续相同的最后 N 笔）。"""
+
+    stable_since: date | None = None
+    """稳定开始日期。"""
+
+    stable_count: int = 0
+    """稳定笔数。"""
+
+    # 分布统计
+    amount_histogram: dict[str, int] = field(default_factory=dict)
+    """金额分布（金额 → 出现次数）。"""
+
+    mode_interval: int = 1
+    """众数间隔（最常见间隔天数）。"""
+
+    interval_histogram: dict[int, int] = field(default_factory=dict)
+    """间隔分布（天数 → 出现次数）。"""
+
+    # 特殊交易
+    anomalies: list[TradeAnomaly] = field(default_factory=list)
+    """特殊交易列表（金额异常/变化点/间隔异常）。"""
+
+    @property
+    def amount_changed(self) -> bool:
+        """金额是否有变化。"""
+        return len(self.amount_histogram) > 1

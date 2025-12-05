@@ -3,6 +3,7 @@
 用途：
 - 将历史导入的交易标记为 DCA 归属（trades.dca_plan_key）
 - 更新行为日志策略标签（action_log.strategy）
+- 为 AI 提供结构化事实快照（FundDcaFacts）
 """
 
 from __future__ import annotations
@@ -13,7 +14,13 @@ from decimal import Decimal
 
 from src.core.dependency import dependency
 from src.core.log import log
-from src.core.models import BackfillMatch, BackfillResult, FundBackfillSummary
+from src.core.models import (
+    BackfillMatch,
+    BackfillResult,
+    FundBackfillSummary,
+    FundDcaFacts,
+    TradeAnomaly,
+)
 from src.core.models.dca_plan import DcaPlan
 from src.data.db.action_repo import ActionRepo
 from src.data.db.dca_plan_repo import DcaPlanRepo
@@ -33,12 +40,13 @@ def backfill_dca_for_batch(
     """
     为指定导入批次的交易回填 DCA 归属（v0.4.3）。
 
-    回填逻辑：
+    回填逻辑（规则层只输出事实，日期+同日唯一性决定归属）：
     1. 查询批次内的所有 buy 交易；
     2. 按 fund_code 分组，对每只基金：
        - 查询其 DCA 计划（active + disabled）；
-       - 对每笔交易检查是否匹配 DCA 规则（日期+金额）；
-       - 匹配成功 → 标记 dca_plan_key = fund_code。
+       - 对每笔交易计算 DCA 事实（日期轨道 + 金额偏差）；
+       - 同一天多笔时，仅选金额偏差最小的一笔作为该天的 DCA 执行；
+       - 标记 dca_plan_key = fund_code（仅对选中笔）。
     3. apply 模式：批量更新 trades.dca_plan_key 和 action_log.strategy。
 
     Args:
@@ -100,17 +108,43 @@ def backfill_dca_for_batch(
         plan = plans[0]
         plan_info = f"{plan.amount} 元/{plan.frequency}/{plan.rule} ({plan.status})"
 
-        # 3.3 对每笔交易进行匹配
-        matches: list[BackfillMatch] = []
+        # 3.3 对每笔交易计算 DCA 事实
+        # 先计算所有交易的事实
+        trade_facts: list[tuple] = []  # (trade, date_match, amount_deviation, reason)
         for trade in trades:
             if trade.id is None:
                 continue
-
-            is_match, reason = _is_dca_match(
+            date_match, amount_deviation, reason = _calc_dca_facts(
                 trade.trade_date,
                 trade.amount,
                 plan,
             )
+            trade_facts.append((trade, date_match, amount_deviation, reason))
+
+        # 3.4 同一天多笔买入时，只选金额最接近的一笔（定投每天最多执行一次）
+        selected_ids: set[int] = set()
+        trades_by_date: dict[date, list[tuple]] = defaultdict(list)
+        for item in trade_facts:
+            trade, date_match, _, _ = item
+            if date_match:
+                trades_by_date[trade.trade_date].append(item)
+
+        for same_day_trades in trades_by_date.values():
+            if len(same_day_trades) == 1:
+                # 当天只有一笔，直接选中
+                selected_ids.add(same_day_trades[0][0].id)
+            else:
+                # 当天多笔，选金额偏差绝对值最小的
+                best = min(same_day_trades, key=lambda x: abs(x[2]))
+                selected_ids.add(best[0].id)
+
+        # 3.5 生成匹配结果
+        matches: list[BackfillMatch] = []
+        for trade, date_match, amount_deviation, reason in trade_facts:
+            # 归属条件：日期匹配 + 被选中（同一天只选一笔）
+            is_selected = trade.id in selected_ids
+            if date_match and not is_selected:
+                reason = f"{reason} [同日有更接近的交易]"
 
             matches.append(
                 BackfillMatch(
@@ -118,13 +152,14 @@ def backfill_dca_for_batch(
                     fund_code=trade.fund_code,
                     trade_date=trade.trade_date.isoformat(),
                     amount=trade.amount,
-                    matched=is_match,
-                    dca_plan_key=code if is_match else None,
+                    matched=is_selected,
+                    amount_deviation=amount_deviation,
+                    dca_plan_key=code if is_selected else None,
                     match_reason=reason,
                 )
             )
 
-            if is_match:
+            if is_selected:
                 all_matched_trade_ids.append(trade.id)
 
         matched_count = sum(1 for m in matches if m.matched)
@@ -171,21 +206,24 @@ def backfill_dca_for_batch(
     )
 
 
-def _is_dca_match(
+def _calc_dca_facts(
     trade_date: date,
     trade_amount: Decimal,
     plan: DcaPlan,
-) -> tuple[bool, str]:
+) -> tuple[bool, Decimal, str]:
     """
-    判断交易是否匹配定投计划。
+    计算交易的 DCA 匹配事实（规则层只输出事实，不做语义判断）。
 
     Returns:
-        (is_match, reason): 是否匹配 + 原因说明。
+        (date_match, amount_deviation, reason):
+        - date_match: 日期是否在 DCA 轨道上
+        - amount_deviation: 金额偏差率（正=超出计划，负=低于计划）
+        - reason: 事实说明
     """
-    # 1. 日期匹配
+    # 1. 日期匹配（决定归属）
     if plan.frequency == "daily":
         date_match = True
-        date_reason = "daily（任意交易日）"
+        date_reason = "daily"
 
     elif plan.frequency == "weekly":
         weekday_map = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
@@ -199,12 +237,11 @@ def _is_dca_match(
         actual_day = trade_date.day
         # 处理短月：31号计划在30天月份也能匹配月末
         if expected_day > 28:
-            # 计算当月最后一天
             next_month = trade_date.replace(day=28) + timedelta(days=4)
             last_day = (next_month.replace(day=1) - timedelta(days=1)).day
             date_match = (actual_day == expected_day or
                          (actual_day == last_day and expected_day > last_day))
-            date_reason = f"monthly: {actual_day} vs {expected_day} (last_day={last_day})"
+            date_reason = f"monthly: {actual_day} vs {expected_day}"
         else:
             date_match = (actual_day == expected_day)
             date_reason = f"monthly: {actual_day} {'==' if date_match else '!='} {expected_day}"
@@ -213,19 +250,154 @@ def _is_dca_match(
         date_match = False
         date_reason = f"未知频率: {plan.frequency}"
 
-    # 2. 金额匹配（允许 ±10% 浮动）
-    tolerance = Decimal("0.1")
-    lower = plan.amount * (Decimal("1") - tolerance)
-    upper = plan.amount * (Decimal("1") + tolerance)
-    amount_match = (lower <= trade_amount <= upper)
-
-    if amount_match:
-        amount_reason = f"金额匹配: {trade_amount} ∈ [{lower}, {upper}]"
+    # 2. 金额偏差率（只算事实，不判断是否"匹配"）
+    if plan.amount > 0:
+        amount_deviation = (trade_amount - plan.amount) / plan.amount
     else:
-        amount_reason = f"金额不符: {trade_amount} ∉ [{lower}, {upper}]"
+        amount_deviation = Decimal("0")
 
-    # 3. 综合判断
-    is_match = date_match and amount_match
+    # 格式化偏差说明
+    deviation_pct = int(amount_deviation * 100)
+    if deviation_pct == 0:
+        amount_reason = f"金额: {trade_amount} (计划: {plan.amount})"
+    elif deviation_pct > 0:
+        amount_reason = f"金额: {trade_amount} (+{deviation_pct}%)"
+    else:
+        amount_reason = f"金额: {trade_amount} ({deviation_pct}%)"
+
     reason = f"{date_reason}; {amount_reason}"
+    return date_match, amount_deviation, reason
 
-    return is_match, reason
+
+@dependency
+def build_dca_facts_for_batch(
+    *,
+    batch_id: int,
+    fund_code: str | None = None,
+    trade_repo: TradeRepo | None = None,
+) -> list[FundDcaFacts]:
+    """
+    构建指定批次的 DCA 事实快照（只读，供 AI 分析使用）。
+
+    规则层只输出事实，不做语义判断。返回的 FundDcaFacts 包含：
+    - 交易日期序列、金额序列
+    - 间隔天数分布
+    - 金额直方图
+
+    Args:
+        batch_id: 导入批次 ID。
+        fund_code: 可选的基金代码过滤。
+        trade_repo: 交易仓储。
+
+    Returns:
+        按基金分组的事实快照列表。
+    """
+    log(f"[DcaFacts] 构建批次 {batch_id} 的事实快照...")
+
+    # 1. 查询批次交易（只处理 buy）
+    all_trades = trade_repo.list_by_batch(batch_id, fund_code)
+    buy_trades = [t for t in all_trades if t.type == "buy"]
+
+    if not buy_trades:
+        log(f"[DcaFacts] 批次 {batch_id} 没有买入交易")
+        return []
+
+    # 2. 按基金分组
+    trades_by_fund: dict[str, list] = defaultdict(list)
+    for trade in buy_trades:
+        trades_by_fund[trade.fund_code].append(trade)
+
+    # 3. 构建每只基金的事实快照
+    results: list[FundDcaFacts] = []
+    for code, trades in sorted(trades_by_fund.items()):
+        # 按日期排序
+        sorted_trades = sorted(trades, key=lambda t: t.trade_date)
+        dates = [t.trade_date for t in sorted_trades]
+        amounts = [t.amount for t in sorted_trades]
+
+        # 金额分布 + 众数
+        amount_hist: dict[str, int] = defaultdict(int)
+        for amt in amounts:
+            amount_hist[str(amt)] += 1
+        mode_amount = Decimal(max(amount_hist, key=amount_hist.get)) if amount_hist else None
+
+        # 间隔分布 + 众数
+        interval_hist: dict[int, int] = defaultdict(int)
+        intervals: list[int] = []
+        for i in range(1, len(dates)):
+            delta = (dates[i] - dates[i - 1]).days
+            interval_hist[delta] += 1
+            intervals.append(delta)
+        mode_interval = max(interval_hist, key=interval_hist.get) if interval_hist else 1
+
+        # 最近稳定值（从末尾向前找连续相同金额）
+        stable_amount = amounts[-1] if amounts else None
+        stable_count = 1
+        stable_since = dates[-1] if dates else None
+        for i in range(len(amounts) - 2, -1, -1):
+            if amounts[i] == stable_amount:
+                stable_count += 1
+                stable_since = dates[i]
+            else:
+                break
+
+        # 识别特殊交易
+        anomalies: list[TradeAnomaly] = []
+        prev_amount: Decimal | None = None
+        for i, trade in enumerate(sorted_trades):
+            amt = trade.amount
+            reasons: list[str] = []
+
+            # 金额异常：偏离众数超过 50%
+            if mode_amount and mode_amount > 0:
+                deviation = abs(amt - mode_amount) / mode_amount
+                if deviation > Decimal("0.5"):
+                    pct = int(((amt - mode_amount) / mode_amount) * 100)
+                    sign = "+" if pct > 0 else ""
+                    reasons.append(f"金额异常: 众数{mode_amount}元，偏离{sign}{pct}%")
+
+            # 金额变化点
+            if prev_amount is not None and amt != prev_amount:
+                reasons.append(f"金额变化: {prev_amount}→{amt}")
+
+            # 间隔异常：超过众数 3 倍
+            if i > 0 and intervals[i - 1] > mode_interval * 3:
+                reasons.append(f"间隔异常: {intervals[i - 1]}天，正常{mode_interval}天")
+
+            if reasons:
+                anomalies.append(
+                    TradeAnomaly(
+                        trade_id=trade.id,
+                        trade_date=trade.trade_date,
+                        amount=amt,
+                        anomaly_type="amount_outlier" if "金额异常" in reasons[0] else (
+                            "amount_change" if "金额变化" in reasons[0] else "interval_outlier"
+                        ),
+                        detail="; ".join(reasons),
+                    )
+                )
+
+            prev_amount = amt
+
+        results.append(
+            FundDcaFacts(
+                fund_code=code,
+                batch_id=batch_id,
+                trade_count=len(sorted_trades),
+                first_date=dates[0] if dates else None,
+                last_date=dates[-1] if dates else None,
+                first_amount=amounts[0] if amounts else None,
+                last_amount=amounts[-1] if amounts else None,
+                mode_amount=mode_amount,
+                stable_amount=stable_amount,
+                stable_since=stable_since,
+                stable_count=stable_count,
+                amount_histogram=dict(amount_hist),
+                mode_interval=mode_interval,
+                interval_histogram=dict(interval_hist),
+                anomalies=anomalies,
+            )
+        )
+
+    log(f"[DcaFacts] 生成 {len(results)} 只基金的事实快照")
+    return results

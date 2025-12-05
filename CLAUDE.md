@@ -131,6 +131,66 @@ docs/
 
 **完成后必跑**：`ruff check --fix .`
 
+### 3.x 领域命名规范：DCA & AI 分工（Domain Naming）
+
+本项目是 **AI 驱动** 的投资工具，在 DCA、历史扫描、AI 分析相关模块中，严格遵循 **"规则算事实 (Facts)，AI 做解释 (Semantic)"** 的分工原则。
+
+#### 3.x.1 规则层数据模型：Facts / Check / Flag / Draft / Report
+
+规则层只负责输出可重算、无歧义的结构化数据，严禁直接生成主观结论。
+
+- **事实快照 (Facts)**
+  - **后缀：** `*Facts`
+  - **定义：** 某一对象在特定时间段内的客观数据聚合（如交易日期、金额分布、间隔统计）。
+  - **角色：** 作为 **Context** 提供给 AI 或上层逻辑。
+  - **示例：** `FundDcaFacts`
+
+- **检查结果 (Check)**
+  - **后缀：** `*Check`
+  - **定义：** 单条数据针对特定规则的验证结果（是否命中 + 差异数值 + 简要说明）。
+  - **示例：** `DcaTradeCheck`
+
+- **标记点 (Flag)**
+  - **后缀：** `*Flag`
+  - **定义：** 规则识别出的"值得注意"的数据点（如异常金额、中断），但不下定性结论。
+  - **示例：** `TradeFlag`
+
+- **待定草稿 (Draft)**
+  - **后缀：** `*Draft`
+  - **定义：** 生成的建议方案（如定投计划草稿），永远不直接对应 DB 表，只是内存结构。
+  - **示例：** `PlanDraft`、`DcaPlanCandidate`
+
+- **汇总报告 (Report/Result)**
+  - **后缀：** `*Report`（CLI/外部展示）或 `*Result`（内部中间结果）
+  - **定义：** 面向 CLI 展示或 AI 输入的聚合统计结果。
+  - **示例：** `BackfillResult`（内部）、`ScanReport`（外部展示）
+
+#### 3.x.2 Flow 函数动作 (Verbs)
+
+- **`build_*_facts` / `collect_*`**
+  - **含义：** 纯计算/聚合，返回 `*Facts` 对象。
+  - **约束：** 只读，无副作用。
+  - **示例：** `build_dca_facts_for_batch()`
+
+- **`scan_*`**
+  - **含义：** 扫描历史数据，输出 `*Report` (包含 Checks/Flags)。
+  - **约束：** **只读，无副作用（Idempotent）**。严禁修改 trades/action_log 表。可随意调用，无安全隐患。
+
+- **`draft_*`**
+  - **含义：** 生成建议方案（Drafts）。
+  - **约束：** 返回 `*Draft` 对象，不直接入库。
+
+- **`backfill_*`**
+  - **含义：** 执行回填逻辑，将归属关系或标签写入数据库。
+  - **约束：** **写操作**。会修改 Truth Layer (trades.dca_plan_key, action_log 等)。需谨慎调用。
+
+#### 3.x.3 AI 层（预留）：Insight / Explanation / Label
+
+AI 层基于规则层提供的 Context 生成语义解释，仅写入解释性字段，不修改核心事实。
+
+- **后缀：** `*Insight` (洞察), `*Explanation` (解释), `*Label` (语义标签)
+- **原则：** AI 的输出是对 Facts 的注释，而非 Facts 本身。不会修改 Truth Layer。
+
 ---
 
 ## 4. 配置与环境变量

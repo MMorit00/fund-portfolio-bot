@@ -5,6 +5,42 @@
 
 ---
 
+## 2025-12-05 DCA 回填逻辑校准 + 事实快照（遵循"算法 vs AI 分工"原则）
+
+### Phase 1：回填逻辑校准
+
+**问题**：原 `_is_dca_match` 返回 `is_match = date_match AND amount_match`，属于语义判断，违反"规则只输出事实"原则。
+
+**调整**：
+- 函数重命名为 `_calc_dca_facts`，返回 `(date_match, amount_deviation, reason)`
+- 回填逻辑：`matched = date_match`（日期决定归属）
+- 金额偏差只作为事实字段（`BackfillMatch.amount_deviation`），不影响归属判断
+- 同一天多笔买入时，只选金额最接近的一笔（定投每天最多执行一次）
+
+### Phase 2：事实快照导出
+
+**新增模型**：`FundDcaFacts` - 单只基金的 DCA 事实快照，供 AI 分析使用
+
+```python
+FundDcaFacts:
+  - first_date / last_date      # 时间范围
+  - first_amount / last_amount  # 金额变化趋势
+  - amount_histogram: dict      # 金额分布 {'10.00': 19}
+  - interval_histogram: dict    # 间隔分布 {1: 14, 3: 3}
+  - avg_interval: float         # 平均间隔天数
+```
+
+**新增 Flow**：`build_dca_facts_for_batch(batch_id)` - 只读，不写库
+
+**变更文件**：
+- `src/core/models/dca_backfill.py` - BackfillMatch 增加字段 + FundDcaFacts 模型
+- `src/flows/dca_backfill.py` - 回填逻辑调整 + build_dca_facts_for_batch Flow
+- `src/cli/dca_plan.py` - infer --batch-id 参数 + _format_dca_facts 格式化
+- `src/core/models/dca_infer.py` - DcaPlanCandidate.amount 文档说明"仅作参考建议"
+- `docs/history-import.md` - DCA 回填规则说明改为"日期+同日唯一性决定归属，金额只作事实"
+
+---
+
 ## 2025-12-04 Import Batch 机制（v0.4.3）
 
 **背景**：历史导入功能（v0.4.2）缺乏撤销和追溯能力，需要一个"安全边界"机制。

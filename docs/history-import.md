@@ -231,7 +231,11 @@ NAV 抓取: 98/103 成功
 **流程**：
 1. 推断定投计划（`dca_plan infer`）并创建 DCA 计划
 2. 运行回填：`dca_plan backfill --batch-id <ID> --mode dry-run`（检查）或 `--mode apply`（执行）
-3. 匹配规则：日期（daily/weekly/monthly） + 金额（±10%）
+
+**匹配规则**（规则层只输出事实，日期+同日唯一性决定归属）：
+- **日期轨道**：交易日期是否符合计划频率（daily/weekly/monthly）
+- **同日唯一性**：同一天多笔买入时，仅选金额偏差最小的一笔
+- **金额事实**：金额偏差作为事实字段记录（`BackfillMatch.amount_deviation`），不参与归属判断
 
 **核心逻辑**：为符合规则的交易更新 `dca_plan_key` 和 `strategy="dca"`
 
