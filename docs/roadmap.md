@@ -24,7 +24,9 @@
 | v0.4 | ✅ 已完成 | 行为数据基建（action_log 表） |
 | v0.4.1 | ✅ 已完成 | 行为数据增强（Intent + 查询） |
 | v0.4.2 | ✅ 已完成 | 历史账单导入 + CLI 标准化 |
-| v0.4.3+ | 🔜 待规划 | 行为分析（周报/月报） |
+| v0.4.3 | ✅ 已完成 | DCA 规则层定型（回填 + 推断 + 事实快照） |
+| v0.4.4 | 🚧 进行中 | 限额公告 Facts 建模 + DCA Context 扩展 |
+| v0.4.5+ | 🔜 待规划 | 行为分析（周报/月报） |
 | v0.5+ | 🔮 待规划 | 数据可靠性增强 |
 | v1.x+ | 🔮 远期 | AI 辅助决策 |
 
@@ -40,13 +42,52 @@
 - v0.3.2-v0.3.4：配置管理 + 闭环完善
 - v0.4-v0.4.1：行为数据基建（action_log）
 - v0.4.2：历史账单导入 + CLI 标准化
+- v0.4.3：DCA 规则层定型（Import Batch + DCA 回填/推断）
 
 ---
 
-## v0.4.3+（行为分析，待规划）
+## v0.4.3（DCA 规则层定型，已完成）
 
-- [ ] ActionLog v2：行为语义增强（strategy 字段 + DCA 推断工具）
-- [ ] DCA 推断工具（`dca_plan infer`）：从历史数据推断定投计划
+**核心目标**：完善 DCA 回填逻辑，实现"规则算事实，AI 做解释"分工原则。
+
+- [x] Import Batch 机制（批次追溯和撤销）
+- [x] DCA 回填工具（`dca_plan backfill`）：日期+同日唯一性决定归属，金额只算偏差
+- [x] DCA 推断工具（`dca_plan infer`）：从历史数据推断定投计划草案（draft_*() 规范）
+- [x] DCA 事实快照（`FundDcaFacts`）：交易分布 + 间隔统计 + 特殊交易标记
+- [x] 领域命名规范落地（`*Draft` / `*Check` / `*Flag` 规范）
+- [x] 交易日历集成（CalendarService 优化推断精度）
+
+**关键设计**：
+- 回填：日期匹配 + 同日唯一性 → 归属
+- 金额：只算偏差事实（amount_deviation），不做语义判断
+- 推断：返回草案（DcaPlanDraft），不自动写库
+
+---
+
+## v0.4.4（限额公告 Facts 建模，进行中）
+
+**核心目标**：为 AI 分析预留"外部约束事实"输入，区分"被限额 vs 主动调整"。
+
+**Phase B（基础建模，已完成）**：
+- [x] Schema 设计：`fund_restrictions` 表（daily_limit / suspend / resume）
+- [x] 数据模型：`FundRestrictionFact` 模型（符合 `*Fact` 规范）
+- [x] 预留扩展：`FundDcaFacts` docstring 预留"未来扩展"说明
+- [x] 版本规划：更新 roadmap.md
+
+**Phase C（DCA Context 扩展，待实现）**：
+- [ ] 设计 `build_dca_context_for_ai()` Flow 接口（合并 DCA Facts + Restriction Facts）
+- [ ] 预留 AI Context JSON 结构示例（文档级别）
+
+**暂不实现**（留到后续版本）：
+- ⏸️ FundRestrictionRepo 实现
+- ⏸️ 限额公告抓取（手动录入 → 东方财富自动化）
+- ⏸️ AI 分析层接入
+
+---
+
+## v0.4.5+（行为分析，待规划）
+
+- [ ] ActionLog v2：深度 DCA 归属字段（is_dca_execution / dca_plan_key / dca_tag_source）
 - [ ] 周报/月报（交易频率、定投执行率、intent 分布）
 - [ ] `action stats` 统计摘要
 - [ ] ContextSnapshot / Outcome 表（按需，验证驱动）

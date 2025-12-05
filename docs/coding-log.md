@@ -5,6 +5,73 @@
 
 ---
 
+## 2025-12-05 限额公告 Facts 建模（Phase B：v0.4.4 规划）
+
+**背景**：DCA 规则层（v0.4.3）已完成"日期+同日唯一性决定归属，金额只算偏差"的逻辑校准，但缺少"外部约束事实"输入。规则层无法区分"金额变化是限额导致 vs 主动调整"，需要为 AI 分析预留限额公告 Facts。
+
+**设计原则**：
+- 规则层只记录"什么时候，这只基金被限额/暂停"，不做语义判断
+- AI 基于限额事实 + 交易事实做综合分析，判断金额变化原因
+- 本阶段只做建模（表结构 + 数据模型），不实现 Repo 和抓取
+
+**Phase B 任务清单**：
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| Schema 设计 | ✅ 完成 | `docs/sql-schema.md` 新增 `fund_restrictions` 表设计 |
+| 数据模型 | ✅ 完成 | `src/core/models/fund_restriction.py` - `FundRestrictionFact` 模型 |
+| 预留扩展 | ✅ 完成 | `FundDcaFacts` docstring 预留"未来扩展"说明 |
+| 版本规划 | ✅ 完成 | `docs/roadmap.md` 更新 v0.4.4 规划 |
+
+**fund_restrictions 表设计**：
+
+```sql
+CREATE TABLE fund_restrictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fund_code TEXT NOT NULL,
+    start_date TEXT NOT NULL,         -- 限制开始日期
+    end_date TEXT,                     -- 限制结束日期（NULL=仍在限制中）
+    restriction_type TEXT NOT NULL,    -- daily_limit / suspend / resume
+    limit_amount DECIMAL(10,2),        -- 限购金额（仅 daily_limit 时有值）
+    source TEXT NOT NULL,              -- eastmoney / manual / other
+    source_url TEXT,                   -- 公告链接（可选）
+    note TEXT,                         -- 公告摘要或补充说明
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (fund_code) REFERENCES funds(fund_code)
+);
+```
+
+**restriction_type 枚举**（只保留三个核心类型）：
+- `daily_limit`：每日限购（如 QDII 额度紧张，每日只能买 10 元）
+- `suspend`：暂停申购
+- `resume`：恢复申购（显式标记恢复时间点）
+
+**FundRestrictionFact 模型**（新增文件）：
+- 路径：`src/core/models/fund_restriction.py`
+- 核心方法：
+  - `is_active_on(check_date)` - 检查指定日期是否在限制期内
+  - `is_currently_active` - 检查限制是否仍在生效（end_date 为 None）
+  - `duration_days` - 计算限制持续天数
+- 符合 `*Fact` 规范：只记录事实，不做语义判断
+
+**未来扩展方向**（暂不实现）：
+1. **v0.4.5+**：手动录入工具 + `FundRestrictionRepo` 实现
+2. **v0.5+**：东方财富公告抓取自动化
+3. **v0.x+**：`build_dca_context_for_ai()` Flow 合并 DCA Facts + Restriction Facts
+
+**关键约束**：
+- ❌ 不实现 Repo 层（等需要时再补）
+- ❌ 不在 `__init__.py` 导出（保持低调预留）
+- ❌ 不写爬虫、不构造任何真实数据
+- ❌ 不在代码里调用 `FundRestrictionFact`（只做模型预留）
+
+**与现有代码的关系**：
+- 不影响 DCA 回填/推断现有逻辑
+- 为未来 AI 分析预留正规入口
+- 符合"规则算事实，AI 做解释"分工原则
+
+---
+
 ## 2025-12-05 领域命名规范落地（code-style 规范）
 
 **背景**：代码评审指出现有 DCA 相关命名未遵循"规则输出事实，AI 做解释"分工原则，需对齐 `.claude/skills/code-style/SKILL.md` 的领域命名规范。

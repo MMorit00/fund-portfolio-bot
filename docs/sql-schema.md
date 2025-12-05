@@ -20,6 +20,7 @@
 |------|------|---------|
 | `funds` | 基金基础信息 | fund_code, name, asset_class, market, alias |
 | `fund_fee_items` | 基金费率（v0.4.4 新增） | fund_code, fee_type, charge_basis, rate, min_hold_days, max_hold_days |
+| `fund_restrictions` | 基金限购/暂停公告（v0.4.4+ 规划） | fund_code, start_date, end_date, restriction_type, limit_amount |
 | `trades` | 交易记录 | id, fund_code, trade_date, pricing_date, confirm_date, confirmation_status, import_batch_id, dca_plan_key |
 | `navs` | 净值数据 | fund_code, day, nav |
 | `trading_calendar` | 交易日历 | market, day, is_trading_day |
@@ -167,6 +168,89 @@ ALTER TABLE trades ADD COLUMN dca_tag_source TEXT;
 - **事实字段**：只能新增，不可修改（append-only）
 - **解释字段**：允许后续回填/修正，不改变真相层数据
 - 回填操作只更新解释字段，不修改 action/actor/source/acted_at 等事实字段
+
+### fund_restrictions 表（v0.4.4+ 规划）
+
+基金限购/暂停公告事实表，记录 QDII 限额、暂停申购等外部约束，供 AI 分析使用。
+
+**设计目的**：
+- 为规则层提供"外部约束事实"输入，区分"被限额 vs 主动调整"
+- 支持 AI 分析 DCA 金额变化原因（限额导致 vs 策略调整）
+- 为未来"定投执行异常检测"提供对照数据
+
+**字段定义**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER | 主键 |
+| `fund_code` | TEXT | 基金代码（外键） |
+| `start_date` | TEXT | 限制开始日期（ISO 格式 YYYY-MM-DD） |
+| `end_date` | TEXT | 限制结束日期（NULL=仍在限制中） |
+| `restriction_type` | TEXT | 限制类型：daily_limit / suspend / resume |
+| `limit_amount` | DECIMAL(10,2) | 限购金额（仅 daily_limit 时有值，如 10.00） |
+| `source` | TEXT | 数据来源：eastmoney / manual / other |
+| `source_url` | TEXT | 公告链接（可选） |
+| `note` | TEXT | 公告摘要或补充说明（可选） |
+| `created_at` | TEXT | 记录创建时间（ISO datetime） |
+
+**restriction_type 枚举说明**：
+
+| 类型 | 含义 | limit_amount | end_date |
+|------|------|--------------|----------|
+| `daily_limit` | 每日限购（如 QDII 额度紧张） | 必填（如 10.00） | 可空（NULL=仍在限制） |
+| `suspend` | 暂停申购 | NULL | 可空（NULL=仍在暂停） |
+| `resume` | 恢复申购（显式标记恢复时间点） | NULL | NULL |
+
+**典型使用场景**：
+
+```sql
+-- 1. 查询某只基金在某个时间段内是否存在限额
+SELECT * FROM fund_restrictions
+WHERE fund_code = '008971'
+  AND start_date <= '2025-11-15'
+  AND (end_date IS NULL OR end_date >= '2025-11-01');
+
+-- 2. 查询当前仍在限制中的基金
+SELECT fund_code, restriction_type, limit_amount, start_date
+FROM fund_restrictions
+WHERE end_date IS NULL;
+
+-- 3. 查询某日所有限购基金
+SELECT fund_code, limit_amount
+FROM fund_restrictions
+WHERE restriction_type = 'daily_limit'
+  AND start_date <= '2025-12-05'
+  AND (end_date IS NULL OR end_date >= '2025-12-05');
+```
+
+**索引设计**：
+
+```sql
+CREATE INDEX idx_fund_restrictions_fund_date
+ON fund_restrictions(fund_code, start_date, end_date);
+```
+
+**数据来源**（未来实现）：
+- `manual`：手动录入（Phase 1，用于验证设计）
+- `eastmoney`：东方财富公告抓取（Phase 2，自动化）
+- `other`：其他数据源（预留）
+
+**Repo 方法**（预留，暂不实现）：
+- `FundRestrictionRepo.get_active_restrictions(fund_code, date)` - 查询指定日期的有效限制
+- `FundRestrictionRepo.list_by_period(fund_code, start, end)` - 查询时间段内的所有限制
+- `FundRestrictionRepo.add_restriction(fact)` - 添加限制记录
+- `FundRestrictionRepo.end_restriction(id, end_date)` - 结束限制（填充 end_date）
+
+**与 DCA 事实快照的集成**（未来扩展）：
+- `build_dca_facts_for_batch()` 可关联查询批次时间范围内的限额事件
+- 将限额事实作为 `FundDcaFacts` 的附加字段，或单独提供 `build_dca_context_for_ai()` 合并多种 Facts
+
+**实现时机**：
+- v0.4.4：表结构设计 + 数据模型定义（本阶段）
+- v0.4.5+：手动录入工具 + Repo 实现
+- v0.5+：东方财富公告抓取自动化
+
+---
 
 ### fund_fee_items 表（v0.4.4 新增）
 

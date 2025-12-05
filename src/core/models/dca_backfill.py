@@ -145,6 +145,12 @@ class FundDcaFacts:
     - 判断金额变化是限额还是策略调整
     - 识别异常交易模式
     - 生成分析报告
+
+    未来扩展（v0.4.4+）：
+    - 关联 fund_restrictions 表，标记 DCA 时间段内是否存在限额事件
+    - 可选方案 1：增加字段 `restriction_events: list[FundRestrictionFact]`
+    - 可选方案 2：单独提供 `build_dca_context_for_ai()` Flow 合并多种 Facts
+    - 规则层只提供事实关联，语义判断交给 AI 层
     """
 
     fund_code: str
