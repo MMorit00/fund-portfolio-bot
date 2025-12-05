@@ -72,6 +72,42 @@ description: Applies the fund-portfolio-bot Python coding conventions, including
 - 业务逻辑中避免直接使用 `os.getenv`：
   - 优先通过已有的配置模块或适配层获取配置。
 
+## DCA & AI 分工命名规范
+
+本项目是 **AI 驱动** 的投资工具。在 DCA、历史扫描、AI 分析相关代码中，严格遵循 **"规则算事实，AI 做解释"** 的分工原则，通过命名来强化这个边界。
+
+### 规则层数据模型
+
+规则层只输出可重算的结构化事实，严禁直接生成主观结论。
+
+| 后缀 | 定义 | 示例 |
+|------|------|------|
+| `*Facts` | 对象在特定时期的客观数据聚合（日期、金额、间隔等）；作为 Context 供 AI 使用 | `FundDcaFacts` |
+| `*Check` | 单条数据针对规则的验证结果（命中+偏差+说明），不下结论 | `DcaTradeCheck` |
+| `*Flag` | 规则识别的"值得注意"的点（异常、中断等），仅标记不定性 | `TradeFlag` |
+| `*Draft` | 建议方案（永远不对应 DB 表，只是内存结构） | `DcaPlanCandidate` |
+| `*Result` | 内部中间聚合结果 | `BackfillResult` |
+| `*Report` | CLI/AI 展示用的汇总报告 | `ScanReport` |
+
+### Flow 函数动词
+
+| 动词 | 约束 | 示例 |
+|------|------|------|
+| `build_*_facts()` | 只读，纯计算/聚合，返回 `*Facts` | `build_dca_facts_for_batch()` |
+| `scan_*()` | 只读，无副作用（Idempotent），可随意调用 | `scan_trading_history()` |
+| `draft_*()` | 返回 `*Draft` 对象，不入库 | `draft_dca_plan()` |
+| `backfill_*()` | **写操作**，修改 Truth Layer，需谨慎 | `backfill_dca_for_batch()` |
+
+**关键原则**：看到 `scan_` 就知道安全可调；看到 `backfill_` 就要警惕会修改数据。
+
+### AI 层（预留）
+
+AI 基于规则层的 `*Facts` 生成语义解释，仅写入解释性字段，不修改核心数据。
+
+- `*Insight`：洞察（如"这笔交易可能是限额"）
+- `*Explanation`：自然语言解释
+- `*Label`：分类标签
+
 ## 提交前检查
 
 在可能的情况下：
