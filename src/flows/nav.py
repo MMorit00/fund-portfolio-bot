@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from src.core.dependency import dependency
 from src.core.log import log
-from src.data.client.eastmoney import EastmoneyClient
+from src.data.client.fund_data import FundDataClient
 from src.data.db.calendar import CalendarService
 from src.data.db.fund_repo import FundRepo
 from src.data.db.nav_repo import NavRepo
@@ -35,7 +35,7 @@ class FetchNavsResult:
 def _fetch_single_nav(
     fund_code: str,
     day: date,
-    eastmoney_service: EastmoneyClient,
+    fund_data_client: FundDataClient,
     nav_repo: NavRepo,
 ) -> bool:
     """
@@ -44,13 +44,13 @@ def _fetch_single_nav(
     Args:
         fund_code: 基金代码。
         day: 目标日期。
-        eastmoney_service: 东方财富服务。
+        fund_data_client: 基金数据客户端。
         nav_repo: 净值仓储。
 
     Returns:
         True 表示成功，False 表示失败。
     """
-    nav = eastmoney_service.get_nav(fund_code, day)
+    nav = fund_data_client.get_nav(fund_code, day)
     if nav is None or nav <= Decimal("0"):
         return False
     nav_repo.upsert(fund_code, day, nav)
@@ -64,7 +64,7 @@ def fetch_navs(
     fund_codes: list[str] | None = None,
     fund_repo: FundRepo | None = None,
     nav_repo: NavRepo | None = None,
-    eastmoney_service: EastmoneyClient | None = None,
+    fund_data_client: FundDataClient | None = None,
     calendar_service: CalendarService | None = None,
 ) -> FetchNavsResult:
     """
@@ -80,7 +80,7 @@ def fetch_navs(
         fund_codes: 指定基金代码列表（可选，未指定时抓取所有已配置基金）。
         fund_repo: 基金仓储（自动注入）。
         nav_repo: 净值仓储（自动注入）。
-        eastmoney_service: 东方财富服务（自动注入）。
+        fund_data_client: 基金数据客户端（自动注入）。
         calendar_service: 交易日历服务（自动注入）。
 
     Returns:
@@ -114,7 +114,7 @@ def fetch_navs(
     failed_codes: list[str] = []
 
     for f in funds:
-        if _fetch_single_nav(f.fund_code, day, eastmoney_service, nav_repo):
+        if _fetch_single_nav(f.fund_code, day, fund_data_client, nav_repo):
             success += 1
         else:
             failed_codes.append(f"{f.fund_code}@{day}")
@@ -128,7 +128,7 @@ def fetch_missing_navs(
     days: int = 30,
     trade_repo: TradeRepo | None = None,
     nav_repo: NavRepo | None = None,
-    eastmoney_service: EastmoneyClient | None = None,
+    fund_data_client: FundDataClient | None = None,
 ) -> FetchNavsResult:
     """
     自动检测延迟交易的缺失 NAV 并补抓。
@@ -143,7 +143,7 @@ def fetch_missing_navs(
         days: 检测最近 N 天的延迟交易，默认 30 天。
         trade_repo: 交易仓储（自动注入）。
         nav_repo: 净值仓储（自动注入）。
-        eastmoney_service: 东方财富服务（自动注入）。
+        fund_data_client: 基金数据客户端（自动注入）。
 
     Returns:
         抓取结果统计（day 为 None，total 为缺失 NAV 的总数）。
@@ -173,7 +173,7 @@ def fetch_missing_navs(
     failed_codes: list[str] = []
 
     for fund_code, pricing_date in sorted(missing_navs):
-        if _fetch_single_nav(fund_code, pricing_date, eastmoney_service, nav_repo):
+        if _fetch_single_nav(fund_code, pricing_date, fund_data_client, nav_repo):
             success += 1
             log(f"[Nav] 补抓成功：{fund_code} {pricing_date}")
         else:

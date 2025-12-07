@@ -9,7 +9,9 @@ from statistics import median
 from typing import Iterable
 
 from src.core.dependency import dependency
-from src.core.models import DcaPlanDraft, MarketType
+from src.core.models import DcaInferResult, DcaPlanDraft, MarketType
+from src.core.models.fund_restriction import ParsedRestriction
+from src.data.client.fund_data import FundDataClient
 from src.data.db.action_repo import ActionRepo
 from src.data.db.calendar import CalendarService
 from src.data.db.trade_repo import TradeRepo
@@ -24,7 +26,8 @@ def draft_dca_plans(
     action_repo: ActionRepo | None = None,
     trade_repo: TradeRepo | None = None,
     calendar_service: CalendarService | None = None,
-) -> list[DcaPlanDraft]:
+    fund_data_client: FundDataClient | None = None,
+) -> DcaInferResult:
     """
     从历史行为推断定投计划草案（只读，不写库，符合 draft_*() 规范）。
 
@@ -78,7 +81,12 @@ def draft_dca_plans(
          * low: 其他情况（理论上已被 min_samples/min_span_days 剪枝，但保留作兜底）。
 
     返回：
-        DcaPlanDraft 列表，每个元素对应一个 fund_code 的定投草案方案。
+        DcaInferResult（包含推断草案 + 各基金当前限额状态）。
+
+    说明：
+        - 返回的 fund_restrictions 字典包含所有参与推断的基金的当前限额信息；
+        - 为 AI 分析提供完整上下文（历史推断 + 当前约束）；
+        - 帮助识别"金额变化是限额导致 vs 主动调整"。
     """
     # 1. 读取行为日志并按基金过滤
     logs = action_repo.list_buy_actions(days=None)
@@ -90,7 +98,7 @@ def draft_dca_plans(
         and (fund_code is None or log.fund_code == fund_code)
     ]
     if not filtered_logs:
-        return []
+        return DcaInferResult(drafts=[], fund_restrictions={})
 
     # 2. 查询对应交易记录
     trade_ids = sorted({log.trade_id for log in filtered_logs if log.trade_id is not None})
@@ -156,7 +164,23 @@ def draft_dca_plans(
             )
         )
 
-    return sorted(drafts, key=lambda d: (d.fund_code, d.frequency, d.rule))
+    # 5. 查询所有涉及基金的当前限额状态（供 AI 分析）
+    fund_codes = sorted({d.fund_code for d in drafts})
+    fund_restrictions: dict[str, ParsedRestriction | None] = {}
+
+    for code in fund_codes:
+        try:
+            log(f"[DCA:infer] 查询 {code} 的当前限额状态...")
+            parsed = fund_data_client.get_trading_restriction(code)
+            fund_restrictions[code] = parsed
+        except Exception as err:  # noqa: BLE001
+            log(f"[DCA:infer] 查询 {code} 限额失败：{err}，跳过")
+            fund_restrictions[code] = None
+
+    return DcaInferResult(
+        drafts=sorted(drafts, key=lambda d: (d.fund_code, d.frequency, d.rule)),
+        fund_restrictions=fund_restrictions,
+    )
 
 
 def _calc_day_diffs(

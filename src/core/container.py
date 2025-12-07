@@ -37,7 +37,7 @@ import sqlite3
 
 from src.core.dependency import register
 from src.data.client.discord import DiscordClient
-from src.data.client.eastmoney import EastmoneyClient
+from src.data.client.fund_data import FundDataClient
 from src.data.client.local_nav import LocalNavService
 from src.data.db.action_repo import ActionRepo
 from src.data.db.alloc_config_repo import AllocConfigRepo
@@ -46,6 +46,7 @@ from src.data.db.db_helper import DbHelper
 from src.data.db.dca_plan_repo import DcaPlanRepo
 from src.data.db.fund_fee_repo import FundFeeRepo
 from src.data.db.fund_repo import FundRepo
+from src.data.db.fund_restriction_repo import FundRestrictionRepo
 from src.data.db.import_batch_repo import ImportBatchRepo
 from src.data.db.nav_repo import NavRepo
 from src.data.db.trade_repo import TradeRepo
@@ -190,17 +191,17 @@ def get_local_nav_service() -> LocalNavService:
     return LocalNavService(nav_repo)
 
 
-@register("eastmoney_service")
-def get_eastmoney_client() -> EastmoneyClient:
+@register("fund_data_client")
+def get_fund_data_client() -> FundDataClient:
     """
-    获取东方财富 API 客户端。
+    获取基金远程数据客户端。
 
     Returns:
-        东方财富客户端实例。
+        基金数据客户端实例。
 
-    注册名：eastmoney_service
+    注册名：fund_data_client
     """
-    return EastmoneyClient()
+    return FundDataClient()
 
 
 @register("discord_service")
@@ -259,3 +260,20 @@ def get_import_batch_repo() -> ImportBatchRepo:
     """
     conn = get_db_connection()
     return ImportBatchRepo(conn)
+
+
+@register("fund_restriction_repo")
+def get_fund_restriction_repo() -> FundRestrictionRepo:
+    """
+    获取基金限制仓储（v0.4.4 新增）。
+
+    Returns:
+        基金限制仓储实例。
+
+    注册名：fund_restriction_repo
+
+    说明：
+        用于管理基金交易限制记录（限购/暂停/恢复）。
+    """
+    conn = get_db_connection()
+    return FundRestrictionRepo(conn)

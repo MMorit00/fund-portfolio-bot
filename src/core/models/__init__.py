@@ -8,7 +8,7 @@ from .dca_backfill import (
     FundDcaFacts,
     TradeFlag,
 )
-from .dca_infer import DcaPlanDraft
+from .dca_infer import DcaInferResult, DcaPlanDraft
 from .dca_plan import DcaPlan, Frequency, Status
 from .fund import Fund, FundFees, RedemptionTier
 from .history_import import (
@@ -47,6 +47,7 @@ __all__ = [
     "Frequency",
     "Status",
     "DcaPlanDraft",
+    "DcaInferResult",
     # DCA 回填
     "BackfillResult",
     "DcaTradeCheck",

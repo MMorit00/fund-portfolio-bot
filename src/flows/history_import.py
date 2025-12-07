@@ -25,7 +25,7 @@ from src.core.models import (
 )
 from src.core.rules.precision import quantize_shares
 from src.core.rules.settlement import calc_pricing_date, default_policy
-from src.data.client.eastmoney import EastmoneyClient
+from src.data.client.fund_data import FundDataClient
 from src.data.db.action_repo import ActionRepo
 from src.data.db.calendar import CalendarService
 from src.data.db.fund_repo import FundRepo
@@ -58,7 +58,7 @@ def import_trades_from_csv(
     trade_repo: TradeRepo | None = None,
     nav_repo: NavRepo | None = None,
     action_repo: ActionRepo | None = None,
-    eastmoney_service: EastmoneyClient | None = None,
+    fund_data_client: FundDataClient | None = None,
     calendar_service: CalendarService | None = None,
     import_batch_repo: ImportBatchRepo | None = None,
 ) -> ImportResult:
@@ -68,7 +68,7 @@ def import_trades_from_csv(
     导入流程：
     1. 解析 CSV（GBK 编码）→ 过滤基金交易 → 生成 ImportRecord
     2. 映射 fund_code + market（通过 funds.alias 查询）
-    3. 抓取历史 NAV（通过 EastmoneyClient）
+    3. 抓取历史 NAV（通过 FundDataClient）
     4. 计算份额（amount / nav）
     5. 写入 trades 表（mode=apply 时）
     6. 补录 action_log（with_actions=True 时）
@@ -87,7 +87,7 @@ def import_trades_from_csv(
         trade_repo: 交易仓储（自动注入）。
         nav_repo: 净值仓储（自动注入）。
         action_repo: 行为日志仓储（自动注入）。
-        eastmoney_service: 东方财富服务（自动注入）。
+        fund_data_client: 基金数据客户端（自动注入）。
         calendar_service: 日历服务（自动注入，用于计算定价日）。
 
     Returns:
@@ -119,16 +119,16 @@ def import_trades_from_csv(
 
     # 步骤 2: 自动解析基金（仅 apply 模式，v0.4.2 修复）
     # 原因：dry-run 不应写入数据库，apply 时才自动创建基金记录
-    if mode == "apply" and fund_repo is not None and eastmoney_service is not None:
-        _auto_resolve_funds(records, fund_repo, eastmoney_service)
+    if mode == "apply" and fund_repo is not None and fund_data_client is not None:
+        _auto_resolve_funds(records, fund_repo, fund_data_client)
 
     # 步骤 3: 映射 fund_code + market
     if fund_repo is not None:
         _map_funds(records, fund_repo)
 
     # 步骤 4: 抓取历史 NAV（使用定价日而非下单日）
-    if eastmoney_service is not None and nav_repo is not None and calendar_service is not None:
-        _fetch_navs(records, eastmoney_service, nav_repo, calendar_service)
+    if fund_data_client is not None and nav_repo is not None and calendar_service is not None:
+        _fetch_navs(records, fund_data_client, nav_repo, calendar_service)
 
     # 步骤 5: 计算份额
     _calculate_shares(records)
@@ -370,7 +370,7 @@ def _create_error_record(
 def _auto_resolve_funds(
     records: list[ImportRecord],
     fund_repo: FundRepo,
-    eastmoney_client: EastmoneyClient,
+    fund_data_client: FundDataClient,
 ) -> None:
     """
     自动解析并创建基金记录。
@@ -378,13 +378,13 @@ def _auto_resolve_funds(
     流程：
     1. 收集所有唯一的基金名称
     2. 跳过已存在的基金（通过外部名称查询）
-    3. 调用东方财富 API 搜索未知基金
+    3. 调用远程 API 搜索未知基金
     4. 自动创建 funds 表记录（含外部名称用于后续匹配）
 
     Args:
         records: ImportRecord 列表。
         fund_repo: 基金仓储。
-        eastmoney_client: 东方财富客户端。
+        fund_data_client: 基金数据客户端。
 
     副作用：
         首次遇到新基金时，自动创建 funds 表记录。
@@ -410,10 +410,10 @@ def _auto_resolve_funds(
             resolved_count += 1
             continue
 
-        # 2.2 调用东方财富搜索 API
-        # TODO: EastmoneyClient 后续可直接返回 FundSearchResult，
+        # 2.2 调用远程搜索 API
+        # TODO: FundDataClient 后续可直接返回 FundSearchResult，
         # 这里可相应改为使用强类型对象而非 dict。
-        search_result = eastmoney_client.search_fund(fund_name)
+        search_result = fund_data_client.search_fund(fund_name)
         if search_result is None:
             log(f"[Flow:HistoryImport] 未找到匹配基金：{fund_name}")
             continue
@@ -517,7 +517,7 @@ def _map_funds(records: list[ImportRecord], fund_repo: FundRepo) -> None:
 
 def _fetch_navs(
     records: list[ImportRecord],
-    eastmoney_client: EastmoneyClient,
+    fund_data_client: FundDataClient,
     nav_repo: NavRepo,
     calendar_service: CalendarService,
 ) -> None:
@@ -531,7 +531,7 @@ def _fetch_navs(
 
     逻辑：
     1. 根据 market 获取结算策略，计算 pricing_date
-    2. 调用 eastmoney_client.get_nav(fund_code, pricing_date)
+    2. 调用 fund_data_client.get_nav(fund_code, pricing_date)
     3. 抓取成功则填充 record.nav
     4. 抓取失败且 target_status="confirmed" 则标记 error_type="nav_missing"
     5. 抓取失败且 target_status="pending" 则跳过（后续正常确认流程处理）
@@ -540,7 +540,7 @@ def _fetch_navs(
 
     Args:
         records: ImportRecord 列表（原地修改）。
-        eastmoney_client: 东方财富客户端。
+        fund_data_client: 基金数据客户端。
         nav_repo: 净值仓储（缓存查询）。
         calendar_service: 日历服务（用于计算定价日）。
     """
@@ -577,7 +577,7 @@ def _fetch_navs(
             nav = nav_repo.get(fund_code, pricing_date)
             if nav is None:
                 # 调用东方财富 API
-                nav = eastmoney_client.get_nav(fund_code, pricing_date)
+                nav = fund_data_client.get_nav(fund_code, pricing_date)
                 # 如果抓取成功，存入本地缓存
                 if nav is not None:
                     nav_repo.upsert(fund_code, pricing_date, nav)

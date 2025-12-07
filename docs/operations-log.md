@@ -26,6 +26,7 @@ python -m src.cli.report           # 生成日报
 | **配置** | `fund add/list/remove` | 基金管理 |
 | | `dca_plan add/list/enable/disable/delete/infer` | 定投计划 |
 | | `alloc set/show` | 资产配置 |
+| | `fund_restriction add/end/check-status` | 限购/暂停公告管理 |
 | **交易** | `trade buy/sell` | 手动交易 |
 | | `trade list/cancel/confirm-manual` | 交易管理 |
 | | `dca run/skip` | 定投执行 |
@@ -181,3 +182,137 @@ uv run python -m src.cli.dca_plan backfill --batch-id 3 --fund 016532 --mode app
 - **不修改事实字段**：只更新 `dca_plan_key` 和 `strategy`，不改 amount/trade_date/status；
 - **回填可选**：不影响持仓和收益计算，主要用于数据追溯和 AI 分析；
 - **金额浮动**：±10% 容差考虑用户可能微调定投金额的情况。
+
+---
+
+## 基金限购/暂停公告管理（fund_restriction）
+
+> v0.4.4 新增：记录基金的限购/暂停状态（AKShare 实时查询 + 手动录入），用于后续 DCA / AI 分析。
+>
+> **数据源**：
+> 1. **check-status**（AKShare fund_purchase_em）- 主源，获取当前准确限额
+> 2. **add**（手动录入）- 兜底，特殊情况补充
+
+**常用命令**：
+
+```bash
+# 添加限购记录（daily_limit 必须带 --limit）
+uv run python -m src.cli.fund_restriction add \
+  --fund 008971 \
+  --type daily_limit \
+  --start 2025-11-01 \
+  --limit 10.00 \
+  --note "QDII 额度紧张"
+
+# 添加暂停申购记录
+uv run python -m src.cli.fund_restriction add \
+  --fund 162411 \
+  --type suspend \
+  --start 2025-12-01
+
+# 结束限制（设置 end_date）
+uv run python -m src.cli.fund_restriction end \
+  --fund 008971 \
+  --type daily_limit \
+  --date 2025-12-31
+```
+
+**参数约定**（只列差异点）：
+- `--type`：`daily_limit` / `suspend` / `resume`
+  - `daily_limit` 必须带 `--limit`
+  - `suspend` / `resume` 不需要 `--limit`
+- `--start`：限制开始日期（必填）
+- `--end`：限制结束日期（可选，不填表示仍在生效）
+- `--source`：数据来源（默认 `manual`，常用取值：`manual` / `eastmoney_parsed` / `other`）
+
+**语义说明**：
+- `fund_restrictions` 只记录“外部约束事实”，不会自动阻止交易；
+- `check-status --apply` 写入的记录 `source` 固定为 `eastmoney_trading_status`，不受 `--source` 影响；
+- DCA / AI 分析可以通过 Repo 检查“某日是否处于限额期”，再结合交易金额做解释。
+
+---
+
+## 查询基金当前交易状态（fund_restriction check-status）
+
+> v0.4.4 新增（Round 4）：**推荐方式**，通过 AKShare 查询基金当前准确的申购状态和日累计限额。
+
+### 用法示例
+
+```bash
+# 查询基金当前交易状态
+uv run python -m src.cli.fund_restriction check-status --fund 016532
+
+# 自动插入到数据库（需确认）
+uv run python -m src.cli.fund_restriction check-status --fund 016532 --apply
+```
+
+### 参数说明
+
+**check-status 命令**：
+- `--fund`：基金代码（必填）
+- `--apply`：自动插入到数据库（可选，需确认）
+
+### 输出示例
+
+```text
+# 查询限额基金（016532 嘉实纳斯达克100）
+[CheckStatus] 正在查询 016532 的交易状态（AKShare）...
+[FundData] 拉取全量基金交易状态数据...
+
+📊 016532 当前交易状态：
+================================================================================
+
+  类型: daily_limit
+  开始日期: 2025-12-07（当前状态快照）
+  结束日期: 未知（当前状态）
+  限额: 100.0 元/日
+  置信度: high
+  数据源: AKShare fund_purchase_em
+  备注: from AKShare fund_purchase_em: 申购状态=限大额, 日累计限额=100.0元, 赎回状态=开放赎回
+
+
+💡 使用建议：
+   如果以上状态正确，可使用 --apply 标志自动插入：
+     uv run python -m src.cli.fund_restriction check-status --fund 016532 --apply
+
+# 查询无限制基金（000001 华夏成长）
+[CheckStatus] 正在查询 000001 的交易状态（AKShare）...
+（当前无交易限制，申购状态=开放申购）
+```
+
+### 核心优势
+
+1. **准确的限额金额**：
+   - 直接获取"日累计申购限额"字段（如 100 元、10 元）
+   - 数据源：东方财富-天天基金官方数据
+   - 置信度：`high`（非猜测，直接从结构化字段读取）
+
+2. **实时查询**：
+   - 每次拉取全量数据（25000+ 基金，1-2 秒）
+   - 数据最新，无缓存延迟
+
+3. **状态识别**：
+   - 开放申购 → 返回"无限制"
+   - 限大额 → 返回 `daily_limit` + 限额
+   - 暂停申购 → 返回 `suspend`
+
+### 应用场景
+
+1. **查询当前限额**（推荐）：
+   - 问题："016532 现在限额多少？"
+   - 答案：`check-status --fund 016532` → 100 元/日
+
+2. **批量检查多只基金**：
+   - 对定投池中的基金逐个查询
+   - 识别哪些基金有限额、哪些开放申购
+
+3. **定期同步状态快照**：
+   - 每周运行一次，更新数据库中的限额记录
+   - 构建"当前状态快照"表
+
+### 注意事项
+
+- **数据源**：AKShare fund_purchase_em（东方财富-天天基金）
+- **数据新鲜度**：工作日更新，周末可能滞后
+- **查询方式**：每次实时查询全量数据（约 1-2 秒），无缓存
+- **适用范围**：仅查询**当前状态**，历史变更需查看公告

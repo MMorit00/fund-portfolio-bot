@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from src.core.dependency import dependency
 from src.core.models import FundFees, RedemptionTier
-from src.data.client.eastmoney import EastmoneyClient
+from src.data.client.fund_data import FundDataClient
 from src.data.db.fund_fee_repo import FundFeeRepo
 from src.data.db.fund_repo import FundRepo
 
@@ -46,17 +46,17 @@ def sync_fund_fees(
     skip_if_exists: bool = False,
     fund_repo: FundRepo | None = None,
     fund_fee_repo: FundFeeRepo | None = None,
-    eastmoney_service: EastmoneyClient | None = None,
+    fund_data_client: FundDataClient | None = None,
 ) -> SyncFeesResult:
     """
-    同步基金费率（从东方财富抓取）。
+    同步基金费率（从远程数据源抓取）。
 
     Args:
         fund_code: 基金代码，None 表示同步全部。
         skip_if_exists: 如果已有费率则跳过（用于自动同步场景）。
         fund_repo: 基金仓储（自动注入）。
         fund_fee_repo: 基金费率仓储（自动注入）。
-        eastmoney_service: 东方财富客户端（自动注入）。
+        fund_data_client: 基金数据客户端（自动注入）。
 
     Returns:
         SyncFeesResult 包含同步统计。
@@ -74,7 +74,7 @@ def sync_fund_fees(
         if skip_if_exists and fund_fee_repo.has_operating_fees(fund_code):
             return SyncFeesResult(success=0, failed=0, details=[])
 
-        fees_dict = eastmoney_service.get_fund_fees(fund_code)
+        fees_dict = fund_data_client.get_fund_fees(fund_code)
         if fees_dict:
             fees = _build_fund_fees(fees_dict)
             fund_fee_repo.upsert_fees(fund_code, fees)
@@ -100,7 +100,7 @@ def sync_fund_fees(
         details: list[tuple[str, str, bool]] = []
 
         for fund in funds:
-            fees_dict = eastmoney_service.get_fund_fees(fund.fund_code)
+            fees_dict = fund_data_client.get_fund_fees(fund.fund_code)
             if fees_dict:
                 fees = _build_fund_fees(fees_dict)
                 fund_fee_repo.upsert_fees(fund.fund_code, fees)
@@ -115,13 +115,13 @@ def sync_fund_fees(
 
 def _build_fund_fees(fees_dict: dict) -> FundFees:
     """
-    从 EastmoneyClient 返回的 dict 构建 FundFees 对象。
+    从 FundDataClient 返回的 dict 构建 FundFees 对象。
 
     TODO: 中长期可考虑将 HTML/JS 解析迁移到独立规则模块，
-    EastmoneyClient 只负责 I/O，减少 client 层正则解析逻辑。
+    FundDataClient 只负责 I/O，减少 client 层正则解析逻辑。
 
     Args:
-        fees_dict: EastmoneyClient.get_fund_fees() 返回的字典。
+        fees_dict: FundDataClient.get_fund_fees() 返回的字典。
 
     Returns:
         FundFees 对象（含赎回费阶梯）。

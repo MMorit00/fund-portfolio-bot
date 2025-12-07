@@ -64,7 +64,7 @@ scripts/       # 辅助脚本
 │ │   settlement, rebalance  │ │    │ │   CalendarService    │ │
 │ │ dependency.py            │ │    │ ├──────────────────────┤ │
 │ │   @dependency 装饰器     │ │    │ │ client/              │ │
-│ │   @register 装饰器       │ │    │ │   EastmoneyClient    │ │
+│ │   @register 装饰器       │ │    │ │   FundDataClient     │ │
 │ │ container.py             │ │    │ │   LocalNavService    │ │
 │ │   依赖工厂函数集合        │ │    │ │   DiscordClient      │ │
 │ │   get_trade_repo() 等    │ │    │ └──────────────────────┘ │
@@ -135,7 +135,7 @@ def main() -> int: ...                         # 路由入口
 
 **命名约定**：
 - Repo 类：`TradeRepo`、`NavRepo`、`FundRepo`（数据库访问）
-- Client 类：`EastmoneyClient`、`DiscordClient`（纯 I/O，无业务逻辑）
+- Client 类：`FundDataClient`、`DiscordClient`（纯 I/O，无业务逻辑）
 - Service 类：`CalendarService`、`LocalNavService`（封装业务逻辑）
 - Flow 函数：`create_trade()`、`confirm_trades()`、`make_daily_report()`
 - Result 类：`ConfirmResult`、`ReportResult`、`FetchNavsResult`
@@ -180,7 +180,7 @@ def main() -> int: ...                         # 路由入口
 - `calendar.py`：CalendarService
 
 ### 外部客户端（data/client/）
-- `eastmoney.py`：EastmoneyClient（东方财富 API 客户端：抓取净值、搜索基金）
+- `fund_data.py`：FundDataClient（基金远程数据客户端：抓取净值、搜索基金、查询交易限制）
 - `local_nav.py`：LocalNavService（本地净值查询服务）
 - `discord.py`：DiscordClient（Discord Webhook 客户端：推送消息）
 
@@ -190,8 +190,8 @@ def main() -> int: ...                         # 路由入口
 外部抓取（CLI → Flow）:
   src/cli/fetch_navs.py: main()
     → src/flows/market.py: fetch_navs(day=day)
-      → EastmoneyClient.get_nav()  # 自动注入
-      → NavRepo.upsert()           # 自动注入
+      → FundDataClient.get_nav()  # 自动注入
+      → NavRepo.upsert()          # 自动注入
       → SQLite navs 表
 
 本地查询（Flow → Service）:

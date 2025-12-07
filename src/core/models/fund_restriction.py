@@ -1,4 +1,4 @@
-"""基金限购/暂停公告 Facts 模型（v0.4.4+ 规划）。
+"""基金限购/暂停公告 Facts 模型（v0.4.4）。
 
 用途：
 - 记录 QDII 限额、暂停申购等外部约束，供规则层和 AI 分析使用
@@ -8,12 +8,17 @@
 设计原则：
 - 规则层只记录"什么时候，这只基金被限额/暂停"，不做语义判断
 - AI 基于这些事实判断：金额变化是限额导致还是主动调整
-- 数据来源：手动录入 / 东方财富公告抓取 / 其他数据源
+- 数据来源：AKShare 实时查询（主源）/ 手动录入（兜底）/ 公告解析（v0.5+）
 
-实现时机：
-- v0.4.4：表结构设计 + 数据模型定义（本阶段，暂不实现 Repo）
-- v0.4.5+：手动录入工具 + Repo 实现
-- v0.5+：东方财富公告抓取自动化
+当前功能（v0.4.4）：
+- FundRestrictionFact: 核心事实模型
+- ParsedRestriction: 解析结果中间类型（含置信度）
+- FundRestrictionRepo: 数据访问层（add / list_active_on / list_by_period / end_latest_active）
+- FundDataClient.get_trading_restriction(): AKShare 实时查询当前交易限制
+- CLI: fund_restriction 命令（check-status / add / end）
+
+未来扩展（v0.5+）：
+- 公告 PDF 解析（GPT/NLP）构建历史时间线
 """
 
 from __future__ import annotations
@@ -40,7 +45,7 @@ class FundRestrictionFact:
     - end_date: 限制结束日期（None=仍在限制中）
     - restriction_type: 限制类型（daily_limit / suspend / resume）
     - limit_amount: 限购金额（仅 daily_limit 时有值）
-    - source: 数据来源（eastmoney / manual / other）
+    - source: 数据来源（manual / eastmoney_trading_status / eastmoney_parsed / other）
     - source_url: 公告链接（可选）
     - note: 公告摘要或补充说明（可选）
 
@@ -66,7 +71,7 @@ class FundRestrictionFact:
     """限购金额（仅 daily_limit 时有值，如 Decimal('10.00')）。"""
 
     source: str = "manual"
-    """数据来源：eastmoney / manual / other。"""
+    """数据来源：manual / eastmoney_trading_status / eastmoney_parsed / other。"""
 
     source_url: str | None = None
     """公告链接（可选）。"""
@@ -125,3 +130,64 @@ class FundRestrictionFact:
         if self.end_date is None:
             return None
         return (self.end_date - self.start_date).days
+
+
+@dataclass(slots=True)
+class ParsedRestriction:
+    """
+    解析后的限制信息（中间结果）。
+
+    用途：
+    - 数据源客户端（TradingStatusClient）的返回类型
+    - 包含置信度等元信息，方便 CLI 展示和用户确认
+    - 可转换为 FundRestrictionFact 存入数据库
+
+    与 FundRestrictionFact 的区别：
+    - ParsedRestriction: 解析结果 + 元信息（置信度、来源说明）
+    - FundRestrictionFact: 纯事实记录，存入数据库
+    """
+
+    fund_code: str
+    """基金代码。"""
+
+    restriction_type: str
+    """限制类型：daily_limit / suspend / resume。"""
+
+    start_date: date
+    """限制开始日期（或状态快照日期）。"""
+
+    end_date: date | None
+    """限制结束日期（None=未知或仍在限制中）。"""
+
+    limit_amount: Decimal | None = None
+    """限购金额（仅 daily_limit 时有值）。"""
+
+    confidence: str = "medium"
+    """置信度：high / medium / low。"""
+
+    note: str | None = None
+    """解析说明或备注。"""
+
+    source_url: str | None = None
+    """数据来源链接（可选）。"""
+
+    def to_fact(self, source: str = "parsed") -> FundRestrictionFact:
+        """
+        转换为 FundRestrictionFact（存库格式）。
+
+        Args:
+            source: 数据来源标识（如 "eastmoney_trading_status"）。
+
+        Returns:
+            FundRestrictionFact 对象。
+        """
+        return FundRestrictionFact(
+            fund_code=self.fund_code,
+            start_date=self.start_date,
+            end_date=self.end_date,
+            restriction_type=self.restriction_type,
+            limit_amount=self.limit_amount,
+            source=source,
+            source_url=self.source_url,
+            note=self.note,
+        )

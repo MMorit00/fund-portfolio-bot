@@ -292,20 +292,40 @@ def _do_infer(args: argparse.Namespace) -> int:
             _format_dca_facts(facts_list)
             log("\n" + "-" * 60)
 
-        # 3. 调用推断 Flow（只读，返回草案）
-        drafts = draft_dca_plans(
+        # 3. 调用推断 Flow（只读，返回草案 + 限额状态）
+        result = draft_dca_plans(
             min_samples=min_samples,
             min_span_days=min_span_days,
             fund_code=fund_code,
         )
 
-        # 4. 输出推断结果
-        if not drafts:
+        # 4. 先输出当前限额状态（供 AI 分析）
+        if result.fund_restrictions:
+            log("\n📊 当前限额状态快照（供 AI 分析）：")
+            log("=" * 80)
+            for code in sorted(result.fund_restrictions.keys()):
+                parsed = result.fund_restrictions[code]
+                if parsed is None:
+                    log(f"  {code} | 开放申购 | 无限制")
+                else:
+                    if parsed.restriction_type == "daily_limit":
+                        log(
+                            f"  {code} | 限购 {parsed.limit_amount} 元/日 "
+                            f"| 置信度: {parsed.confidence}"
+                        )
+                    elif parsed.restriction_type == "suspend":
+                        log(f"  {code} | 暂停申购 | 置信度: {parsed.confidence}")
+                    elif parsed.restriction_type == "resume":
+                        log(f"  {code} | 恢复申购 | 置信度: {parsed.confidence}")
+            log("")
+
+        # 5. 输出推断结果
+        if not result.drafts:
             log("（未发现符合条件的定投模式）")
             return 0
 
-        log(f"\n🎯 推断草案计划（{len(drafts)} 个）：")
-        for d in drafts:
+        log(f"\n🎯 推断草案计划（{len(result.drafts)} 个）：")
+        for d in result.drafts:
             icon = "⭐" if d.confidence == "high" else ("✨" if d.confidence == "medium" else "•")
             freq_rule = f"{d.frequency}/{d.rule}" if d.frequency != "daily" else "daily"
             log(
@@ -313,6 +333,16 @@ def _do_infer(args: argparse.Namespace) -> int:
                 f"| samples={d.sample_count}, span={d.span_days} 天, confidence={d.confidence} "
                 f"| {d.first_date} → {d.last_date}"
             )
+
+            # 如果有限额，添加提示
+            parsed = result.fund_restrictions.get(d.fund_code)
+            if parsed and parsed.restriction_type == "daily_limit":
+                log(
+                    f"      ⚠️  当前限购 {parsed.limit_amount} 元/日，"
+                    f"历史金额 {d.amount} 元可能因以前无限额"
+                )
+            elif parsed and parsed.restriction_type == "suspend":
+                log("      ⚠️  当前暂停申购，无法执行定投")
 
         log("\n提示：请根据以上结果，使用 `dca_plan add` 手动创建/调整正式定投计划。")
         return 0

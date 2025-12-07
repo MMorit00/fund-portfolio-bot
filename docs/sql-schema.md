@@ -7,8 +7,8 @@
 
 ## 当前版本
 
-- Schema Version: **14** (SCHEMA_VERSION = 14)
-- 最后更新: 2025-12-04
+- Schema Version: **15** (SCHEMA_VERSION = 15)
+- 最后更新: 2025-12-07
 
 ## 核心表结构
 
@@ -20,7 +20,7 @@
 |------|------|---------|
 | `funds` | 基金基础信息 | fund_code, name, asset_class, market, alias |
 | `fund_fee_items` | 基金费率（v0.4.4 新增） | fund_code, fee_type, charge_basis, rate, min_hold_days, max_hold_days |
-| `fund_restrictions` | 基金限购/暂停公告（v0.4.4+ 规划） | fund_code, start_date, end_date, restriction_type, limit_amount |
+| `fund_restrictions` | 基金限购/暂停公告（v0.4.4 新增） | fund_code, start_date, end_date, restriction_type, limit_amount |
 | `trades` | 交易记录 | id, fund_code, trade_date, pricing_date, confirm_date, confirmation_status, import_batch_id, dca_plan_key |
 | `navs` | 净值数据 | fund_code, day, nav |
 | `trading_calendar` | 交易日历 | market, day, is_trading_day |
@@ -169,7 +169,7 @@ ALTER TABLE trades ADD COLUMN dca_tag_source TEXT;
 - **解释字段**：允许后续回填/修正，不改变真相层数据
 - 回填操作只更新解释字段，不修改 action/actor/source/acted_at 等事实字段
 
-### fund_restrictions 表（v0.4.4+ 规划）
+### fund_restrictions 表（v0.4.4 新增）
 
 基金限购/暂停公告事实表，记录 QDII 限额、暂停申购等外部约束，供 AI 分析使用。
 
@@ -187,11 +187,20 @@ ALTER TABLE trades ADD COLUMN dca_tag_source TEXT;
 | `start_date` | TEXT | 限制开始日期（ISO 格式 YYYY-MM-DD） |
 | `end_date` | TEXT | 限制结束日期（NULL=仍在限制中） |
 | `restriction_type` | TEXT | 限制类型：daily_limit / suspend / resume |
-| `limit_amount` | DECIMAL(10,2) | 限购金额（仅 daily_limit 时有值，如 10.00） |
-| `source` | TEXT | 数据来源：eastmoney / manual / other |
+| `limit_amount` | TEXT | 限购金额（仅 daily_limit 时有值，如 "10.00"，存为 TEXT） |
+| `source` | TEXT | 数据来源：manual / eastmoney_trading_status / eastmoney_parsed / other |
 | `source_url` | TEXT | 公告链接（可选） |
 | `note` | TEXT | 公告摘要或补充说明（可选） |
 | `created_at` | TEXT | 记录创建时间（ISO datetime） |
+
+**source 枚举说明（约定）**：
+
+| 取值 | 含义 |
+|------|------|
+| `manual` | 手动录入（通过 `fund_restriction add`） |
+| `eastmoney_trading_status` | 来自 AKShare fund_purchase_em 的实时交易状态快照（通过 `check-status --apply`） |
+| `eastmoney_parsed` | 未来预留：东方财富公告解析结果（PDF/HTML 解析） |
+| `other` | 其他数据源（兜底） |
 
 **restriction_type 枚举说明**：
 

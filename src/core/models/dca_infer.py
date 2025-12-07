@@ -3,9 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from src.core.models.dca_plan import Frequency
+
+if TYPE_CHECKING:
+    from src.core.models.fund_restriction import ParsedRestriction
 
 Confidence = Literal["high", "medium", "low"]
 
@@ -39,4 +42,26 @@ class DcaPlanDraft:
     confidence: Confidence
     first_date: date
     last_date: date
+
+
+@dataclass(slots=True)
+class DcaInferResult:
+    """
+    DCA 推断结果（含推断草案 + 当前限额状态）。
+
+    字段说明：
+    - drafts: 推断的定投计划草案列表；
+    - fund_restrictions: 各基金当前限额状态（fund_code → ParsedRestriction | None）。
+
+    设计目标：
+    - 为 AI 分析提供完整的上下文：历史推断 + 当前约束；
+    - 帮助识别"金额变化是限额导致 vs 主动调整"。
+
+    说明：
+    - fund_restrictions[fund_code] = None 表示该基金当前无交易限制（开放申购）；
+    - fund_restrictions[fund_code] = ParsedRestriction 表示存在限制（限购/暂停）。
+    """
+
+    drafts: list[DcaPlanDraft]
+    fund_restrictions: dict[str, ParsedRestriction | None]
 

@@ -6,7 +6,7 @@ from typing import Optional
 
 from src.core.config import enable_sql_debug, get_db_path
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 SCHEMA_DDL = """
 CREATE TABLE IF NOT EXISTS funds (
@@ -95,6 +95,23 @@ CREATE TABLE IF NOT EXISTS import_batches (
     created_at TEXT NOT NULL,
     note TEXT
 );
+
+CREATE TABLE IF NOT EXISTS fund_restrictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fund_code TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT,
+    restriction_type TEXT NOT NULL,
+    limit_amount TEXT,
+    source TEXT NOT NULL,
+    source_url TEXT,
+    note TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (fund_code) REFERENCES funds(fund_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fund_restrictions_fund_date
+ON fund_restrictions(fund_code, start_date, end_date);
 """
 
 

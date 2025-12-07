@@ -25,16 +25,17 @@
 | v0.4.1 | ✅ 已完成 | 行为数据增强（Intent + 查询） |
 | v0.4.2 | ✅ 已完成 | 历史账单导入 + CLI 标准化 |
 | v0.4.3 | ✅ 已完成 | DCA 规则层定型（回填 + 推断 + 事实快照） |
-| v0.4.4 | 🚧 进行中 | 限额公告 Facts 建模 + DCA Context 扩展 |
+| v0.4.4 | ✅ 已完成 | 限额公告 Facts 系统（AKShare 实时限额查询） |
 | v0.4.5+ | 🔜 待规划 | 行为分析（周报/月报） |
-| v0.5+ | 🔮 待规划 | 数据可靠性增强 |
+| v0.5 | 🔜 待规划 | 公告 PDF 解析 + 历史限额时间线 |
+| v0.6+ | 🔮 待规划 | 数据可靠性增强 |
 | v1.x+ | 🔮 远期 | AI 辅助决策 |
 
 ---
 
-## 已完成版本（v0.1 - v0.4.2）
+## 已完成版本（v0.1 - v0.4.4）
 
-所有 v0.1 到 v0.4.2 的功能已完成并投入使用。详细完成内容见 `docs/coding-log.md`。
+所有 v0.1 到 v0.4.4 的功能已完成并投入使用。详细完成内容见 `docs/coding-log.md`。
 
 **核心里程碑**：
 - v0.1-v0.3：MVP 基础功能 + 日历策略
@@ -43,6 +44,7 @@
 - v0.4-v0.4.1：行为数据基建（action_log）
 - v0.4.2：历史账单导入 + CLI 标准化
 - v0.4.3：DCA 规则层定型（Import Batch + DCA 回填/推断）
+- v0.4.4：限额公告 Facts 系统（AKShare 实时限额查询）
 
 ---
 
@@ -64,24 +66,74 @@
 
 ---
 
-## v0.4.4（限额公告 Facts 建模，进行中）
+## v0.4.4（限额公告 Facts 系统，已完成）
 
 **核心目标**：为 AI 分析预留"外部约束事实"输入，区分"被限额 vs 主动调整"。
 
-**Phase B（基础建模，已完成）**：
+**已完成功能**：
 - [x] Schema 设计：`fund_restrictions` 表（daily_limit / suspend / resume）
-- [x] 数据模型：`FundRestrictionFact` 模型（符合 `*Fact` 规范）
-- [x] 预留扩展：`FundDcaFacts` docstring 预留"未来扩展"说明
-- [x] 版本规划：更新 roadmap.md
+- [x] 数据模型：`FundRestrictionFact` + `ParsedRestriction`（中间结果）
+- [x] AKShare 集成：`FundDataClient.get_trading_restriction()`（查询当前准确限额）
+- [x] 数据访问层：`FundRestrictionRepo`（add / list_active_on / list_by_period / end_latest_active）
+- [x] CLI 工具：`fund_restriction` 命令（check-status / add / end）
 
-**Phase C（DCA Context 扩展，待实现）**：
-- [ ] 设计 `build_dca_context_for_ai()` Flow 接口（合并 DCA Facts + Restriction Facts）
-- [ ] 预留 AI Context JSON 结构示例（文档级别）
+**最终方案**：
+```
+核心命令（3 个）：
+1. check-status  ← AKShare 查询当前准确限额（主功能）
+2. add           ← 手动录入特殊情况（兜底）
+3. end           ← 结束限制记录（生命周期）
+```
 
-**暂不实现**（留到后续版本）：
-- ⏸️ FundRestrictionRepo 实现
-- ⏸️ 限额公告抓取（手动录入 → 东方财富自动化）
-- ⏸️ AI 分析层接入
+**数据源**：
+- AKShare fund_purchase_em（主源）- 当前状态 + 准确限额，置信度=high
+- 手动录入（兜底）- 特殊情况补充
+
+**设计教训**：
+- 公告标题解析不稳定（金额在 PDF 正文中），已删除
+- 聚焦单一可靠数据源比多个模糊来源更有效
+
+---
+
+## v0.5（公告 PDF 解析 + 历史限额时间线，待规划）
+
+**核心目标**：构建完整的历史限额时间线，补充 AKShare "当前状态快照"的不足。
+
+**Phase A：PDF 解析基础能力**：
+- [ ] 批量抓取基金公告 PDF/HTML 正文（EastmoneyAnnouncementClient 扩展）
+- [ ] 使用 GPT-4 API 提取关键信息：
+  - 限制类型（daily_limit / suspend / resume）
+  - 起始日期（精确到日）
+  - 结束日期（若有）
+  - 日累计申购限额（如 100 元、10 元）
+- [ ] 生成 `ParsedRestriction` 草稿，置信度评估（high / medium / low）
+- [ ] 交互式确认流程（类似 check-status --apply）
+
+**Phase B：历史数据回填**：
+- [ ] 为已有基金批量解析历史公告（时间范围：最近 1-2 年）
+- [ ] 自动识别重复记录，避免插入冗余数据
+- [ ] 构建完整时间线：start_date + end_date 覆盖历史限额变更
+
+**Phase C：时间线查询与分析**：
+- [ ] `fund_restriction timeline --fund XXX`：展示历史限额时间线
+- [ ] 与 DCA 分析集成：查询"某笔交易是否处于限额期"
+- [ ] AI Context 扩展：合并 TradingStatus（当前）+ Timeline（历史）
+
+**Phase D（可选）：定期同步**：
+- [ ] 定时任务：每周同步最新公告，自动更新限制记录
+- [ ] 增量解析：只处理新发布的公告，避免重复
+
+**技术选型**：
+- PDF 解析：使用 GPT-4o 或 Claude 3.5 Sonnet（视 API 成本和效果决定）
+- 提示词工程：结构化输出（JSON Schema），提高准确率
+- 错误处理：解析失败时降级为人工录入
+
+**成本预估**（假设使用 GPT-4o）：
+- 单条公告解析成本：~$0.01-0.02（取决于公告长度）
+- 批量回填 100 只基金（每只 10 条公告）：~$10-20
+- 增量同步（每周新增 ~5 条）：~$0.05-0.10/周
+
+**优先级**：中等（当前 AKShare 已满足实时需求，历史数据用于完善 AI 分析）
 
 ---
 
@@ -94,7 +146,7 @@
 
 ---
 
-## v0.5+（数据可靠性增强，待规划）
+## v0.6+（数据可靠性增强，待规划）
 
 - [ ] NAV 自动回填（检测缺失并补抓）
 - [ ] 多数据源支持（天天基金等备份源）

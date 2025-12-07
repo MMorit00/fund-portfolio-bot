@@ -8,9 +8,11 @@ from decimal import Decimal, InvalidOperation
 from time import sleep
 from urllib.parse import quote, urlencode
 
+import akshare as ak
 import httpx
 
 from src.core.log import log
+from src.core.models.fund_restriction import ParsedRestriction
 
 
 @dataclass(slots=True)
@@ -38,20 +40,25 @@ class FundSearchResult:
         }
 
 
-class EastmoneyClient:
+class FundDataClient:
     """
-    东方财富 API 客户端。
+    基金远程数据客户端（统一入口）。
 
     职责：
     - 获取历史官方净值（get_nav）
     - 搜索基金信息（search_fund）
     - 获取盘中估算净值（get_nav_estimate）
     - 获取基金费率信息（get_fund_fees）
+    - 获取交易限制状态（get_trading_restriction）
+
+    数据源：
+    - 东方财富 HTTP API（NAV / 搜索 / 估值 / 费率）
+    - AKShare fund_purchase_em（交易限制状态）
 
     设计原则：
-    - 仅负责 HTTP 请求与响应解析，不直接落库；
-    - 所有网络/解析异常均被捕获并记录，返回 None，由上层决定是否重试/告警；
-    - 使用 httpx 同步 Client，支持超时与有限重试（指数退避）。
+    - 仅负责远程数据获取与响应解析，不直接落库
+    - 所有网络/解析异常均被捕获并记录，返回 None
+    - 底层技术细节（httpx / akshare）对上层透明
     """
 
     def __init__(
@@ -746,4 +753,115 @@ class EastmoneyClient:
                 return fees if fees else None
 
         except Exception:
+            return None
+
+    # ============================================================
+    # 区域：交易限制状态（get_trading_restriction）- 基于 AKShare
+    # ============================================================
+
+    def get_trading_restriction(
+        self,
+        fund_code: str,
+        *,
+        check_date: date | None = None,
+    ) -> ParsedRestriction | None:
+        """
+        获取基金的交易限制信息（AKShare 数据源）。
+
+        Args:
+            fund_code: 基金代码（6 位数字）。
+            check_date: 检查日期（默认今天）。
+
+        Returns:
+            解析后的限制信息，若无限制返回 None。
+
+        数据源：
+            AKShare fund_purchase_em()（东方财富-天天基金）
+
+        映射规则：
+            - 申购状态="暂停申购" → suspend
+            - 申购状态="限大额" → daily_limit（需检查限额字段）
+            - 申购状态="开放申购" → None（无限制）
+            - 日累计限定金额 > 1e10 视为"无限额"
+
+        注意：
+            每次调用会拉取全量数据（约 1-2 秒）。
+        """
+        try:
+            # 1. 获取全量数据
+            log("[FundData] 拉取全量基金交易状态数据...")
+            df = ak.fund_purchase_em()
+
+            if df is None or df.empty:
+                log(f"[FundData] 获取全量数据失败：fund={fund_code}")
+                return None
+
+            # 2. 过滤目标基金
+            row = df.loc[df["基金代码"] == fund_code]
+            if row.empty:
+                log(f"[FundData] 未找到基金数据：fund={fund_code}")
+                return None
+
+            row = row.iloc[0]
+
+            # 3. 解析字段
+            purchase_status = str(row.get("申购状态", "")).strip()
+            redeem_status = str(row.get("赎回状态", "")).strip()
+            daily_limit_raw = float(row.get("日累计限定金额", 1e11))
+
+            # 4. 处理日累计限额
+            daily_limit: Decimal | None
+            if daily_limit_raw > 1e10:
+                daily_limit = None  # 无限额（或字段缺失）
+            else:
+                daily_limit = Decimal(str(daily_limit_raw))
+
+            # 5. 映射限制类型
+            restriction_type: str | None = None
+            note_parts = []
+
+            if purchase_status == "暂停申购":
+                restriction_type = "suspend"
+                note_parts.append("申购状态=暂停申购")
+            elif purchase_status == "限大额":
+                if daily_limit is not None:
+                    restriction_type = "daily_limit"
+                    note_parts.append(f"申购状态=限大额, 日累计限额={daily_limit}元")
+                else:
+                    # 限大额但没有具体金额，标记为 suspend（保守处理）
+                    restriction_type = "suspend"
+                    note_parts.append("申购状态=限大额（无具体限额字段）")
+            elif purchase_status == "开放申购":
+                return None  # 无限制
+            else:
+                # 其他状态（如"认购期"、"封闭期"等）
+                log(
+                    f"[FundData] 未识别的申购状态：fund={fund_code} status={purchase_status}"
+                )
+                return None
+
+            # 6. 补充赎回状态信息（仅记录，不影响限制类型判断）
+            if redeem_status:
+                note_parts.append(f"赎回状态={redeem_status}")
+
+            # 7. 生成 ParsedRestriction
+            snapshot_date = check_date or date.today()
+            note = (
+                f"from AKShare fund_purchase_em: {', '.join(note_parts)} "
+                f"| 状态快照日期: {snapshot_date} | 注意：真实开始日期未知，需查看公告"
+            )
+
+            return ParsedRestriction(
+                fund_code=fund_code,
+                restriction_type=restriction_type,
+                start_date=snapshot_date,  # 状态快照日期（非真实开始日期）
+                end_date=None,  # 结束日期未知（当前状态）
+                limit_amount=daily_limit,
+                confidence="high",  # 来自正规数据源，置信度高
+                note=note,
+                source_url=None,
+            )
+
+        except Exception as err:  # noqa: BLE001
+            log(f"[FundData] 获取交易限制失败：fund={fund_code} err={err}")
             return None

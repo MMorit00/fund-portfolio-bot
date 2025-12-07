@@ -7,7 +7,7 @@ from datetime import date
 from decimal import Decimal
 
 from src.core.dependency import dependency
-from src.data.client.eastmoney import EastmoneyClient
+from src.data.client.fund_data import FundDataClient
 from src.data.db.calendar import CalendarService
 from src.data.db.fund_repo import FundRepo
 from src.data.db.nav_repo import NavRepo
@@ -48,7 +48,7 @@ def cal_market_value(
     trade_repo: TradeRepo | None = None,
     fund_repo: FundRepo | None = None,
     nav_repo: NavRepo | None = None,
-    eastmoney_service: EastmoneyClient | None = None,
+    fund_data_client: FundDataClient | None = None,
     calendar_service: CalendarService | None = None,
 ) -> MarketValueResult:
     """
@@ -67,7 +67,7 @@ def cal_market_value(
         trade_repo: 交易仓储（自动注入）。
         fund_repo: 基金仓储（自动注入）。
         nav_repo: 净值仓储（自动注入）。
-        eastmoney_service: 东方财富客户端（自动注入）。
+        fund_data_client: 基金数据客户端（自动注入）。
         calendar_service: 日历服务（自动注入）。
 
     Returns:
@@ -130,7 +130,7 @@ def cal_market_value(
             # 估值模式（仅限最近 3 天）
             days_diff = (date.today() - as_of).days
             if days_diff <= 3:
-                est_result = eastmoney_service.get_nav_estimate(holding.fund_code)
+                est_result = fund_data_client.get_nav_estimate(holding.fund_code)
                 if est_result:
                     holding.nav, holding.estimated_time = est_result
                     holding.nav_source = "估值"

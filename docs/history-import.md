@@ -13,7 +13,7 @@
 |------|------|
 | 平台范围 | 只管支付宝，其他平台转换为统一 CSV 模板后导入 |
 | 输入方式 | 用户手工/脚本将支付宝原始导出清洗成统一 CSV |
-| 净值来源 | 自动调用 `EastmoneyClient` 抓取历史净值 |
+| 净值来源 | 自动调用 `FundDataClient` 抓取历史净值 |
 | 份额计算 | `shares = amount / nav` |
 | ActionLog | 每笔交易补一条行为日志 |
 | 幂等策略 | 开发阶段可删库重建，生产阶段用 `external_id` 去重 |
@@ -310,5 +310,5 @@ ALTER TABLE trades ADD COLUMN dca_plan_key TEXT;        -- 定投计划标识
 ## 参考
 
 - 支付宝账单导出：支付宝 App → 我的 → 账单 → 右上角导出
-- 东方财富 NAV API：`EastmoneyClient.get_nav(fund_code, date)`
+- 基金 NAV API：`FundDataClient.get_nav(fund_code, date)`
 - 现有确认流程：`src/flows/trade.py:confirm_trades()`
