@@ -341,43 +341,17 @@ def build_dca_facts_for_batch(
             else:
                 break
 
-        # 识别特殊交易
+        # 识别特殊交易（优化：只标记显著变化）
         flags: list[TradeFlag] = []
-        prev_amount: Decimal | None = None
-        for i, trade in enumerate(sorted_trades):
-            amt = trade.amount
-            reasons: list[str] = []
-
-            # 金额异常：偏离众数超过 50%
-            if mode_amount and mode_amount > 0:
-                deviation = abs(amt - mode_amount) / mode_amount
-                if deviation > Decimal("0.5"):
-                    pct = int(((amt - mode_amount) / mode_amount) * 100)
-                    sign = "+" if pct > 0 else ""
-                    reasons.append(f"金额异常: 众数{mode_amount}元，偏离{sign}{pct}%")
-
-            # 金额变化点
-            if prev_amount is not None and amt != prev_amount:
-                reasons.append(f"金额变化: {prev_amount}→{amt}")
-
-            # 间隔异常：超过众数 3 倍
-            if i > 0 and intervals[i - 1] > mode_interval * 3:
-                reasons.append(f"间隔异常: {intervals[i - 1]}天，正常{mode_interval}天")
-
-            if reasons:
-                flags.append(
-                    TradeFlag(
-                        trade_id=trade.id,
-                        trade_date=trade.trade_date,
-                        amount=amt,
-                        flag_type="amount_outlier" if "金额异常" in reasons[0] else (
-                            "amount_change" if "金额变化" in reasons[0] else "interval_outlier"
-                        ),
-                        detail="; ".join(reasons),
-                    )
-                )
-
-            prev_amount = amt
+        
+        # 1. 金额显著变化（>15%）
+        flags.extend(_identify_amount_changes(sorted_trades, threshold=Decimal("0.15"), max_flags=20))
+        
+        # 2. 金额异常（偏离众数 >50%）
+        flags.extend(_identify_amount_outliers(sorted_trades, mode_amount))
+        
+        # 3. 间隔异常（超过众数 3 倍）
+        flags.extend(_identify_interval_outliers(sorted_trades, intervals, mode_interval))
 
         results.append(
             FundDcaFacts(
@@ -386,8 +360,6 @@ def build_dca_facts_for_batch(
                 trade_count=len(sorted_trades),
                 first_date=dates[0] if dates else None,
                 last_date=dates[-1] if dates else None,
-                first_amount=amounts[0] if amounts else None,
-                last_amount=amounts[-1] if amounts else None,
                 mode_amount=mode_amount,
                 stable_amount=stable_amount,
                 stable_since=stable_since,
@@ -401,3 +373,99 @@ def build_dca_facts_for_batch(
 
     log(f"[DcaFacts] 生成 {len(results)} 只基金的事实快照")
     return results
+
+
+def _identify_amount_changes(
+    sorted_trades: list,
+    threshold: Decimal = Decimal("0.15"),
+    max_flags: int = 20,
+) -> list[TradeFlag]:
+    """
+    识别显著金额变化点（只标记 >threshold 的变化）。
+
+    Args:
+        sorted_trades: 按日期排序的交易列表。
+        threshold: 变化阈值（默认 15%）。
+        max_flags: 最多返回多少个标记。
+
+    Returns:
+        变化点标记列表。
+    """
+    flags: list[TradeFlag] = []
+    prev_amount: Decimal | None = None
+
+    for trade in sorted_trades:
+        amt = trade.amount
+
+        if prev_amount is not None and prev_amount > 0:
+            change_rate = abs(amt - prev_amount) / prev_amount
+
+            # 只标记显著变化
+            if change_rate > threshold:
+                pct = int(((amt - prev_amount) / prev_amount) * 100)
+                sign = "+" if pct > 0 else ""
+
+                flags.append(
+                    TradeFlag(
+                        trade_id=trade.id,
+                        trade_date=trade.trade_date,
+                        amount=amt,
+                        flag_type="amount_change",
+                        detail=f"金额显著变化: {prev_amount}→{amt} ({sign}{pct}%)",
+                    )
+                )
+
+        prev_amount = amt
+
+    # 限制数量（避免 token 爆炸）
+    return flags[:max_flags]
+
+
+def _identify_amount_outliers(
+    sorted_trades: list,
+    mode_amount: Decimal | None,
+) -> list[TradeFlag]:
+    """识别金额异常（偏离众数 >50%）。"""
+    if not mode_amount or mode_amount == 0:
+        return []
+
+    flags: list[TradeFlag] = []
+    for trade in sorted_trades:
+        deviation = abs(trade.amount - mode_amount) / mode_amount
+        if deviation > Decimal("0.5"):
+            pct = int(((trade.amount - mode_amount) / mode_amount) * 100)
+            sign = "+" if pct > 0 else ""
+            flags.append(
+                TradeFlag(
+                    trade_id=trade.id,
+                    trade_date=trade.trade_date,
+                    amount=trade.amount,
+                    flag_type="amount_outlier",
+                    detail=f"金额异常: 众数{mode_amount}元，偏离{sign}{pct}%",
+                )
+            )
+    return flags
+
+
+def _identify_interval_outliers(
+    sorted_trades: list,
+    intervals: list[int],
+    mode_interval: int,
+) -> list[TradeFlag]:
+    """识别间隔异常（超过众数 3 倍）。"""
+    if not intervals or mode_interval == 0:
+        return []
+
+    flags: list[TradeFlag] = []
+    for i, trade in enumerate(sorted_trades[1:], start=1):
+        if intervals[i - 1] > mode_interval * 3:
+            flags.append(
+                TradeFlag(
+                    trade_id=trade.id,
+                    trade_date=trade.trade_date,
+                    amount=trade.amount,
+                    flag_type="interval_outlier",
+                    detail=f"间隔异常: {intervals[i - 1]}天，正常{mode_interval}天",
+                )
+            )
+    return flags

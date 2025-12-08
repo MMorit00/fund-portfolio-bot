@@ -238,21 +238,27 @@ def _format_dca_facts(facts_list: list) -> None:  # noqa: ANN001
         log(f"   时间范围: {facts.first_date} → {facts.last_date}")
 
         # 金额统计
-        log(f"   金额变化: {facts.first_amount} → {facts.last_amount}")
         if facts.mode_amount is not None:
             log(f"   众数金额: {facts.mode_amount} 元")
         if facts.stable_count > 1 and facts.stable_amount is not None:
-            log(f"   当前稳定: {facts.stable_amount} 元（从 {facts.stable_since} 起，连续 {facts.stable_count} 笔）")
+            log(f"   当前定投: {facts.stable_amount} 元（从 {facts.stable_since} 起，连续 {facts.stable_count} 笔）")
 
         # 间隔统计
         log(f"   众数间隔: {facts.mode_interval} 天")
 
-        # 金额分布（简化显示）
-        if len(facts.amount_histogram) <= 5:
-            hist_str = ", ".join(f"{k}:{v}" for k, v in sorted(facts.amount_histogram.items()))
-            log(f"   金额分布: {hist_str}")
-        else:
-            log(f"   金额分布: {len(facts.amount_histogram)} 种不同金额")
+        # 金额分布（优化显示）
+        if len(facts.amount_histogram) > 1:
+            log(f"   金额演变（{len(facts.amount_histogram)} 种）:")
+            # 按金额降序显示（猜测是从高到低限额）
+            sorted_amounts = sorted(
+                facts.amount_histogram.items(),
+                key=lambda x: -float(x[0])
+            )
+            for amt, count in sorted_amounts:
+                pct = count / facts.trade_count * 100
+                log(f"      • {amt} 元 × {count} 笔 ({pct:.1f}%)")
+        elif facts.mode_amount:
+            log(f"   金额稳定: {facts.mode_amount} 元（全部 {facts.trade_count} 笔）")
 
         # 间隔分布（简化显示）
         if len(facts.interval_histogram) <= 5:
@@ -329,18 +335,25 @@ def _do_infer(args: argparse.Namespace) -> int:
             icon = "⭐" if d.confidence == "high" else ("✨" if d.confidence == "medium" else "•")
             freq_rule = f"{d.frequency}/{d.rule}" if d.frequency != "daily" else "daily"
             log(
-                f"  {icon} {d.fund_code} | {freq_rule} | {d.amount} 元 "
+                f"  {icon} {d.fund_code} | {freq_rule} | 建议 {d.suggested_amount} 元 "
                 f"| samples={d.sample_count}, span={d.span_days} 天, confidence={d.confidence} "
                 f"| {d.first_date} → {d.last_date}"
             )
 
+            # 变体数量提示
+            if d.amount_variants > 1:
+                log(f"      ⚠️  历史有 {d.amount_variants} 种金额，可能有演变")
+
             # 如果有限额，添加提示
             parsed = result.fund_restrictions.get(d.fund_code)
             if parsed and parsed.restriction_type == "daily_limit":
-                log(
-                    f"      ⚠️  当前限购 {parsed.limit_amount} 元/日，"
-                    f"历史金额 {d.amount} 元可能因以前无限额"
-                )
+                if d.suggested_amount > parsed.limit_amount:
+                    log(
+                        f"      ⚠️  建议金额 {d.suggested_amount} 元超限额 {parsed.limit_amount} 元，"
+                        f"请考虑调整"
+                    )
+                else:
+                    log(f"      ✅ 符合当前限额 {parsed.limit_amount} 元/日")
             elif parsed and parsed.restriction_type == "suspend":
                 log("      ⚠️  当前暂停申购，无法执行定投")
 

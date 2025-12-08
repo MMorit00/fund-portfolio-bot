@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
-from statistics import median
 from typing import Iterable
 
 from src.core.dependency import dependency
@@ -146,14 +145,24 @@ def draft_dca_plans(
         if freq is None or rule is None:
             continue
 
-        # 4.3 计算金额中位数与置信度
-        median_amount = _median_decimal(amounts)
+        # 4.3 计算最近稳定值与置信度
+        stable_amount = amounts[-1]
+        stable_count = 1
+        for i in range(len(amounts) - 2, -1, -1):
+            if amounts[i] == stable_amount:
+                stable_count += 1
+            else:
+                break
+        
         confidence = _infer_confidence(sample_count, ratio, freq)
+        
+        # 统计金额变体数量
+        amount_variants = len(set(amounts))
 
         drafts.append(
             DcaPlanDraft(
                 fund_code=code,
-                amount=median_amount,
+                suggested_amount=stable_amount,
                 frequency=freq,
                 rule=rule,
                 sample_count=sample_count,
@@ -161,6 +170,7 @@ def draft_dca_plans(
                 confidence=confidence,
                 first_date=dates[0],
                 last_date=dates[-1],
+                amount_variants=amount_variants,
             )
         )
 
@@ -306,13 +316,6 @@ def _infer_frequency_and_rule(
         rule = str(counter.most_common(1)[0][0])
 
     return freq, rule, ratio
-
-
-def _median_decimal(values: list[Decimal]) -> Decimal:
-    """计算 Decimal 列表的中位数。"""
-    if not values:
-        return Decimal("0")
-    return median(values)  # type: ignore[return-value]
 
 
 def _infer_confidence(sample_count: int, ratio: float, frequency: str) -> str:

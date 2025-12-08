@@ -170,12 +170,6 @@ class FundDcaFacts:
     """末笔日期。"""
 
     # 金额统计
-    first_amount: Decimal | None = None
-    """首笔金额。"""
-
-    last_amount: Decimal | None = None
-    """末笔金额。"""
-
     mode_amount: Decimal | None = None
     """众数金额（出现最多的金额，用于识别异常）。"""
 

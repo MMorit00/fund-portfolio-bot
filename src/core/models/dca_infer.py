@@ -20,7 +20,8 @@ class DcaPlanDraft:
 
     字段说明：
     - fund_code: 基金代码；
-    - amount: 历史金额中位数（仅作参考建议，真实计划金额由用户通过 dca_plan add 确认）；
+    - suggested_amount: 建议金额（最近稳定值，而非中位数）；
+    - amount_variants: 历史有几种不同金额（帮助 AI 判断是否有演变）；
     - frequency: 频率（daily/weekly/monthly）；
     - rule: 规则（weekly=MON/TUE/...，monthly=1..31，daily 为空字符串）；
     - sample_count: 参与推断的样本数量（买入笔数）；
@@ -34,7 +35,7 @@ class DcaPlanDraft:
     """
 
     fund_code: str
-    amount: Decimal
+    suggested_amount: Decimal
     frequency: Frequency
     rule: str
     sample_count: int
@@ -42,6 +43,7 @@ class DcaPlanDraft:
     confidence: Confidence
     first_date: date
     last_date: date
+    amount_variants: int = 1
 
 
 @dataclass(slots=True)
