@@ -137,10 +137,4 @@
 - 删除抽象层：移除 Protocol，改用 `@dependency` 装饰器
 - 类名简化：`SqliteTradeRepo→TradeRepo`
 
----
-
-## 早期版本要点
-
-**v0.3**：日历与接口重构，SettlementPolicy 三层日历组合
-**v0.2**：严格 NAV 口径，交易确认延迟追踪
-**v0.1**：MVP 功能实现（已归档）
+> 早期版本决策见 git history。当前版本 v0.4.4+，详见 roadmap.md。
