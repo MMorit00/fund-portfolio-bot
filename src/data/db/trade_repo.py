@@ -340,13 +340,13 @@ class TradeRepo:
             ).fetchall()
         return [_row_to_trade(r) for r in rows]
 
-    def update_dca_plan_key_bulk(self, trade_ids: list[int], dca_plan_key: str) -> int:
+    def update_dca_plan_key_bulk(self, trade_ids: list[int], dca_plan_key: str | None) -> int:
         """
         批量更新交易的 dca_plan_key 字段（v0.4.3 DCA 回填使用）。
 
         Args:
             trade_ids: 交易 ID 列表。
-            dca_plan_key: DCA 计划标识（当前格式=fund_code）。
+            dca_plan_key: DCA 计划标识（当前格式=fund_code），None 表示清除。
 
         Returns:
             实际更新的行数。
@@ -360,6 +360,41 @@ class TradeRepo:
                 [dca_plan_key, *trade_ids],
             )
         return cursor.rowcount
+
+    def get(self, trade_id: int) -> Trade | None:
+        """
+        获取单笔交易（v0.4.5 新增）。
+
+        Args:
+            trade_id: 交易 ID。
+
+        Returns:
+            Trade 对象，不存在则返回 None。
+        """
+        row = self.conn.execute(
+            "SELECT * FROM trades WHERE id = ?",
+            (trade_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return _row_to_trade(row)
+
+    def list_ids_by_fund_and_date(self, fund_code: str, trade_date: date) -> list[int]:
+        """
+        获取同一天同基金的交易 ID 列表（v0.4.5 新增，用于 set_dca_core）。
+
+        Args:
+            fund_code: 基金代码。
+            trade_date: 交易日期。
+
+        Returns:
+            交易 ID 列表。
+        """
+        rows = self.conn.execute(
+            "SELECT id FROM trades WHERE fund_code = ? AND trade_date = ?",
+            (fund_code, trade_date.isoformat()),
+        ).fetchall()
+        return [row["id"] for row in rows]
 
 
 def _decimal_to_str(value: Decimal | None) -> str | None:

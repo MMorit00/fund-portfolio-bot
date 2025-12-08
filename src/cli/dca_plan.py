@@ -12,7 +12,12 @@ from src.flows.config import (
     enable_dca_plan,
     list_dca_plans,
 )
-from src.flows.dca_backfill import backfill_dca_for_batch, build_dca_facts_for_batch
+from src.flows.dca_backfill import (
+    backfill_days,
+    build_dca_facts_for_batch,
+    get_dca_day_checks,
+    set_dca_core,
+)
 from src.flows.dca_infer import draft_dca_plans
 
 
@@ -92,25 +97,59 @@ def _parse_args() -> argparse.Namespace:
         help="导入批次 ID（提供时输出事实快照供 AI 分析）",
     )
 
-    # ========== backfill 子命令 ==========
-    backfill_parser = subparsers.add_parser("backfill", help="回填历史导入交易的 DCA 归属")
-    backfill_parser.add_argument(
+    # ========== backfill-days 子命令（v0.4.5 AI 驱动）==========
+    backfill_days_parser = subparsers.add_parser(
+        "backfill-days", help="批量回填指定交易为 DCA 核心（AI 驱动）"
+    )
+    # 方式1：直接指定 trade IDs（保留，用于特殊情况）
+    backfill_days_parser.add_argument(
+        "--trade-ids",
+        type=str,
+        default=None,
+        help="交易 ID 列表（逗号分隔）。与 --batch-id 二选一。",
+    )
+    # 方式2：自动获取（推荐，省 token）
+    backfill_days_parser.add_argument(
         "--batch-id",
         type=int,
-        required=True,
-        help="导入批次 ID",
+        default=None,
+        help="导入批次 ID。与 --fund/--freq/--rule 一起使用，自动获取 trade IDs。",
     )
-    backfill_parser.add_argument(
-        "--mode",
-        choices=["dry-run", "apply"],
-        default="dry-run",
-        help="运行模式（默认 dry-run）",
-    )
-    backfill_parser.add_argument(
+    backfill_days_parser.add_argument(
         "--fund",
         type=str,
         default=None,
-        help="只回填指定基金代码（默认全部）",
+        help="基金代码（与 --batch-id 一起使用）",
+    )
+    backfill_days_parser.add_argument(
+        "--freq",
+        choices=["daily", "weekly", "monthly"],
+        default=None,
+        help="定投频率（与 --batch-id 一起使用）",
+    )
+    backfill_days_parser.add_argument(
+        "--rule",
+        type=str,
+        default=None,
+        help="定投规则（与 --batch-id 一起使用）",
+    )
+    backfill_days_parser.add_argument(
+        "--valid-amounts",
+        type=str,
+        required=True,
+        help="有效金额列表（逗号分隔，如 100,20,10）。AI 从 Facts 推断后指定。",
+    )
+
+    # ========== set-core 子命令（v0.4.5 AI 驱动）==========
+    set_core_parser = subparsers.add_parser(
+        "set-core", help="设置某笔交易为当天的 DCA 核心（AI 驱动）"
+    )
+    set_core_parser.add_argument("--trade-id", type=int, required=True, help="交易 ID")
+    set_core_parser.add_argument(
+        "--plan-key",
+        type=str,
+        required=True,
+        help="DCA 计划标识（通常为 fund_code）",
     )
 
     return parser.parse_args()
@@ -364,85 +403,116 @@ def _do_infer(args: argparse.Namespace) -> int:
         return 5
 
 
-def _do_backfill(args: argparse.Namespace) -> int:
-    """执行 backfill 命令：回填历史导入交易的 DCA 归属。"""
+def _do_backfill_days(args: argparse.Namespace) -> int:
+    """执行 backfill-days 命令：批量回填指定交易为 DCA 核心。"""
     try:
-        # 1. 解析参数
-        batch_id = args.batch_id
-        mode = args.mode.replace("-", "_")  # "dry-run" → "dry_run"
-        fund_code = args.fund
+        # 1. 解析有效金额（必填）
+        valid_amounts_str = args.valid_amounts
+        valid_amounts = [Decimal(x.strip()) for x in valid_amounts_str.split(",")]
+        log(f"[DCA:backfill-days] 有效金额: {valid_amounts}")
 
-        log(
-            f"[DCA:backfill] 回填 DCA 归属（{'干跑' if mode == 'dry_run' else '实际执行'}）："
-            f"batch_id={batch_id}, fund={fund_code or 'ALL'}"
+        # 2. 获取 trade IDs（两种方式二选一）
+        trade_ids: list[int] = []
+        plan_key: str = ""
+
+        if args.trade_ids:
+            # 方式1：直接指定 trade IDs
+            trade_ids = [int(x.strip()) for x in args.trade_ids.split(",")]
+            # 需要从第一笔交易推断 plan_key（或者要求用户提供）
+            # 简化处理：要求同时提供 --fund
+            if not args.fund:
+                log("❌ 使用 --trade-ids 时必须同时提供 --fund")
+                return 1
+            plan_key = args.fund
+            log(f"[DCA:backfill-days] 直接指定 {len(trade_ids)} 笔交易")
+
+        elif args.batch_id and args.fund and args.freq is not None:
+            # 方式2：自动获取（推荐）
+            batch_id = args.batch_id
+            fund_code = args.fund
+            track_freq = args.freq
+            track_rule = args.rule or ""
+            plan_key = fund_code
+
+            log(f"[DCA:backfill-days] 自动获取 trade IDs: batch={batch_id}, fund={fund_code}, {track_freq}/{track_rule}")
+
+            # 调用 day-checks 获取符合条件的 trade IDs
+            checks = get_dca_day_checks(
+                batch_id=batch_id,
+                fund_code=fund_code,
+                track_freq=track_freq,
+                track_rule=track_rule,
+            )
+
+            # 只选择：在轨道上 + 一天一笔的交易
+            for check in checks:
+                if check.is_on_track and check.trade_count == 1:
+                    trade_ids.append(check.trade_ids[0])
+
+            log(f"[DCA:backfill-days] 自动获取 {len(trade_ids)} 笔符合条件的交易")
+
+        else:
+            log("❌ 必须提供 --trade-ids 或 --batch-id + --fund + --freq")
+            return 1
+
+        if not trade_ids:
+            log("（无可回填交易）")
+            return 0
+
+        # 3. 调用 Flow
+        result = backfill_days(
+            trade_ids=trade_ids,
+            dca_plan_key=plan_key,
+            valid_amounts=valid_amounts,
         )
 
-        # 2. 调用回填 Flow
-        result = backfill_dca_for_batch(
-            batch_id=batch_id,
-            mode=mode,
-            fund_code=fund_code,
-        )
+        # 4. 输出结果
+        log(f"\n📊 回填结果：输入 {result.input_count} 笔 → 更新 {result.updated_count} 笔")
 
-        # 3. 格式化输出
-        _format_backfill_result(result)
+        if result.skipped_trades:
+            log(f"\n⚠️ 跳过 {len(result.skipped_trades)} 笔（供 AI 审核）：")
+            for st in result.skipped_trades:
+                log(f"   • ID={st.trade_id} | {st.fund_code} | {st.trade_date} | {st.amount}元")
+                log(f"     原因: {st.reason}")
 
+        if result.updated_count > 0:
+            log(f"\n✅ 已更新 {result.updated_count} 笔交易")
         return 0
     except Exception as err:  # noqa: BLE001
-        log(f"❌ 回填 DCA 归属失败：{err}")
+        log(f"❌ 批量回填失败：{err}")
         return 5
 
 
-def _format_backfill_result(result) -> None:  # noqa: ANN001
-    """格式化回填结果输出。"""
-    mode_label = "dry-run" if result.mode == "dry_run" else "apply"
-    log(f"\n🔄 DCA 回填结果（{mode_label} 模式）")
-    log(f"   Batch ID: {result.batch_id}")
-    log(f"   基金范围: {result.fund_code_filter or '全部'}")
-    log(f"   总交易数: {result.total_trades} 笔（仅 buy）")
-    log(f"   匹配 DCA: {result.matched_count} 笔")
-    log(f"   匹配率: {result.match_rate * 100:.1f}%")
+def _do_set_core(args: argparse.Namespace) -> int:
+    """执行 set-core 命令：设置某笔交易为当天的 DCA 核心。"""
+    try:
+        # 1. 解析参数
+        trade_id = args.trade_id
+        plan_key = args.plan_key
 
-    if result.mode == "apply":
-        log(f"   已更新: {result.updated_count} 笔")
+        log(f"[DCA:set-core] 设置交易 {trade_id} 为 DCA 核心，plan_key={plan_key}")
 
-    # 按基金显示匹配详情
-    if result.fund_summaries:
-        log("\n📊 基金匹配详情:")
-        for summary in result.fund_summaries:
-            icon = "✅" if summary.has_dca_plan else "❌"
-            log(f"   {icon} {summary.fund_code} ({summary.total_trades} 笔交易)")
+        # 2. 调用 Flow
+        success = set_dca_core(trade_id=trade_id, dca_plan_key=plan_key)
 
-            if summary.has_dca_plan:
-                log(f"      定投计划: {summary.dca_plan_info}")
-                log(f"      匹配结果: {summary.matched_trades}/{summary.total_trades} 笔")
-
-                # dry-run 模式显示详细匹配原因（仅显示前5笔）
-                if result.mode == "dry_run" and summary.matches:
-                    log("      样例:")
-                    for match in summary.matches[:5]:
-                        match_icon = "✓" if match.matched else "✗"
-                        log(
-                            f"        {match_icon} {match.trade_date}: {match.amount} 元 - {match.match_reason}"
-                        )
-                    if len(summary.matches) > 5:
-                        log(f"        ... (还有 {len(summary.matches) - 5} 笔)")
-            else:
-                log("      ❌ 无定投计划（跳过）")
-
-    # 提示信息
-    if result.mode == "dry_run":
-        log("\n提示：使用 --mode apply 执行实际回填")
-    else:
-        log("\n✅ 回填完成")
+        # 3. 输出结果
+        if success:
+            log(f"✅ 交易 {trade_id} 已设为当天 DCA 核心")
+            return 0
+        else:
+            log("❌ 设置失败（交易不存在）")
+            return 4
+    except Exception as err:  # noqa: BLE001
+        log(f"❌ 设置 DCA 核心失败：{err}")
+        return 5
 
 
 def main() -> int:
     """
-    定投计划管理 CLI（v0.4.3）。
+    定投计划管理 CLI（v0.4.5）。
 
     Returns:
-        退出码：0=成功；4=计划不存在；5=其他失败。
+        退出码：0=成功；4=计划/交易不存在；5=其他失败。
     """
     # 1. 解析参数
     args = _parse_args()
@@ -460,8 +530,11 @@ def main() -> int:
         return _do_delete(args)
     elif args.command == "infer":
         return _do_infer(args)
-    elif args.command == "backfill":
-        return _do_backfill(args)
+    # v0.4.5 AI 驱动的回填命令
+    elif args.command == "backfill-days":
+        return _do_backfill_days(args)
+    elif args.command == "set-core":
+        return _do_set_core(args)
     else:
         log(f"❌ 未知命令：{args.command}")
         return 1

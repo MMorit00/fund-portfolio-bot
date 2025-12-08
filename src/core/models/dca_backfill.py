@@ -14,12 +14,34 @@ from decimal import Decimal
 
 
 @dataclass(slots=True)
-class DcaTradeCheck:
+class DcaDayCheck:
     """
-    单笔交易的 DCA 规则检查结果（*Check 规范）。
+    某天的 DCA 轨道检查结果（规则层输出，按天聚合）。
 
-    规则层只输出事实（日期匹配+金额偏差），不做语义判断。
+    用于 AI 驱动的回填流程：
+    - 规则层输出每天的轨道检查结果
+    - AI 根据 is_on_track + trade_count + amounts 决定如何回填
     """
+
+    date: date
+    """交易日期。"""
+
+    is_on_track: bool
+    """该天是否在定投轨道上（由日期规则决定）。"""
+
+    trade_count: int
+    """该天交易笔数。"""
+
+    trade_ids: list[int] = field(default_factory=list)
+    """该天交易 ID 列表。"""
+
+    amounts: list[Decimal] = field(default_factory=list)
+    """该天交易金额列表（与 trade_ids 顺序对应）。"""
+
+
+@dataclass(slots=True)
+class SkippedTrade:
+    """被跳过的交易（供 AI 审核）。"""
 
     trade_id: int
     """交易 ID。"""
@@ -27,89 +49,32 @@ class DcaTradeCheck:
     fund_code: str
     """基金代码。"""
 
-    trade_date: str
-    """交易日期（ISO 格式）。"""
+    trade_date: date
+    """交易日期。"""
 
     amount: Decimal
     """交易金额。"""
 
-    matched: bool
-    """是否归属 DCA（由日期决定，不考虑金额）。"""
-
-    amount_deviation: Decimal = Decimal("0")
-    """金额偏差率（事实字段）：正数=超出计划，负数=低于计划。如 0.15 表示超出15%。"""
-
-    dca_plan_key: str | None = None
-    """匹配到的 DCA 计划标识（当前格式=fund_code）。"""
-
-    match_reason: str | None = None
-    """匹配说明（日期+金额偏差等事实信息）。"""
+    reason: str
+    """跳过原因。"""
 
 
 @dataclass(slots=True)
-class FundBackfillSummary:
-    """单只基金的回填摘要。"""
-
-    fund_code: str
-    """基金代码。"""
-
-    total_trades: int
-    """总交易数（buy only）。"""
-
-    matched_trades: int
-    """匹配到 DCA 计划的交易数。"""
-
-    has_dca_plan: bool
-    """是否存在 DCA 计划（active/disabled 均算）。"""
-
-    dca_plan_info: str | None = None
-    """DCA 计划摘要（如"100 元/monthly/28 (active)"）。"""
-
-    matches: list[DcaTradeCheck] = field(default_factory=list)
-    """详细匹配结果（dry-run 模式使用）。"""
-
-
-@dataclass(slots=True)
-class BackfillResult:
+class BackfillDaysResult:
     """
-    DCA 回填结果汇总（v0.4.3）。
+    backfill_days 的详细返回结果（供 AI 审核）。
 
-    字段说明：
-    - batch_id: 导入批次 ID（作用范围）
-    - mode: 运行模式（dry_run / apply）
-    - total_trades: 批次内的总交易数（仅 buy）
-    - matched_count: 匹配到 DCA 计划的交易数
-    - updated_count: 实际更新的记录数（apply 模式）
-    - fund_summaries: 按基金分组的回填摘要
+    包含：输入数、更新数、跳过的交易详情。
     """
 
-    batch_id: int
-    """导入批次 ID。"""
+    input_count: int
+    """输入的交易数。"""
 
-    mode: str
-    """运行模式：dry_run / apply。"""
+    updated_count: int
+    """实际更新的交易数。"""
 
-    total_trades: int
-    """批次内总交易数（仅 buy）。"""
-
-    matched_count: int
-    """匹配到 DCA 计划的交易数。"""
-
-    updated_count: int = 0
-    """实际更新的记录数（仅 apply 模式有值）。"""
-
-    fund_summaries: list[FundBackfillSummary] = field(default_factory=list)
-    """按基金分组的回填摘要。"""
-
-    fund_code_filter: str | None = None
-    """基金代码过滤（None=全部）。"""
-
-    @property
-    def match_rate(self) -> float:
-        """匹配率（0.0 ~ 1.0）。"""
-        if self.total_trades == 0:
-            return 0.0
-        return self.matched_count / self.total_trades
+    skipped_trades: list[SkippedTrade] = field(default_factory=list)
+    """被跳过的交易列表（金额不在有效集合内）。"""
 
 
 @dataclass(slots=True)
