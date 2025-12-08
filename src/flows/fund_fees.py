@@ -13,7 +13,15 @@ from src.data.db.fund_repo import FundRepo
 
 @dataclass(slots=True)
 class SyncFeesResult:
-    """费率同步结果。"""
+    """
+    费率同步结果。
+    
+    包含多字段聚合：
+    - success/failed: 统计计数
+    - details: 详细列表 (fund_code, name, success)
+    
+    用于 CLI 展示同步进度和失败明细。
+    """
 
     success: int
     failed: int

@@ -18,7 +18,13 @@ from src.data.db.db_helper import DbHelper
 
 @dataclass(slots=True)
 class RefreshCalendarResult:
-    """日历刷新结果统计。"""
+    """
+    日历刷新结果统计（从 CSV 导入）。
+    
+    包含统计对：
+    - total_days: CSV 总行数
+    - updated_days: 实际写入/更新行数
+    """
 
     total_days: int
     updated_days: int
@@ -26,7 +32,14 @@ class RefreshCalendarResult:
 
 @dataclass(slots=True)
 class SyncCalendarResult:
-    """日历同步结果统计。"""
+    """
+    日历同步结果统计（从 exchange_calendars）。
+    
+    包含统计对：
+    - total_days: 同步总天数
+    - updated_days: 实际写入/更新天数
+    - open_days: 交易日数量
+    """
 
     total_days: int
     updated_days: int
@@ -35,7 +48,15 @@ class SyncCalendarResult:
 
 @dataclass(slots=True)
 class PatchCalendarResult:
-    """日历修补结果统计（当前仅支持 CN_A）。"""
+    """
+    日历修补结果统计（从 Akshare，当前仅支持 CN_A）。
+    
+    包含详细统计：
+    - total_days: 修补总天数
+    - insert_days: 新增天数
+    - update_days: 更新天数
+    - start_date/end_date: 修补范围
+    """
 
     total_days: int
     insert_days: int

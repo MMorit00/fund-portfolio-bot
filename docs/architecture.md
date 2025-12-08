@@ -154,6 +154,52 @@ def main() -> int: ...                         # 路由入口
 - `asset_class.py`：AssetClass 枚举
 - `policy.py`：SettlementPolicy 数据类（结算日历策略）
 
+### 中间层数据类规范（flows/）
+
+Flow 层返回值遵循"最小必要原则"，只在必要时创建中间数据类：
+
+**创建原则**：
+1. **多字段聚合**：返回值 ≥ 3 个不同类型的字段
+2. **业务语义封装**：返回值有特定业务含义，需要方法或属性
+3. **跨 Flow 复用**：多个 Flow 返回相同结构
+
+**命名规范**：
+| 后缀 | 用途 | 示例 |
+|------|------|------|
+| `*Result` | Flow 函数的顶层返回值（默认选择） | `ImportResult`, `ConfirmResult` |
+| `*Item` | 列表中的单项明细 | `FundHoldingItem` |
+| `*Draft` | 草案建议（不入库，需用户确认） | `DcaPlanDraft` |
+| `*Facts` | 事实快照（供 AI 分析） | `FundDcaFacts` |
+| `*Check` | 单项检查结果 | `DcaTradeCheck` |
+| `*Flag` | 异常/警告标记 | `TradeFlag` |
+| `Parsed*` | 外部数据解析中间格式 | `ParsedRestriction` |
+
+**禁止事项**：
+- ❌ CLI 层创建数据类
+- ❌ 单字段包装类（直接返回该字段）
+- ❌ 包含格式化逻辑的数据类
+
+**示例**：
+```python
+# ✅ 好的设计：多字段聚合 + 有意义
+@dataclass
+class ConfirmResult:
+    """确认结果统计。"""
+    confirmed_count: int
+    skipped_count: int
+    delayed_count: int
+    skipped_funds: list[str]
+
+# ❌ 过度包装：单字段，应直接返回 int
+@dataclass
+class CreateTradeResult:
+    trade_id: int
+
+# ✅ 改进：直接返回
+def create_trade(...) -> Trade:
+    return trade_repo.add(trade)
+```
+
 ### 业务规则（core/rules/）
 - `settlement.py`：确认日期计算（T+N 规则）
 - `rebalance.py`：再平衡建议计算

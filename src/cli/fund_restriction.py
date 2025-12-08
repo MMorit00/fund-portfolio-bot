@@ -8,14 +8,13 @@ from datetime import date
 from decimal import Decimal
 
 from src.core.log import log
+from src.core.models.fund_restriction import ParsedRestriction
 from src.flows.fund_restriction import (
-    AddRestrictionResult,
-    CheckStatusResult,
-    EndRestrictionResult,
+    RestrictionResult,
     add_restriction,
-    apply_trading_status,
-    check_trading_status,
     end_restriction,
+    fetch_restriction,
+    save_restriction,
 )
 
 
@@ -97,7 +96,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _format_add_result(result: AddRestrictionResult) -> None:
+def _format_add_result(result: RestrictionResult) -> None:
     """格式化添加结果输出。"""
     log(f"✅ 限制记录已添加（ID={result.record_id}）")
     log(f"   基金: {result.fund_code}")
@@ -108,41 +107,39 @@ def _format_add_result(result: AddRestrictionResult) -> None:
         log(f"   限额: {result.limit_amount} 元")
 
 
-def _format_end_result(result: EndRestrictionResult) -> None:
+def _format_end_result(
+    success: bool, fund_code: str, restriction_type: str, end_date: date
+) -> None:
     """格式化结束结果输出。"""
-    if result.success:
-        log(
-            f"✅ 已结束 {result.fund_code} 的 {result.restriction_type} 限制（结束日期={result.end_date}）"
-        )
+    if success:
+        log(f"✅ 已结束 {fund_code} 的 {restriction_type} 限制（结束日期={end_date}）")
     else:
         log("❌ 未找到符合条件的 active 限制记录")
-        log(f"   基金: {result.fund_code}")
-        log(f"   类型: {result.restriction_type}")
-        log(
-            f"   提示: 请使用 'check-status --fund {result.fund_code}' 查看当前状态"
-        )
+        log(f"   基金: {fund_code}")
+        log(f"   类型: {restriction_type}")
+        log(f"   提示: 请使用 'check-status --fund {fund_code}' 查看当前状态")
 
 
-def _format_check_result(result: CheckStatusResult) -> None:
+def _format_check_result(fund_code: str, parsed: ParsedRestriction | None) -> None:
     """格式化查询结果输出。"""
-    if not result.parsed:
+    if not parsed:
         log("（当前无交易限制，申购状态=开放申购）")
         return
 
-    log(f"\n📊 {result.fund_code} 当前交易状态：")
+    log(f"\n📊 {fund_code} 当前交易状态：")
     log("=" * 80)
-    log(f"\n  类型: {result.parsed.restriction_type}")
-    if result.parsed.limit_amount:
-        log(f"  限额: {result.parsed.limit_amount} 元/日")
-    log(f"  置信度: {result.parsed.confidence}")
+    log(f"\n  类型: {parsed.restriction_type}")
+    if parsed.limit_amount:
+        log(f"  限额: {parsed.limit_amount} 元/日")
+    log(f"  置信度: {parsed.confidence}")
     log("  数据源: AKShare fund_purchase_em")
-    log(f"  快照日期: {result.parsed.start_date}")
+    log(f"  快照日期: {parsed.start_date}")
     log("")
     log("  ⚠️  注意事项：")
     log("     - 上述数据为「当前状态快照」，限额金额准确")
     log("     - 「真实开始日期」未知（可能几个月前就开始限额了）")
-    if result.parsed.note:
-        log(f"\n  详细信息: {result.parsed.note}")
+    if parsed.note:
+        log(f"\n  详细信息: {parsed.note}")
 
 
 def _do_add(args: argparse.Namespace) -> int:
@@ -192,16 +189,16 @@ def _do_end(args: argparse.Namespace) -> int:
         end_date = date.fromisoformat(args.date)
 
         # 2. 调用 Flow 函数
-        result = end_restriction(
+        success = end_restriction(
             fund_code=fund_code,
             restriction_type=restriction_type,
             end_date=end_date,
         )
 
         # 3. 格式化输出
-        _format_end_result(result)
+        _format_end_result(success, fund_code, restriction_type, end_date)
 
-        return 0 if result.success else 4
+        return 0 if success else 4
 
     except ValueError as err:
         log(f"❌ 参数错误：{err}")
@@ -219,14 +216,14 @@ def _do_check_status(args: argparse.Namespace) -> int:
         do_apply = args.apply
 
         # 2. 调用 Flow 函数
-        log(f"[CheckStatus] 正在查询 {fund_code} 的交易状态（AKShare）...")
-        result = check_trading_status(fund_code=fund_code)
+        log(f"[FetchRestriction] 正在查询 {fund_code} 的交易限制（AKShare）...")
+        parsed = fetch_restriction(fund_code=fund_code)
 
         # 3. 格式化输出
-        _format_check_result(result)
+        _format_check_result(fund_code, parsed)
 
         # 4. 如果需要插入，提示用户确认
-        if do_apply and result.parsed:
+        if do_apply and parsed:
             log("\n\n❓ 是否将以上状态插入数据库？")
             log("   （请仔细检查解析结果，确认无误后再插入）")
             log("   输入 'yes' 确认，其他任何输入取消：")
@@ -235,18 +232,18 @@ def _do_check_status(args: argparse.Namespace) -> int:
             user_input = input("   > ").strip().lower()
 
             if user_input == "yes":
-                # 调用 apply flow
-                apply_result = apply_trading_status(
+                # 调用 save flow
+                record_id = save_restriction(
                     fund_code=fund_code,
-                    parsed=result.parsed,
+                    parsed=parsed,
                 )
 
-                log(f"\n✅ 已插入：{fund_code} 交易状态（ID={apply_result.record_id}）")
+                log(f"\n✅ 已保存：{fund_code} 交易限制（ID={record_id}）")
                 return 0
             else:
                 log("\n✅ 已取消插入")
                 return 0
-        elif not result.parsed:
+        elif not parsed:
             # 无限制状态，无需提示
             return 0
         else:

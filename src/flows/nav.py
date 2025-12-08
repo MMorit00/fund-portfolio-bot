@@ -19,11 +19,14 @@ from src.data.db.trade_repo import TradeRepo
 class FetchNavsResult:
     """
     抓取某一日官方单位净值的结果汇总。
-
-    - day: 目标日期（补抓模式下为 None）；
-    - total: 参与抓取的基金数量；
-    - success: 成功写入的数量；
-    - failed_codes: 获取失败或无效 NAV（None/<=0）的基金代码列表（格式：code@date）。
+    
+    包含多字段聚合：
+    - day: 目标日期（补抓模式下为 None）
+    - total: 参与抓取的基金数量
+    - success: 成功写入的数量
+    - failed_codes: 失败列表（格式：code@date）
+    
+    用于 CLI 展示抓取进度和失败明细。
     """
 
     day: date | None

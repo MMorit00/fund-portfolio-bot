@@ -95,7 +95,17 @@ def create_trade(
 
 @dataclass(slots=True)
 class ConfirmResult:
-    """确认结果统计（v0.2.1：新增延迟追踪）。"""
+    """
+    确认结果统计（v0.2.1：新增延迟追踪）。
+    
+    包含多维度统计：
+    - confirmed_count: 成功确认数量
+    - skipped_count: 跳过数量（未到确认日）
+    - delayed_count: 延迟数量（NAV 缺失）
+    - skipped_funds: 跳过的基金代码列表
+    
+    用于 CLI 展示确认进度和异常情况。
+    """
 
     confirmed_count: int
     skipped_count: int

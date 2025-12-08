@@ -206,6 +206,11 @@ docs/
 4. 复杂推演 → Sequential-Thinking MCP
 5. 外部调研 → Exa MCP
 
+**流程梳理与可视化**：
+- 当用户询问"某个功能怎么工作"时，使用 `.claude/skills/code-flow-viz/SKILL.md` 模板
+- 生成 ASCII 流程图、数据流图、表格分析
+- 适用场景：代码梳理、新功能设计、技术文档编写
+
 ---
 
 感谢配合！

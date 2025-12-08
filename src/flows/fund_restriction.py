@@ -5,6 +5,11 @@
 - 添加/结束限制记录
 - 查询基金当前交易状态（AKShare）
 - 将查询结果插入数据库
+
+设计原则：
+- Flow 函数返回值遵循"最小必要原则"
+- 多字段聚合用 *Result，单一值直接返回原始类型
+- 不创建过度包装的数据类
 """
 
 from __future__ import annotations
@@ -20,8 +25,12 @@ from src.data.db.fund_restriction_repo import FundRestrictionRepo
 
 
 @dataclass
-class AddRestrictionResult:
-    """添加限制记录结果。"""
+class RestrictionResult:
+    """
+    添加限制记录结果。
+
+    包含多个字段的有意义聚合，用于 CLI 展示和后续处理。
+    """
 
     record_id: int
     fund_code: str
@@ -29,33 +38,6 @@ class AddRestrictionResult:
     start_date: date
     end_date: date | None
     limit_amount: Decimal | None
-
-
-@dataclass
-class EndRestrictionResult:
-    """结束限制记录结果。"""
-
-    success: bool
-    fund_code: str
-    restriction_type: str
-    end_date: date
-
-
-@dataclass
-class CheckStatusResult:
-    """查询交易状态结果。"""
-
-    fund_code: str
-    parsed: ParsedRestriction | None
-
-
-@dataclass
-class ApplyStatusResult:
-    """应用交易状态结果。"""
-
-    record_id: int
-    fund_code: str
-    restriction_type: str
 
 
 @dependency
@@ -70,7 +52,7 @@ def add_restriction(
     source: str = "manual",
     source_url: str | None = None,
     fund_restriction_repo: FundRestrictionRepo | None = None,
-) -> AddRestrictionResult:
+) -> RestrictionResult:
     """
     添加限制记录。
 
@@ -86,7 +68,7 @@ def add_restriction(
         fund_restriction_repo: 限制记录仓储（自动注入）。
 
     Returns:
-        AddRestrictionResult 结果对象。
+        RestrictionResult 结果对象。
 
     Raises:
         ValueError: 参数验证失败。
@@ -115,7 +97,7 @@ def add_restriction(
     record_id = fund_restriction_repo.add(fact)
 
     # 4. 返回结果
-    return AddRestrictionResult(
+    return RestrictionResult(
         record_id=record_id,
         fund_code=fund_code,
         restriction_type=restriction_type,
@@ -132,7 +114,7 @@ def end_restriction(
     restriction_type: str,
     end_date: date,
     fund_restriction_repo: FundRestrictionRepo | None = None,
-) -> EndRestrictionResult:
+) -> bool:
     """
     结束限制记录。
 
@@ -143,57 +125,40 @@ def end_restriction(
         fund_restriction_repo: 限制记录仓储（自动注入）。
 
     Returns:
-        EndRestrictionResult 结果对象。
+        bool: True=成功结束，False=未找到符合条件的记录。
     """
-    # 1. 结束最新的 active 限制
-    success = fund_restriction_repo.end_latest_active(
-        fund_code, restriction_type, end_date
-    )
-
-    # 2. 返回结果
-    return EndRestrictionResult(
-        success=success,
-        fund_code=fund_code,
-        restriction_type=restriction_type,
-        end_date=end_date,
-    )
+    return fund_restriction_repo.end_latest_active(fund_code, restriction_type, end_date)
 
 
 @dependency
-def check_trading_status(
+def fetch_restriction(
     *,
     fund_code: str,
     fund_data_client: FundDataClient | None = None,
-) -> CheckStatusResult:
+) -> ParsedRestriction | None:
     """
-    查询基金当前交易状态（通过 AKShare）。
+    从远程 API 获取基金当前交易限制（通过 AKShare）。
 
     Args:
         fund_code: 基金代码。
         fund_data_client: 基金远程数据客户端（自动注入）。
 
     Returns:
-        CheckStatusResult 结果对象。
+        ParsedRestriction: 解析后的限制信息。
+        None: 无限制（开放申购）。
     """
-    # 1. 查询交易状态
-    parsed = fund_data_client.get_trading_restriction(fund_code)
-
-    # 2. 返回结果
-    return CheckStatusResult(
-        fund_code=fund_code,
-        parsed=parsed,
-    )
+    return fund_data_client.get_trading_restriction(fund_code)
 
 
 @dependency
-def apply_trading_status(
+def save_restriction(
     *,
     fund_code: str,
     parsed: ParsedRestriction,
     fund_restriction_repo: FundRestrictionRepo | None = None,
-) -> ApplyStatusResult:
+) -> int:
     """
-    将查询结果插入数据库。
+    将查询结果保存到数据库。
 
     Args:
         fund_code: 基金代码。
@@ -201,17 +166,10 @@ def apply_trading_status(
         fund_restriction_repo: 限制记录仓储（自动注入）。
 
     Returns:
-        ApplyStatusResult 结果对象。
+        int: 插入记录的 ID。
     """
     # 1. 转换为 Fact 对象
     fact = parsed.to_fact(source="eastmoney_trading_status")
 
     # 2. 插入数据库
-    record_id = fund_restriction_repo.add(fact)
-
-    # 3. 返回结果
-    return ApplyStatusResult(
-        record_id=record_id,
-        fund_code=fund_code,
-        restriction_type=parsed.restriction_type,
-    )
+    return fund_restriction_repo.add(fact)

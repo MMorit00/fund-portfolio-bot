@@ -193,3 +193,5 @@ logs/
 .env.staging
 config/local.*
 /data
+
+/.specstory

@@ -15,8 +15,15 @@ from src.data.db.trade_repo import TradeRepo
 
 
 @dataclass(slots=True)
-class FundHolding:
-    """基金持仓（用于市值计算与对账）。"""
+class FundHoldingItem:
+    """
+    基金持仓明细项（用于市值计算与对账）。
+    
+    设计原则：
+    - 作为列表元素使用，表示单只基金的持仓快照
+    - 包含份额、净值、市值等计算结果
+    - nav_source 标记净值来源："官方" / "估值" / "缺失"
+    """
 
     fund_code: str
     fund_name: str
@@ -29,10 +36,18 @@ class FundHolding:
 
 @dataclass(slots=True)
 class MarketValueResult:
-    """持仓市值计算结果。"""
+    """
+    持仓市值计算结果。
+    
+    包含多字段聚合：
+    - holdings: 持仓明细列表
+    - total_market_value: 总市值
+    - pending_amount: 待确认金额
+    - 三类 NAV 计数：官方/估值/缺失
+    """
 
     as_of: date
-    holdings: list[FundHolding]
+    holdings: list[FundHoldingItem]
     total_market_value: Decimal
     pending_amount: Decimal
     official_nav_count: int
@@ -99,11 +114,11 @@ def cal_market_value(
         )
 
     # 2. 构建持仓对象
-    holdings: list[FundHolding] = []
+    holdings: list[FundHoldingItem] = []
     for fund_code, shares in holdings_data.items():
         fund = fund_repo.get(fund_code)
         holdings.append(
-            FundHolding(
+            FundHoldingItem(
                 fund_code=fund_code,
                 fund_name=fund.name if fund else fund_code,
                 shares=shares,
