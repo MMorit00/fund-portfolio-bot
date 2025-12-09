@@ -36,5 +36,19 @@ known-first-party = ["src"]
 
 [dependency-groups]
 dev = [
+    "pyright>=1.1.407",
     "ruff>=0.14.5",
 ]
+
+[tool.pyright]
+include = ["src"]
+exclude = [".venv", "**/__pycache__"]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"
+reportMissingTypeStubs = false
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportOptionalMemberAccess = false  # 忽略 None 的方法访问（依赖注入场景）
+reportCallIssue = false              # 忽略 max/min 等函数的重载推断问题
+reportArgumentType = false           # 忽略参数类型推断问题
+reportOperatorIssue = false          # 忽略运算符类型问题

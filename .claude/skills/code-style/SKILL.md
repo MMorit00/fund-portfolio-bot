@@ -83,12 +83,12 @@ description: 代码风格规范 / Code style conventions。在编写、编辑、
 
 | 后缀 | 定义 | 模块内示例 | 跨模块示例 |
 |------|------|----------|----------|
-| `*Facts` | 结构化事实快照（日期、金额、间隔等） | `Facts` *(dca_backfill 模块)* | `DcaFacts` *(导出时)* |
-| `*Check` | 规则验证结果（命中+偏差+说明） | `Check` | `DayCheck` *(日期检查)* |
-| `*Flag` | 异常标记（不下结论，仅标记） | `Flag` | `TradeFlag` |
-| `*Draft` | 建议方案（不入库，内存结构） | `Draft` *(dca_plan 模块)* | `PlanDraft` |
-| `*Result` | 内部中间聚合（如回填结果） | `BackfillResult` | - |
-| `*Report` | CLI/AI 展示用报告 | - | `ScanReport` |
+| `*Facts` | 结构化事实快照（日期、金额、间隔等） | `Facts` | `DcaFacts` |
+| `*Check` | 规则验证结果（命中+偏差+说明） | `Check` | `DayCheck` |
+| `*Flag` | 异常标记（不下结论，仅标记） | `Flag` | `Flag` |
+| `*Draft` | 建议方案（不入库，内存结构） | `Draft` | `PlanDraft` |
+| `*Result` | 内部中间聚合（如回填结果） | `Result` | `BackfillResult` |
+| `*Report` | CLI/AI 展示用报告 | `Report` | `ScanReport` |
 
 **简化原则**：模块路径已包含领域信息时，可省略前缀；跨模块导出时保留上下文。
 

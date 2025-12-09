@@ -129,7 +129,10 @@ docs/
 
 **日志前缀**：`[EastmoneyNav]` `[LocalNav]` `[Discord]` `[Job:xxx]`（详见 `operations-log.md`）
 
-**完成后必跑**：`ruff check --fix .`
+**代码检查**：已配置 hook 自动运行（见 `.claude/settings.json`）
+- 每次 `Edit` / `Write` 后自动执行 `ruff check --fix` + `pyright`
+- 无需手动运行，hook 会自动触发
+- 可捕获：字段名错误、参数错误、导入错误等
 
 ### 3.x 领域命名规范（DCA & AI 分工）
 

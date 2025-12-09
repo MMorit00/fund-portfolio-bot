@@ -6,5 +6,18 @@
         "repo": "anthropics/claude-code"
       }
     }
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd $CLAUDE_PROJECT_DIR && uv run ruff check --fix src/ && uv run pyright src/"
+          }
+        ]
+      }
+    ]
   }
 }

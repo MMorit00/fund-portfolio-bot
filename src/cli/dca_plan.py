@@ -13,10 +13,10 @@ from src.flows.config import (
     list_dca_plans,
 )
 from src.flows.dca_backfill import (
-    backfill_days,
-    build_dca_facts_for_batch,
-    get_dca_day_checks,
-    set_dca_core,
+    backfill,
+    build_facts,
+    checks,
+    set_core,
 )
 from src.flows.dca_infer import draft_dca_plans
 
@@ -273,44 +273,44 @@ def _format_dca_facts(facts_list: list) -> None:  # noqa: ANN001
     log("=" * 60)
 
     for facts in facts_list:
-        log(f"\n🔹 {facts.fund_code} ({facts.trade_count} 笔交易)")
-        log(f"   时间范围: {facts.first_date} → {facts.last_date}")
+        log(f"\n🔹 {facts.code} ({facts.count} 笔交易)")
+        log(f"   时间范围: {facts.first} → {facts.last}")
 
         # 金额统计
         if facts.mode_amount is not None:
             log(f"   众数金额: {facts.mode_amount} 元")
-        if facts.stable_count > 1 and facts.stable_amount is not None:
-            log(f"   当前定投: {facts.stable_amount} 元（从 {facts.stable_since} 起，连续 {facts.stable_count} 笔）")
+        if facts.stable_n > 1 and facts.stable_amount is not None:
+            log(f"   当前定投: {facts.stable_amount} 元（从 {facts.stable_since} 起，连续 {facts.stable_n} 笔）")
 
         # 间隔统计
         log(f"   众数间隔: {facts.mode_interval} 天")
 
         # 金额分布（优化显示）
-        if len(facts.amount_histogram) > 1:
-            log(f"   金额演变（{len(facts.amount_histogram)} 种）:")
+        if len(facts.amounts) > 1:
+            log(f"   金额演变（{len(facts.amounts)} 种）:")
             # 按金额降序显示（猜测是从高到低限额）
             sorted_amounts = sorted(
-                facts.amount_histogram.items(),
+                facts.amounts.items(),
                 key=lambda x: -float(x[0])
             )
             for amt, count in sorted_amounts:
-                pct = count / facts.trade_count * 100
+                pct = count / facts.count * 100
                 log(f"      • {amt} 元 × {count} 笔 ({pct:.1f}%)")
         elif facts.mode_amount:
-            log(f"   金额稳定: {facts.mode_amount} 元（全部 {facts.trade_count} 笔）")
+            log(f"   金额稳定: {facts.mode_amount} 元（全部 {facts.count} 笔）")
 
         # 间隔分布（简化显示）
-        if len(facts.interval_histogram) <= 5:
-            interval_str = ", ".join(f"{k}天:{v}" for k, v in sorted(facts.interval_histogram.items()))
+        if len(facts.intervals) <= 5:
+            interval_str = ", ".join(f"{k}天:{v}" for k, v in sorted(facts.intervals.items()))
             log(f"   间隔分布: {interval_str}")
         else:
-            log(f"   间隔分布: {len(facts.interval_histogram)} 种不同间隔")
+            log(f"   间隔分布: {len(facts.intervals)} 种不同间隔")
 
         # 特殊交易标记
         if facts.flags:
             log(f"   ⚠️ 特殊交易 ({len(facts.flags)} 笔):")
             for flag in facts.flags[:5]:
-                log(f"      • trade_id={flag.trade_id} | {flag.trade_date} | {flag.amount} 元")
+                log(f"      • id={flag.id} | {flag.day} | {flag.amount} 元")
                 log(f"        {flag.detail}")
             if len(facts.flags) > 5:
                 log(f"      ... (还有 {len(facts.flags) - 5} 笔)")
@@ -333,7 +333,7 @@ def _do_infer(args: argparse.Namespace) -> int:
         # 2. 如果提供了 batch-id，先输出事实快照（供 AI 分析）
         if batch_id is not None:
             log(f"\n[DCA:infer] 构建批次 {batch_id} 的事实快照...")
-            facts_list = build_dca_facts_for_batch(batch_id=batch_id, fund_code=fund_code)
+            facts_list = build_facts(batch_id=batch_id, code=fund_code)
             _format_dca_facts(facts_list)
             log("\n" + "-" * 60)
 
@@ -430,24 +430,24 @@ def _do_backfill_days(args: argparse.Namespace) -> int:
             # 方式2：自动获取（推荐）
             batch_id = args.batch_id
             fund_code = args.fund
-            track_freq = args.freq
-            track_rule = args.rule or ""
+            freq = args.freq
+            rule = args.rule or ""
             plan_key = fund_code
 
-            log(f"[DCA:backfill-days] 自动获取 trade IDs: batch={batch_id}, fund={fund_code}, {track_freq}/{track_rule}")
+            log(f"[DCA:backfill-days] 自动获取 trade IDs: batch={batch_id}, fund={fund_code}, {freq}/{rule}")
 
-            # 调用 day-checks 获取符合条件的 trade IDs
-            checks = get_dca_day_checks(
+            # 调用 checks 获取符合条件的 trade IDs
+            day_checks = checks(
                 batch_id=batch_id,
-                fund_code=fund_code,
-                track_freq=track_freq,
-                track_rule=track_rule,
+                code=fund_code,
+                freq=freq,
+                rule=rule,
             )
 
             # 只选择：在轨道上 + 一天一笔的交易
-            for check in checks:
-                if check.is_on_track and check.trade_count == 1:
-                    trade_ids.append(check.trade_ids[0])
+            for check in day_checks:
+                if check.on_track and check.count == 1:
+                    trade_ids.append(check.ids[0])
 
             log(f"[DCA:backfill-days] 自动获取 {len(trade_ids)} 笔符合条件的交易")
 
@@ -460,23 +460,23 @@ def _do_backfill_days(args: argparse.Namespace) -> int:
             return 0
 
         # 3. 调用 Flow
-        result = backfill_days(
-            trade_ids=trade_ids,
-            dca_plan_key=plan_key,
+        result = backfill(
+            ids=trade_ids,
+            dca_key=plan_key,
             valid_amounts=valid_amounts,
         )
 
         # 4. 输出结果
-        log(f"\n📊 回填结果：输入 {result.input_count} 笔 → 更新 {result.updated_count} 笔")
+        log(f"\n📊 回填结果：输入 {result.total} 笔 → 更新 {result.updated} 笔")
 
-        if result.skipped_trades:
-            log(f"\n⚠️ 跳过 {len(result.skipped_trades)} 笔（供 AI 审核）：")
-            for st in result.skipped_trades:
-                log(f"   • ID={st.trade_id} | {st.fund_code} | {st.trade_date} | {st.amount}元")
+        if result.skipped:
+            log(f"\n⚠️ 跳过 {len(result.skipped)} 笔（供 AI 审核）：")
+            for st in result.skipped:
+                log(f"   • ID={st.id} | {st.code} | {st.day} | {st.amount}元")
                 log(f"     原因: {st.reason}")
 
-        if result.updated_count > 0:
-            log(f"\n✅ 已更新 {result.updated_count} 笔交易")
+        if result.updated > 0:
+            log(f"\n✅ 已更新 {result.updated} 笔交易")
         return 0
     except Exception as err:  # noqa: BLE001
         log(f"❌ 批量回填失败：{err}")
@@ -493,7 +493,7 @@ def _do_set_core(args: argparse.Namespace) -> int:
         log(f"[DCA:set-core] 设置交易 {trade_id} 为 DCA 核心，plan_key={plan_key}")
 
         # 2. 调用 Flow
-        success = set_dca_core(trade_id=trade_id, dca_plan_key=plan_key)
+        success = set_core(id=trade_id, dca_key=plan_key)
 
         # 3. 输出结果
         if success:
