@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
-from src.core.models.history_import import ImportBatch
+from src.core.models.importer import ImportBatch
 
 
 class ImportBatchRepo:

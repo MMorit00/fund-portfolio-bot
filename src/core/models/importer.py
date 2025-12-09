@@ -3,10 +3,10 @@
 详细设计见 docs/history-import.md。
 
 设计原则：
-- 只保留 2 个核心类（ImportRecord + ImportResult）；
+- 聚焦两个核心数据对象：ImportItem（IR）与 ImportResult（报告）；
 - 复用全局类型定义（TradeType, TradeStatus, MarketType）；
-- 单一数据源（trade_time 派生 trade_date）；
-- 数据闭环（预存 market 避免写库时重复查询）。
+- 单一数据源：trade_time 派生 trade_date，避免冗余字段；
+- 预存 market，写库前无需额外查询，确保数据闭环。
 
 v0.4.3 新增：
 - ImportBatch：导入批次记录，用于追溯和撤销。
@@ -25,7 +25,7 @@ from src.core.models.trade import MarketType, TradeStatus, TradeType
 ImportSource = Literal["alipay", "ttjj"]
 
 # 错误类型
-ImportErrorType = Literal[
+ImportErrorCode = Literal[
     "parse_error",      # CSV 解析失败（格式错误、编码问题）
     "fund_not_found",   # 基金外部名称映射失败
     "nav_missing",      # NAV 抓取失败
@@ -45,7 +45,7 @@ class ImportBatch:
     - 手动/自动交易不关联批次（import_batch_id = NULL）。
 
     生命周期：
-    - 在 import_trades_from_csv() 开始时创建（mode='apply'）；
+    - 在 import_trades_from_file() 开始时创建（mode='apply'）；
     - 返回的 batch_id 传递给后续 Trade 写入流程；
     - 写入 import_batches 表后不再修改。
     """
@@ -64,7 +64,7 @@ class ImportBatch:
 
 
 @dataclass(slots=True)
-class ImportRecord:
+class ImportItem:
     """
     导入记录（统一承载：解析 → 映射 → 补充 → 写库）。
 
@@ -77,7 +77,7 @@ class ImportRecord:
     状态映射（支付宝 → Trade.status）：
     - "交易成功" → confirmed
     - "付款成功，份额确认中" → pending
-    - "交易关闭" → 跳过（不创建 ImportRecord）
+    - "交易关闭" → 跳过（不创建 ImportItem）
     """
 
     # === 原始数据（CSV 解析，必填） ===
@@ -122,7 +122,7 @@ class ImportRecord:
     """份额（计算得出：amount / nav）。"""
 
     # === 错误状态 ===
-    error_type: ImportErrorType | None = None
+    error_type: ImportErrorCode | None = None
     """错误类型（None 表示无错误）。"""
 
     error_message: str | None = None
@@ -185,7 +185,7 @@ class ImportResult:
     downgraded: int = 0
     """因 NAV 缺失自动降级为 pending 的数量。"""
 
-    failed_records: list[ImportRecord] = field(default_factory=list)
+    failed_records: list[ImportItem] = field(default_factory=list)
     """失败记录详情（用于错误报告，只存失败的）。"""
 
     fund_mapping: dict[str, tuple[str, str]] = field(default_factory=dict)

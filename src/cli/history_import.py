@@ -24,8 +24,8 @@ import argparse
 import sys
 
 from src.core.log import log
-from src.core.models import ImportRecord, ImportResult
-from src.flows.history_import import import_trades_from_csv
+from src.core.models import ImportItem, ImportResult
+from src.flows.importer import import_trades_from_file
 
 
 def _parse_args() -> argparse.Namespace:
@@ -88,13 +88,13 @@ def _format_error_summary(error_summary: dict[str, int]) -> None:
         log(f"   [{error_type}]: {count} 笔")
 
 
-def _format_failed_records(failed_records: list[ImportRecord]) -> None:
+def _format_failed_records(failed_records: list[ImportItem]) -> None:
     """格式化失败记录详情（按类型分组）。"""
     log("")
     log("❌ 失败记录详情:")
 
     # 1. 按 error_type 分组
-    grouped: dict[str, list[ImportRecord]] = {}
+    grouped: dict[str, list[ImportItem]] = {}
     for record in failed_records:
         grouped.setdefault(record.error_type, []).append(record)
 
@@ -170,7 +170,7 @@ def _do_import(args: argparse.Namespace) -> int:
         log("")
 
         # 3. 调用 Flow 函数
-        result = import_trades_from_csv(
+        result = import_trades_from_file(
             csv_path=csv_path,
             source=args.source,
             mode=mode,

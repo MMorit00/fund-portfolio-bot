@@ -11,10 +11,10 @@ from .dca_backfill import (
 from .dca_infer import DcaInferResult, DcaPlanDraft
 from .dca_plan import DcaPlan, Frequency, Status
 from .fund import Fund, FundFees, RedemptionTier
-from .history_import import (
+from .importer import (
     ImportBatch,
-    ImportErrorType,
-    ImportRecord,
+    ImportErrorCode,
+    ImportItem,
     ImportResult,
     ImportSource,
 )
@@ -56,10 +56,10 @@ __all__ = [
     "TradeFlag",
     # 历史导入
     "ImportBatch",
-    "ImportRecord",
+    "ImportItem",
     "ImportResult",
     "ImportSource",
-    "ImportErrorType",
+    "ImportErrorCode",
     # NAV 与结算策略
     "NavQuality",
     "SettlementPolicy",

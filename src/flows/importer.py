@@ -16,7 +16,7 @@ from src.core.dependency import dependency
 from src.core.log import log
 from src.core.models import (
     AssetClass,
-    ImportRecord,
+    ImportItem,
     ImportResult,
     ImportSource,
     MarketType,
@@ -48,7 +48,7 @@ ImportMode = Literal["dry_run", "apply"]
 
 
 @dependency
-def import_trades_from_csv(
+def import_trades_from_file(
     *,
     csv_path: str,
     source: ImportSource = "alipay",
@@ -66,7 +66,7 @@ def import_trades_from_csv(
     从 CSV 文件导入历史交易。
 
     导入流程：
-    1. 解析 CSV（GBK 编码）→ 过滤基金交易 → 生成 ImportRecord
+    1. 解析 CSV（GBK 编码）→ 过滤基金交易 → 生成 ImportItem
     2. 映射 fund_code + market（通过 funds.alias 查询）
     3. 抓取历史 NAV（通过 FundDataClient）
     4. 计算份额（amount / nav）
@@ -98,15 +98,15 @@ def import_trades_from_csv(
 
     Example:
         >>> # 干跑模式（只检查，不写入）
-        >>> result = import_trades_from_csv(csv_path="data/alipay.csv", mode="dry_run")
+        >>> result = import_trades_from_file(csv_path="data/alipay.csv", mode="dry_run")
         >>> print(f"识别 {result.total} 笔，可导入 {result.succeeded} 笔")
 
         >>> # 实际导入
-        >>> result = import_trades_from_csv(csv_path="data/alipay.csv", mode="apply")
+        >>> result = import_trades_from_file(csv_path="data/alipay.csv", mode="apply")
         >>> print(f"成功导入 {result.succeeded} 笔，失败 {result.failed} 笔")
     """
     # 步骤 1: 解析 CSV
-    records = _parse_csv(csv_path, source)
+    records = _parse_file(csv_path, source)
 
     # 步骤 1.5: 创建 ImportBatch（仅 apply 模式，v0.4.3 新增）
     batch_id: int | None = None
@@ -120,7 +120,7 @@ def import_trades_from_csv(
     # 步骤 2: 自动解析基金（仅 apply 模式，v0.4.2 修复）
     # 原因：dry-run 不应写入数据库，apply 时才自动创建基金记录
     if mode == "apply" and fund_repo is not None and fund_data_client is not None:
-        _auto_resolve_funds(records, fund_repo, fund_data_client)
+        _resolve_funds(records, fund_repo, fund_data_client)
 
     # 步骤 3: 映射 fund_code + market
     if fund_repo is not None:
@@ -128,19 +128,19 @@ def import_trades_from_csv(
 
     # 步骤 4: 抓取历史 NAV（使用定价日而非下单日）
     if fund_data_client is not None and nav_repo is not None and calendar_service is not None:
-        _fetch_navs(records, fund_data_client, nav_repo, calendar_service)
+        _fetch_navs_for_items(records, fund_data_client, nav_repo, calendar_service)
 
     # 步骤 5: 计算份额
-    _calculate_shares(records)
+    _calc_shares(records)
 
     # 步骤 6: 去重检查（标记已存在的记录）
     if trade_repo is not None:
-        _check_duplicates(records, trade_repo)
+        _dedupe_items(records, trade_repo)
 
     # 步骤 7: 写入数据库（apply 模式）
     succeeded = 0
     if mode == "apply" and trade_repo is not None:
-        succeeded = _write_trades(
+        succeeded = _save_trades(
             records, trade_repo, action_repo, with_actions, csv_path, batch_id
         )
     elif mode == "dry_run":
@@ -155,12 +155,12 @@ def import_trades_from_csv(
                 succeeded += 1
 
     # 步骤 8: 构建结果
-    return _build_result(records, succeeded, fund_repo, batch_id)
+    return _build_report(records, succeeded, fund_repo, batch_id)
 
 
-def _parse_csv(csv_path: str, source: ImportSource) -> list[ImportRecord]:
+def _parse_file(csv_path: str, source: ImportSource) -> list[ImportItem]:
     """
-    解析 CSV 文件，过滤基金交易，生成 ImportRecord 列表。
+    解析 CSV 文件，过滤基金交易，生成 ImportItem 列表。
 
     解析规则（支付宝）：
     - 编码：GBK
@@ -174,7 +174,7 @@ def _parse_csv(csv_path: str, source: ImportSource) -> list[ImportRecord]:
         source: 来源平台。
 
     Returns:
-        解析后的 ImportRecord 列表。
+        解析后的 ImportItem 列表。
     """
     if source == "alipay":
         return _parse_alipay_csv(csv_path)
@@ -182,7 +182,7 @@ def _parse_csv(csv_path: str, source: ImportSource) -> list[ImportRecord]:
     raise ValueError(f"不支持的导入来源：{source}")
 
 
-def _parse_alipay_csv(csv_path: str) -> list[ImportRecord]:
+def _parse_alipay_csv(csv_path: str) -> list[ImportItem]:
     """
     解析支付宝账单 CSV。
 
@@ -190,7 +190,7 @@ def _parse_alipay_csv(csv_path: str) -> list[ImportRecord]:
     0: 交易号, 2: 交易创建时间, 7: 交易对方, 8: 商品名称,
     9: 金额（元）, 11: 交易状态, 15: 资金状态
     """
-    records: list[ImportRecord] = []
+    records: list[ImportItem] = []
 
     # 1. 打开文件并跳过头部行
     with open(csv_path, encoding=_alipay_encoding, newline="") as f:
@@ -281,7 +281,7 @@ def _parse_alipay_csv(csv_path: str) -> list[ImportRecord]:
 
             # 2.8 创建有效记录（使用支付宝订单号作为 external_id）
             records.append(
-                ImportRecord(
+                ImportItem(
                     source="alipay",
                     external_id=row[0],  # 支付宝订单号
                     raw_fund_name=fund_name,
@@ -337,7 +337,7 @@ def _create_error_record(
     target_status: TradeStatus,
     error_type: str,
     error_message: str,
-) -> ImportRecord:
+) -> ImportItem:
     """
     创建错误记录（统一构造逻辑）。
 
@@ -352,9 +352,9 @@ def _create_error_record(
         error_message: 错误消息。
 
     Returns:
-        ImportRecord 错误记录。
+        ImportItem 错误记录。
     """
-    return ImportRecord(
+    return ImportItem(
         source="alipay",
         external_id=external_id,
         raw_fund_name=raw_fund_name,
@@ -367,8 +367,8 @@ def _create_error_record(
     )
 
 
-def _auto_resolve_funds(
-    records: list[ImportRecord],
+def _resolve_funds(
+    records: list[ImportItem],
     fund_repo: FundRepo,
     fund_data_client: FundDataClient,
 ) -> None:
@@ -382,7 +382,7 @@ def _auto_resolve_funds(
     4. 自动创建 funds 表记录（含外部名称用于后续匹配）
 
     Args:
-        records: ImportRecord 列表。
+        records: ImportItem 列表。
         fund_repo: 基金仓储。
         fund_data_client: 基金数据客户端。
 
@@ -467,7 +467,7 @@ def _infer_asset_class(fund_info: dict) -> AssetClass:
     return AssetClass.CSI300
 
 
-def _map_funds(records: list[ImportRecord], fund_repo: FundRepo) -> None:
+def _map_funds(records: list[ImportItem], fund_repo: FundRepo) -> None:
     """
     映射 fund_code 和 market。
 
@@ -476,11 +476,11 @@ def _map_funds(records: list[ImportRecord], fund_repo: FundRepo) -> None:
     2. 找到匹配的 fund_code 和 market
     3. 映射失败的记录标记 error_type="fund_not_found"
 
-    TODO: 将外部名称映射迁移到独立的 FundNameMapping 仓储，避免 ImportRecord
+    TODO: 将外部名称映射迁移到独立的 FundNameMapping 仓储，避免 ImportItem
     直接依赖 funds.alias 字段。
 
     Args:
-        records: ImportRecord 列表（原地修改）。
+        records: ImportItem 列表（原地修改）。
         fund_repo: 基金仓储。
     """
     # 缓存已查询的映射结果，避免重复查询
@@ -515,8 +515,8 @@ def _map_funds(records: list[ImportRecord], fund_repo: FundRepo) -> None:
             record.market = fund_info.market
 
 
-def _fetch_navs(
-    records: list[ImportRecord],
+def _fetch_navs_for_items(
+    records: list[ImportItem],
     fund_data_client: FundDataClient,
     nav_repo: NavRepo,
     calendar_service: CalendarService,
@@ -539,7 +539,7 @@ def _fetch_navs(
     优化：先查 nav_repo 缓存，避免重复抓取
 
     Args:
-        records: ImportRecord 列表（原地修改）。
+        records: ImportItem 列表（原地修改）。
         fund_data_client: 基金数据客户端。
         nav_repo: 净值仓储（缓存查询）。
         calendar_service: 日历服务（用于计算定价日）。
@@ -596,7 +596,7 @@ def _fetch_navs(
         # pending 记录不需要 NAV（后续正常确认流程处理）
 
 
-def _calculate_shares(records: list[ImportRecord]) -> None:
+def _calc_shares(records: list[ImportItem]) -> None:
     """
     计算份额 = amount / nav。
 
@@ -605,7 +605,7 @@ def _calculate_shares(records: list[ImportRecord]) -> None:
     - 保留 4 位小数（ROUND_HALF_UP）
 
     Args:
-        records: ImportRecord 列表（原地修改）。
+        records: ImportItem 列表（原地修改）。
     """
     for record in records:
         # 跳过无 NAV 的记录
@@ -616,7 +616,7 @@ def _calculate_shares(records: list[ImportRecord]) -> None:
         record.shares = quantize_shares(record.amount / record.nav)
 
 
-def _check_duplicates(records: list[ImportRecord], trade_repo: TradeRepo) -> None:
+def _dedupe_items(records: list[ImportItem], trade_repo: TradeRepo) -> None:
     """
     检查并标记重复记录（v0.4.2 新增）。
 
@@ -628,7 +628,7 @@ def _check_duplicates(records: list[ImportRecord], trade_repo: TradeRepo) -> Non
     3. 重复记录标记为 error_type="duplicate"
 
     Args:
-        records: ImportRecord 列表（原地修改）。
+        records: ImportItem 列表（原地修改）。
         trade_repo: 交易仓储（用于查询已存在的 external_id）。
     """
     duplicate_count = 0
@@ -664,8 +664,8 @@ def _check_duplicates(records: list[ImportRecord], trade_repo: TradeRepo) -> Non
         log(f"[Flow:HistoryImport] 检测到 {duplicate_count} 笔重复记录，已跳过")
 
 
-def _write_trades(
-    records: list[ImportRecord],
+def _save_trades(
+    records: list[ImportItem],
     trade_repo: TradeRepo,
     action_repo: ActionRepo | None,
     with_actions: bool,
@@ -682,7 +682,7 @@ def _write_trades(
     4. 如果 with_actions=True，补录 action_log
 
     Args:
-        records: ImportRecord 列表。
+        records: ImportItem 列表。
         trade_repo: 交易仓储。
         action_repo: 行为日志仓储（可选）。
         with_actions: 是否补录 ActionLog。
@@ -758,8 +758,8 @@ def _write_trades(
     return succeeded
 
 
-def _build_result(
-    records: list[ImportRecord],
+def _build_report(
+    records: list[ImportItem],
     succeeded: int,
     fund_repo: FundRepo | None = None,
     batch_id: int | None = None,
@@ -769,14 +769,14 @@ def _build_result(
 
     统计逻辑：
     - total: 所有记录数（包括错误记录）
-    - succeeded: 成功写入的记录数（由 _write_trades 返回）
+    - succeeded: 成功写入的记录数（由 _save_trades 返回）
     - failed: 有错误的记录数
     - skipped: 重复记录数（error_type="duplicate"）
     - downgraded: 因 NAV 缺失降级为 pending 的数量（v0.4.2+）
     - batch_id: 导入批次 ID（v0.4.3 新增）
 
     Args:
-        records: ImportRecord 列表。
+        records: ImportItem 列表。
         succeeded: 成功写入的交易数量。
         fund_repo: 基金仓储（用于构建映射摘要）。
         batch_id: 导入批次 ID（v0.4.3 新增，仅 apply 模式有值）。

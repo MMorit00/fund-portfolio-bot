@@ -50,7 +50,7 @@
 
 - `import_batch_id`：
   - 用于追溯历史导入来源，支持批次级别的撤销和重跑；
-  - 仅历史导入（`history_import` Flow）时填写；
+  - 仅历史导入（`importer` Flow）时填写；
   - 手动交易（`trade buy/sell`）和自动定投（`dca run`）为 NULL。
 
 - `dca_plan_key`：
@@ -100,7 +100,7 @@
 | DCA 自动执行 | ❌ | - | - | - | 系统行为，不记录 |
 | 跳过定投 | ✅ | dca_skip | human | manual | 用户主动跳过某日定投 |
 | 取消交易 | ✅ | cancel | human | manual | 用户主动取消 pending 交易 |
-| 导入历史交易 | ✅ | buy / sell | human | import | history_import Flow 自动补录 |
+| 导入历史交易 | ✅ | buy / sell | human | import | importer Flow 自动补录 |
 | 交易确认 | ❌ | - | - | - | trades.status 已有 |
 | 再平衡执行 | ❌ | - | - | - | 留到后续版本 |
 
