@@ -1,6 +1,6 @@
 ---
 name: code-style
-description: Applies the fund-portfolio-bot Python coding conventions, including type hints, Decimal usage, docstrings, and module organization. Use when writing, editing, or reviewing Python code in this repository.
+description: 代码风格规范 / Code style conventions。在编写、编辑、评审 Python 代码时使用。包括类型注解、Decimal 精度、Docstring、模块组织等规范。Use when writing, editing, or reviewing Python code. Enforces type hints, Decimal precision, docstrings, and module organization.
 ---
 
 # Python code style for fund-portfolio-bot
@@ -12,11 +12,12 @@ description: Applies the fund-portfolio-bot Python coding conventions, including
 
 ## When to use
 
-在以下场景使用本 Skill：
+在以下场景使用本 Skill（触发词：代码风格、类型注解、Docstring、精度、code style、type hints、docstring）：
 
 - 生成新的 Python 模块（尤其是 `src/` 下）
 - 修改现有函数或类
 - 做代码重构或代码评审
+- 用户提到"类型注解"、"Decimal"、"文档"、"代码规范"时
 
 ## 类型与数值正确性
 
@@ -80,25 +81,30 @@ description: Applies the fund-portfolio-bot Python coding conventions, including
 
 规则层只输出可重算的结构化事实，严禁直接生成主观结论。
 
-| 后缀 | 定义 | 示例 |
-|------|------|------|
-| `*Facts` | 对象在特定时期的客观数据聚合（日期、金额、间隔等）；作为 Context 供 AI 使用 | `FundDcaFacts` |
-| `*Check` | 单条数据针对规则的验证结果（命中+偏差+说明），不下结论 | `DcaTradeCheck` |
-| `*Flag` | 规则识别的"值得注意"的点（异常、中断等），仅标记不定性 | `TradeFlag` |
-| `*Draft` | 建议方案（永远不对应 DB 表，只是内存结构） | `DcaPlanCandidate` |
-| `*Result` | 内部中间聚合结果 | `BackfillResult` |
-| `*Report` | CLI/AI 展示用的汇总报告 | `ScanReport` |
+| 后缀 | 定义 | 模块内示例 | 跨模块示例 |
+|------|------|----------|----------|
+| `*Facts` | 结构化事实快照（日期、金额、间隔等） | `Facts` *(dca_backfill 模块)* | `DcaFacts` *(导出时)* |
+| `*Check` | 规则验证结果（命中+偏差+说明） | `Check` | `DayCheck` *(日期检查)* |
+| `*Flag` | 异常标记（不下结论，仅标记） | `Flag` | `TradeFlag` |
+| `*Draft` | 建议方案（不入库，内存结构） | `Draft` *(dca_plan 模块)* | `PlanDraft` |
+| `*Result` | 内部中间聚合（如回填结果） | `BackfillResult` | - |
+| `*Report` | CLI/AI 展示用报告 | - | `ScanReport` |
+
+**简化原则**：模块路径已包含领域信息时，可省略前缀；跨模块导出时保留上下文。
 
 ### Flow 函数动词
 
-| 动词 | 约束 | 示例 |
-|------|------|------|
-| `build_*_facts()` | 只读，纯计算/聚合，返回 `*Facts` | `build_dca_facts_for_batch()` |
-| `scan_*()` | 只读，无副作用（Idempotent），可随意调用 | `scan_trading_history()` |
-| `draft_*()` | 返回 `*Draft` 对象，不入库 | `draft_dca_plan()` |
-| `backfill_*()` | **写操作**，修改 Truth Layer，需谨慎 | `backfill_dca_for_batch()` |
+| 动词 | 约束 | 模块内示例 | 跨模块示例 |
+|------|------|----------|----------|
+| `build_*()` | 只读计算，返回 `*Facts` | `build_facts()` | `build_dca_facts()` *(批次为参数)* |
+| `scan_*()` | 只读无副作用（幂等） | `scan()` | `scan_trading_history()` |
+| `draft_*()` | 返回 `*Draft`，不入库 | `draft()` | `draft_dca_plan()` |
+| `backfill_*()` | **写操作**，修改数据库 | `backfill()` | `backfill_dca()` *(不需要 for_batch)* |
 
-**关键原则**：看到 `scan_` 就知道安全可调；看到 `backfill_` 就要警惕会修改数据。
+**关键原则**：
+- 看到 `scan_` / `build_` / `draft_` 就知道安全可调（只读）
+- 看到 `backfill_` 就要警惕会修改数据库
+- 参数而非函数名来表达"对什么"（batch_id, fund_code 等是参数）
 
 ### AI 层（预留）
 

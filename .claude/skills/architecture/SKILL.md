@@ -1,11 +1,20 @@
 ---
 name: architecture
-description: Enforces the simplified layering and dependency rules for the fund-portfolio-bot project (v0.3.1), keeping cli, flows, core, and data correctly separated. Use when designing new components, changing imports, or reviewing architecture decisions.
+description: 分层架构规范 / Architecture and layering rules (v0.3.1)。在设计新组件、修改导入、检查分层时使用。核心约束：cli → flows → data，core 向内不向外。Use when designing components, changing imports, or reviewing layering decisions. Enforces cli/flows/core/data separation.
 ---
 
 # Architecture and layering for fund-portfolio-bot (v0.3.1)
 
 本 Skill 关注分层职责与依赖方向。详细说明参见 `docs/architecture.md`。
+
+## When to use
+
+在以下场景使用本 Skill（触发词：分层、导入、架构、依赖、architecture、layering、import）：
+
+- 设计新模块或新功能时
+- 修改 import 语句或依赖时
+- 代码评审时检查分层是否正确
+- 用户提到"我应该把这个放在哪一层"、"这个导入对吗"、"循环依赖"时
 
 ## 层次结构概览（v0.3.1 简化版 + 依赖注入）
 
