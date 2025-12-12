@@ -14,11 +14,9 @@ from src.flows.config import (
 )
 from src.flows.dca_backfill import (
     backfill,
-    build_facts,
     checks,
     set_core,
 )
-from src.flows.dca_infer import draft_dca_plans
 
 
 def _parse_args() -> argparse.Namespace:
@@ -69,33 +67,6 @@ def _parse_args() -> argparse.Namespace:
     # ========== delete 子命令 ==========
     delete_parser = subparsers.add_parser("delete", help="删除定投计划")
     delete_parser.add_argument("--fund", required=True, help="基金代码")
-
-    # ========== infer 子命令 ==========
-    infer_parser = subparsers.add_parser("infer", help="从历史买入记录推断定投计划候选")
-    infer_parser.add_argument(
-        "--min-samples",
-        type=int,
-        default=2,
-        help="最小样本数（默认 2）",
-    )
-    infer_parser.add_argument(
-        "--min-span-days",
-        type=int,
-        default=7,
-        help="最小时间跨度（天，默认 7）",
-    )
-    infer_parser.add_argument(
-        "--fund",
-        type=str,
-        default=None,
-        help="只分析指定基金代码（默认分析所有基金）",
-    )
-    infer_parser.add_argument(
-        "--batch-id",
-        type=int,
-        default=None,
-        help="导入批次 ID（提供时输出事实快照供 AI 分析）",
-    )
 
     # ========== backfill-days 子命令（v0.4.5 AI 驱动）==========
     backfill_days_parser = subparsers.add_parser(
@@ -263,146 +234,6 @@ def _do_delete(args: argparse.Namespace) -> int:
         return 5
 
 
-def _format_dca_facts(facts_list: list) -> None:  # noqa: ANN001
-    """格式化输出 DCA 事实快照（供 AI 分析）。"""
-    if not facts_list:
-        log("（无事实快照）")
-        return
-
-    log(f"\n📊 DCA 事实快照（{len(facts_list)} 只基金）")
-    log("=" * 60)
-
-    for facts in facts_list:
-        log(f"\n🔹 {facts.code} ({facts.count} 笔交易)")
-        log(f"   时间范围: {facts.first} → {facts.last}")
-
-        # 金额统计
-        if facts.mode_amount is not None:
-            log(f"   众数金额: {facts.mode_amount} 元")
-        if facts.stable_n > 1 and facts.stable_amount is not None:
-            log(f"   当前定投: {facts.stable_amount} 元（从 {facts.stable_since} 起，连续 {facts.stable_n} 笔）")
-
-        # 间隔统计
-        log(f"   众数间隔: {facts.mode_interval} 天")
-
-        # 金额分布（优化显示）
-        if len(facts.amounts) > 1:
-            log(f"   金额演变（{len(facts.amounts)} 种）:")
-            # 按金额降序显示（猜测是从高到低限额）
-            sorted_amounts = sorted(
-                facts.amounts.items(),
-                key=lambda x: -float(x[0])
-            )
-            for amt, count in sorted_amounts:
-                pct = count / facts.count * 100
-                log(f"      • {amt} 元 × {count} 笔 ({pct:.1f}%)")
-        elif facts.mode_amount:
-            log(f"   金额稳定: {facts.mode_amount} 元（全部 {facts.count} 笔）")
-
-        # 间隔分布（简化显示）
-        if len(facts.intervals) <= 5:
-            interval_str = ", ".join(f"{k}天:{v}" for k, v in sorted(facts.intervals.items()))
-            log(f"   间隔分布: {interval_str}")
-        else:
-            log(f"   间隔分布: {len(facts.intervals)} 种不同间隔")
-
-        # 特殊交易标记
-        if facts.flags:
-            log(f"   ⚠️ 特殊交易 ({len(facts.flags)} 笔):")
-            for flag in facts.flags[:5]:
-                log(f"      • id={flag.id} | {flag.day} | {flag.amount} 元")
-                log(f"        {flag.detail}")
-            if len(facts.flags) > 5:
-                log(f"      ... (还有 {len(facts.flags) - 5} 笔)")
-
-
-def _do_infer(args: argparse.Namespace) -> int:
-    """执行 infer 命令：从历史数据推断定投计划草案（draft_*() 规范）。"""
-    try:
-        # 1. 解析参数
-        min_samples = args.min_samples
-        min_span_days = args.min_span_days
-        fund_code = args.fund
-        batch_id = args.batch_id
-
-        log(
-            "[DCA:infer] 推断定投计划草案："
-            f"min_samples={min_samples}, min_span_days={min_span_days}, fund={fund_code or 'ALL'}"
-        )
-
-        # 2. 如果提供了 batch-id，先输出事实快照（供 AI 分析）
-        if batch_id is not None:
-            log(f"\n[DCA:infer] 构建批次 {batch_id} 的事实快照...")
-            facts_list = build_facts(batch_id=batch_id, code=fund_code)
-            _format_dca_facts(facts_list)
-            log("\n" + "-" * 60)
-
-        # 3. 调用推断 Flow（只读，返回草案 + 限额状态）
-        result = draft_dca_plans(
-            min_samples=min_samples,
-            min_span_days=min_span_days,
-            fund_code=fund_code,
-        )
-
-        # 4. 先输出当前限额状态（供 AI 分析）
-        if result.fund_restrictions:
-            log("\n📊 当前限额状态快照（供 AI 分析）：")
-            log("=" * 80)
-            for code in sorted(result.fund_restrictions.keys()):
-                parsed = result.fund_restrictions[code]
-                if parsed is None:
-                    log(f"  {code} | 开放申购 | 无限制")
-                else:
-                    if parsed.restriction_type == "daily_limit":
-                        log(
-                            f"  {code} | 限购 {parsed.limit_amount} 元/日 "
-                            f"| 置信度: {parsed.confidence}"
-                        )
-                    elif parsed.restriction_type == "suspend":
-                        log(f"  {code} | 暂停申购 | 置信度: {parsed.confidence}")
-                    elif parsed.restriction_type == "resume":
-                        log(f"  {code} | 恢复申购 | 置信度: {parsed.confidence}")
-            log("")
-
-        # 5. 输出推断结果
-        if not result.drafts:
-            log("（未发现符合条件的定投模式）")
-            return 0
-
-        log(f"\n🎯 推断草案计划（{len(result.drafts)} 个）：")
-        for d in result.drafts:
-            icon = "⭐" if d.confidence == "high" else ("✨" if d.confidence == "medium" else "•")
-            freq_rule = f"{d.frequency}/{d.rule}" if d.frequency != "daily" else "daily"
-            log(
-                f"  {icon} {d.fund_code} | {freq_rule} | 建议 {d.suggested_amount} 元 "
-                f"| samples={d.sample_count}, span={d.span_days} 天, confidence={d.confidence} "
-                f"| {d.first_date} → {d.last_date}"
-            )
-
-            # 变体数量提示
-            if d.amount_variants > 1:
-                log(f"      ⚠️  历史有 {d.amount_variants} 种金额，可能有演变")
-
-            # 如果有限额，添加提示
-            parsed = result.fund_restrictions.get(d.fund_code)
-            if parsed and parsed.restriction_type == "daily_limit":
-                if d.suggested_amount > parsed.limit_amount:
-                    log(
-                        f"      ⚠️  建议金额 {d.suggested_amount} 元超限额 {parsed.limit_amount} 元，"
-                        f"请考虑调整"
-                    )
-                else:
-                    log(f"      ✅ 符合当前限额 {parsed.limit_amount} 元/日")
-            elif parsed and parsed.restriction_type == "suspend":
-                log("      ⚠️  当前暂停申购，无法执行定投")
-
-        log("\n提示：请根据以上结果，使用 `dca_plan add` 手动创建/调整正式定投计划。")
-        return 0
-    except Exception as err:  # noqa: BLE001
-        log(f"❌ 推断定投计划失败：{err}")
-        return 5
-
-
 def _do_backfill_days(args: argparse.Namespace) -> int:
     """执行 backfill-days 命令：批量回填指定交易为 DCA 核心。"""
     try:
@@ -442,6 +273,7 @@ def _do_backfill_days(args: argparse.Namespace) -> int:
                 code=fund_code,
                 freq=freq,
                 rule=rule,
+                valid_amounts=valid_amounts,
             )
 
             # 只选择：在轨道上 + 一天一笔的交易
@@ -461,8 +293,8 @@ def _do_backfill_days(args: argparse.Namespace) -> int:
 
         # 3. 调用 Flow
         result = backfill(
-            ids=trade_ids,
-            dca_key=plan_key,
+            trade_ids=trade_ids,
+            plan_key=plan_key,
             valid_amounts=valid_amounts,
         )
 
@@ -493,7 +325,7 @@ def _do_set_core(args: argparse.Namespace) -> int:
         log(f"[DCA:set-core] 设置交易 {trade_id} 为 DCA 核心，plan_key={plan_key}")
 
         # 2. 调用 Flow
-        success = set_core(id=trade_id, dca_key=plan_key)
+        success = set_core(trade_id=trade_id, plan_key=plan_key)
 
         # 3. 输出结果
         if success:
@@ -528,8 +360,6 @@ def main() -> int:
         return _do_enable(args)
     elif args.command == "delete":
         return _do_delete(args)
-    elif args.command == "infer":
-        return _do_infer(args)
     # v0.4.5 AI 驱动的回填命令
     elif args.command == "backfill-days":
         return _do_backfill_days(args)

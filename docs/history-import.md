@@ -40,19 +40,21 @@ uv run python -m src.cli.fund add --code 016057 --alias "嘉实纳斯达克100ET
 
 **幂等性**：基于 `external_id` 去重，重复导入不会重复插入。
 
-## DCA 语义回填（v0.4.3）
+## 导入后的 DCA 事实查看与回填（v0.4.5+）
 
 ```
 导入交易（strategy="none"）
     ↓
-推断定投计划（可选）：dca_plan infer --batch-id 3
+查看事实快照：dca_facts batch <batch_id> / dca_facts fund <batch_id> <code>
     ↓
-创建 DCA 计划：dca_plan add --fund 016532 --amount 100 --freq monthly --rule 28
+根据事实人工决定计划：dca_plan add --fund <code> --amount ... --freq ... --rule ...
     ↓
-回填：dca_plan backfill --batch-id 3 --mode apply
+回填归属：dca_plan backfill --batch-id <batch_id> --mode apply
 ```
 
-**关键**：日期决定归属，金额仅记录偏差。详见 operations-log.md。
+**关键**：
+- 事实快照由 `dca_facts` 提供（金额/间隔分布、候选片段、异常概览），不再依赖 `dca_plan infer` 草案。
+- 回填仍以日期为准决定归属，金额仅记录偏差。详见 operations-log.md。
 
 ## Schema 变更（v0.4.2-v0.4.3）
 

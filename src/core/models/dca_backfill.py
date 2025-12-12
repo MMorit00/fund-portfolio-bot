@@ -1,9 +1,9 @@
-"""DCA 回填数据模型。
+"""DCA 回填与事实快照数据模型。
 
-用途：
-- 将历史导入的交易标记为 DCA 归属（trades.dca_plan_key）
-- 更新行为日志策略标签（action_log.strategy）
-- 为 AI 提供结构化事实快照（DcaFacts）
+设计原则：算法只输出事实，不做推断。
+- segments: 稳定片段（金额+间隔相对稳定的时期）
+- buckets / gaps: 全局分布（金额、间隔）
+- anomalies: 异常标记（供 AI 审查，限量采样）
 """
 
 from __future__ import annotations
@@ -12,151 +12,156 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
+# ============ Backfill 相关 ============
+
 
 @dataclass(slots=True)
 class DayCheck:
-    """
-    某天的 DCA 轨道检查结果（规则层输出，按天聚合）。
-
-    用于 AI 驱动的回填流程：
-    - 规则层输出每天的轨道检查结果
-    - AI 根据 on_track + count + amounts 决定如何回填
-    """
+    """某天的 DCA 轨道检查结果。"""
 
     day: date
-    """交易日期。"""
-
     on_track: bool
-    """该天是否在定投轨道上（由日期规则决定）。"""
-
     count: int
-    """该天交易笔数。"""
-
     ids: list[int] = field(default_factory=list)
-    """该天交易 ID 列表。"""
-
     amounts: list[Decimal] = field(default_factory=list)
-    """该天交易金额列表（与 ids 顺序对应）。"""
 
 
 @dataclass(slots=True)
 class Skipped:
-    """被跳过的交易（供 AI 审核）。"""
+    """被跳过的交易。"""
 
     id: int
-    """交易 ID。"""
-
     code: str
-    """基金代码。"""
-
     day: date
-    """交易日期。"""
-
     amount: Decimal
-    """交易金额。"""
-
     reason: str
-    """跳过原因。"""
 
 
 @dataclass(slots=True)
 class BackfillResult:
-    """
-    backfill 的详细返回结果（供 AI 审核）。
-
-    包含：输入数、更新数、跳过的交易详情。
-    """
+    """backfill 返回结果。"""
 
     total: int
-    """输入的交易数。"""
-
     updated: int
-    """实际更新的交易数。"""
-
     skipped: list[Skipped] = field(default_factory=list)
-    """被跳过的交易列表（金额不在有效集合内）。"""
+
+
+# ============ Facts 相关（给 AI 看的事实快照）============
 
 
 @dataclass(slots=True)
-class Flag:
-    """
-    特殊交易标记。
+class Segment:
+    """稳定片段（金额+间隔相对稳定的时期）。
 
-    规则识别的"值得注意"的点（异常、中断等），仅标记不定性，供 AI 分析。
+    用于识别多阶段 DCA 模式（例如：1000元/天 → 500元/周 → 100元/月）。
+
+    数量控制：Flow 层会限制每只基金最多输出 5-10 段，
+    过于短小的片段会被过滤。
     """
 
     id: int
-    """交易 ID。"""
+    start: date
+    end: date
+    count: int  # 该段内交易笔数
 
-    day: date
-    """交易日期。"""
+    # 典型模式
+    amount: Decimal  # 典型金额（众数）
+    gap: int  # 典型间隔（众数，单位：天）
+    weekdays: dict[str, int]  # 该段内的周期分布
 
-    amount: Decimal
-    """交易金额。"""
+    # 示例（供 AI 抽查，最多 3 条）
+    samples: list[tuple[date, Decimal]] = field(default_factory=list)
 
+
+@dataclass(slots=True)
+class Bucket:
+    """金额区间。
+
+    用于全局金额分布的直方图。
+    桶配置示例：[0,200]、(200,800]、(800,1500]、>1500。
+    """
+
+    label: str  # "0-200" / "200-800" / ">1500"
+    count: int
+    pct: float  # 占比（0.0~1.0）
+
+
+@dataclass(slots=True)
+class Anomaly:
+    """异常交易（按天/类型分组）。
+
+    kind:
+    - "spike": 大额突变（偏离众数 >50%）
+    - "multi": 同一天多笔交易
+    - "gap": 长时间间隔（>30 天）
+
+    数值特征与文字说明分开，AI 可基于数值自己解释。
+    """
+
+    id: int  # 组 ID（一个异常可能涉及多笔交易）
     kind: str
-    """标记类型：amount_outlier / amount_change / interval_outlier。"""
-
-    detail: str
-    """人类可读说明（事实描述，不做结论）。"""
+    day: date
+    trades: list[int]  # 涉及的 trade_ids
+    amounts: list[Decimal]
+    note: str  # 简短说明（例如："1000元，远超众数100元"）
 
 
 @dataclass(slots=True)
 class DcaFacts:
-    """
-    单只基金的 DCA 事实快照（供 AI 分析使用）。
+    """DCA 事实快照（单基金）。
 
-    规则层只输出事实，不做语义判断。AI 基于这些事实做：
-    - 判断金额变化是限额还是策略调整
-    - 识别异常交易模式
-    - 生成分析报告
+    设计原则：
+    - segments 是核心（多阶段 DCA 的基础）
+    - 全局分布辅助（buckets, gaps, weekdays）
+    - 异常做成结构化的"问题"（供后续 AI 交互使用）
+    - 控制体量，避免爆 token
     """
 
     code: str
-    """基金代码。"""
+    batch: int  # batch_id
+    buys: int
+    sells: int
 
-    batch_id: int | None
-    """导入批次 ID（None=全部交易）。"""
+    # 时间
+    first: date
+    last: date
+    days: int
 
-    count: int
-    """交易笔数。"""
+    # 全局模式
+    mode_amt: Decimal | None  # 全局众数金额
+    mode_gap: int | None  # 全局众数间隔（天）
 
-    # 时间范围
-    first: date | None = None
-    """首笔日期。"""
+    # 金额分布
+    top_amts: list[tuple[Decimal, int]] = field(default_factory=list)  # [(100, 12), (20, 7)]
+    buckets: list[Bucket] = field(default_factory=list)  # 金额区间分布（只针对买入）
 
-    last: date | None = None
-    """末笔日期。"""
+    # 间隔分布（相邻买入的天数差）
+    # 桶配置："1", "2-3", "4-6", "7", "8-29", "30", ">30"
+    gaps: dict[str, int] = field(default_factory=dict)
 
-    # 金额统计
-    mode_amount: Decimal | None = None
-    """众数金额（出现最多的金额，用于识别异常）。"""
+    # 周期分布
+    weekdays: dict[str, int] = field(default_factory=dict)
 
-    # 最近稳定值（当前定投金额）
-    stable_amount: Decimal | None = None
-    """最近稳定金额（连续相同的最后 N 笔）。"""
+    # 段（金额+间隔稳定片段）
+    segments: list[Segment] = field(default_factory=list)
 
-    stable_since: date | None = None
-    """稳定开始日期。"""
+    # 异常（限量采样）
+    # anomalies: 每种 kind 最多 2 条样本（用于展示和 AI 感知"长啥样"）
+    # anomaly_total: 实际异常总数（可能 > len(anomalies)）
+    anomalies: list[Anomaly] = field(default_factory=list)
+    anomaly_total: int = 0
 
-    stable_n: int = 0
-    """稳定笔数。"""
+    # 限额（轻量上下文）
+    limit: Decimal | None = None
 
-    # 分布统计
-    amounts: dict[str, int] = field(default_factory=dict)
-    """金额分布（金额 → 出现次数）。"""
 
-    mode_interval: int = 1
-    """众数间隔（最常见间隔天数）。"""
+@dataclass(slots=True)
+class BatchSummary:
+    """批次总览（简化行）。"""
 
-    intervals: dict[int, int] = field(default_factory=dict)
-    """间隔分布（天数 → 出现次数）。"""
-
-    # 特殊交易
-    flags: list[Flag] = field(default_factory=list)
-    """特殊交易标记列表（金额异常/变化点/间隔异常）。"""
-
-    @property
-    def amount_changed(self) -> bool:
-        """金额是否有变化。"""
-        return len(self.amounts) > 1
+    code: str
+    buys: int
+    start: date | None
+    end: date | None
+    mode_amt: Decimal | None
+    anomaly_count: int

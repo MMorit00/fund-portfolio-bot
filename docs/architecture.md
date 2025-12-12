@@ -44,7 +44,7 @@ SQLite / Eastmoney API / Discord Webhook
 
 ## 核心模块
 
-**core/models/**：Trade, Fund, DcaPlan, DcaInferResult, FundDcaFacts 等
+**core/models/**：Trade, Fund, DcaPlan, FundDcaFacts 等
 
 **core/rules/**：settlement（T+N）, rebalance（再平衡）, precision（精度）
 
@@ -59,9 +59,9 @@ SQLite / Eastmoney API / Discord Webhook
 - **Repo**：TradeRepo, NavRepo（数据库访问）
 - **Client**：FundDataClient, DiscordClient（纯 I/O）
 - **Service**：CalendarService, LocalNavService（业务逻辑）
-- **Flow 函数**：create_trade(), confirm_trades(), draft_dca_plans()
+- **Flow 函数**：create_trade(), confirm_trades(), build_fund_dca_facts()
 - **Result 类**：ConfirmResult, FetchNavsResult, BackfillResult
-- **Draft/Facts/Check**：DcaPlanDraft, FundDcaFacts, DcaTradeCheck（规则 vs AI 分工）
+- **Facts/Check**：FundDcaFacts, DcaTradeCheck（规则 vs AI 分工）
 
 ## 关键约束
 

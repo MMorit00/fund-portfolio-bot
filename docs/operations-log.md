@@ -25,7 +25,6 @@ uv run python -m src.cli.fund remove --code 000001
 ```bash
 uv run python -m src.cli.dca_plan add --fund 000001 --amount 1000 --freq monthly --rule 1
 uv run python -m src.cli.dca_plan list
-uv run python -m src.cli.dca_plan infer --min-samples 6 --min-span-days 90
 uv run python -m src.cli.dca_plan backfill --batch-id 3 --mode dry-run
 uv run python -m src.cli.dca_plan backfill --batch-id 3 --mode apply
 ```
@@ -43,6 +42,10 @@ uv run python -m src.cli.trade cancel --id 123
 ```bash
 uv run python -m src.cli.history_import --csv data/alipay.csv --mode dry-run
 uv run python -m src.cli.history_import --csv data/alipay.csv --mode apply
+
+# 导入后查看 DCA 事实快照
+uv run python -m src.cli.dca_facts batch <batch_id>             # 批次概览
+uv run python -m src.cli.dca_facts fund <batch_id> <fund_code>  # 单基金详情
 ```
 
 **限额管理**

@@ -45,19 +45,6 @@
 
 ---
 
-## 2025-12-05 领域命名规范落地（code-style）
-
-**关键原则**：遵循"规则输出事实，AI 做解释"分工
-- `*Draft` = 建议方案（内存结构，不入库）
-- `*Check` = 验证结果（命中+偏差，不下结论）
-- `*Flag` = 值得注意的点（仅标记）
-- `*Facts` = 事实快照（供 AI 分析）
-- `draft_*()` = 返回建议，不入库
-- `scan_*()` = 只读，无副作用
-- `backfill_*()` = 写操作，需谨慎
-
----
-
 ## 2025-12-05 DCA 回填逻辑校准（v0.4.3）
 
 **问题**：原逻辑 `is_match = date_match AND amount_match` 属于语义判断，违反分工原则。
@@ -67,9 +54,13 @@
 - 金额偏差只作为事实字段，不影响归属判断
 - 同一天多笔买入时，只选金额最接近的一笔
 
-**新增**：
-- `FundDcaFacts` 模型 - DCA 事实快照（供 AI 分析）
-- `build_dca_facts_for_batch()` Flow - 只读导出
+**新增（v0.4.5+ 调整）**：
+- `FundDcaFacts` 模型 - DCA 事实快照（供 CLI/LLM 分析，含金额/间隔分布、候选片段、异常概览）
+- `build_fund_dca_facts()` / `summarize_fund_dca_facts()` Flow - 只读导出
+- CLI `dca_facts` 命令 - 导入后查看批次/单基金的 DCA 事实
+
+**移除**：
+- `dca_plan infer` 草案推断逻辑（计划级推断不再作为主流程）
 
 ---
 
