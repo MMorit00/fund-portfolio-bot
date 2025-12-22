@@ -5,6 +5,49 @@
 
 ---
 
+## 2025-12-13 账单导入重构（v0.4.5）
+
+**背景**：发现支付宝 PDF 导出的 CSV 格式更丰富，包含基金代码、交易类型（定投买入/用户买入）、申请金额、确认金额、确认份额、手续费、确认日期等字段，无需通过基金名称映射。
+
+**核心变更**：
+- 流程调整：从"先导入后分析"改为"先分析后导入"
+- 数据源：使用 PDF 导出的 CSV（UTF-8-SIG），替代旧版 GBK 账单
+- DCA 归属：直接从 CSV 的"交易类型"字段判断（定投买入→dca，用户买入→none）
+
+**新增模块**：
+```
+src/core/models/bill.py        # BillItem, BillFacts, AmountPhase 数据模型
+src/flows/bill_parser.py       # CSV 解析
+src/flows/bill_facts.py        # 事实构建（压缩统计，控制 token）
+src/flows/bill_import.py       # 导入逻辑
+src/cli/bill.py                # CLI 入口（analyze/import 命令）
+src/core/models/import_batch.py # ImportBatch 模型（从旧 importer 迁移）
+```
+
+**删除模块**：
+- `src/flows/importer.py`（旧版导入）
+- `src/cli/history_import.py`（旧版 CLI）
+- `src/core/models/importer.py`（旧版模型）
+
+**Schema v16**：
+- `trades` 表新增 `fee`、`apply_amount`、`apply_shares` 字段
+
+**CLI 用法**：
+```bash
+# 分析模式（只读）
+uv run python -m src.cli.bill analyze <csv> [--format table|json]
+
+# 导入模式（交互式：分析 → 确认 → 写库）
+uv run python -m src.cli.bill import <csv> [--dry-run] [--yes]
+```
+
+**设计原则**：
+- 系统只输出事实（BillFacts），AI 负责推断
+- Token 预算控制：使用 AmountPhase 压缩金额变化，不给原始序列
+- 分层架构：CLI → flows → core/data
+
+---
+
 ## 2025-12-07 限额公告 Facts 系统（v0.4.4）
 
 **背景**：DCA 规则层需要"外部约束事实"输入，区分"金额变化是限额导致 vs 主动调整"。
