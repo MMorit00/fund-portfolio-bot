@@ -54,3 +54,8 @@ class Trade:
     external_id: str | None = None           # 外部唯一标识（支付宝订单号等）
     import_batch_id: int | None = None       # 导入批次 ID（仅历史导入填写）
     dca_plan_key: str | None = None          # 定投计划标识（当前格式=fund_code）
+
+    # v16: 账单导入扩展字段
+    fee: Decimal | None = None               # 手续费
+    apply_amount: Decimal | None = None      # 申请金额
+    apply_shares: Decimal | None = None      # 申请份额（预留）

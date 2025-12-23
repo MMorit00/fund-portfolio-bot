@@ -25,7 +25,7 @@ class TradeRepo:
         self.calendar = calendar
 
     def add(self, trade: Trade) -> Trade:
-        """新增一条交易记录，并按策略写入定价日/确认日（v0.4.3：支持 batch + dca_plan_key）。"""
+        """新增一条交易记录（v16：支持 fee/apply_amount/apply_shares）。"""
         normalized_amount = quantize_amount(trade.amount)
         policy = default_policy(trade.market)
         pricing_day, confirm_day = calc_settlement_dates(trade.trade_date, policy, self.calendar)
@@ -34,8 +34,9 @@ class TradeRepo:
                 (
                     "INSERT INTO trades (fund_code, type, amount, trade_date, status, market, "
                     "shares, remark, pricing_date, confirm_date, confirmation_status, "
-                    "delayed_reason, delayed_since, external_id, import_batch_id, dca_plan_key) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    "delayed_reason, delayed_since, external_id, import_batch_id, dca_plan_key, "
+                    "fee, apply_amount, apply_shares) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 ),
                 (
                     trade.fund_code,
@@ -54,6 +55,9 @@ class TradeRepo:
                     trade.external_id,
                     trade.import_batch_id,
                     trade.dca_plan_key,
+                    _decimal_to_str(trade.fee),
+                    _decimal_to_str(trade.apply_amount),
+                    _decimal_to_str(trade.apply_shares),
                 ),
             )
             trade_id = cursor.lastrowid or 0
@@ -75,6 +79,9 @@ class TradeRepo:
             external_id=trade.external_id,
             import_batch_id=trade.import_batch_id,
             dca_plan_key=trade.dca_plan_key,
+            fee=trade.fee,
+            apply_amount=trade.apply_amount,
+            apply_shares=trade.apply_shares,
         )
 
     def list_pending(self, confirm_date: date) -> list[Trade]:
@@ -405,10 +412,11 @@ def _decimal_to_str(value: Decimal | None) -> str | None:
 
 
 def _row_to_trade(row: sqlite3.Row) -> Trade:
-    """将 trades 表的 SQLite 行记录转换为 Trade 实体（v0.4.3：支持 batch + dca_plan_key）。"""
+    """将 trades 表的 SQLite 行记录转换为 Trade 实体（v16：支持 fee/apply_amount/apply_shares）。"""
     shares = row["shares"]
     confirm_date_str = row["confirm_date"]
     delayed_since_str = row["delayed_since"]
+    keys = row.keys()
 
     return Trade(
         id=int(row["id"]),
@@ -426,6 +434,9 @@ def _row_to_trade(row: sqlite3.Row) -> Trade:
         delayed_reason=row["delayed_reason"],
         delayed_since=date.fromisoformat(delayed_since_str) if delayed_since_str else None,
         external_id=row["external_id"],
-        import_batch_id=row["import_batch_id"] if "import_batch_id" in row.keys() else None,
-        dca_plan_key=row["dca_plan_key"] if "dca_plan_key" in row.keys() else None,
+        import_batch_id=row["import_batch_id"] if "import_batch_id" in keys else None,
+        dca_plan_key=row["dca_plan_key"] if "dca_plan_key" in keys else None,
+        fee=Decimal(row["fee"]) if "fee" in keys and row["fee"] else None,
+        apply_amount=Decimal(row["apply_amount"]) if "apply_amount" in keys and row["apply_amount"] else None,
+        apply_shares=Decimal(row["apply_shares"]) if "apply_shares" in keys and row["apply_shares"] else None,
     )

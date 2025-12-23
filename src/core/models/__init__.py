@@ -1,6 +1,19 @@
 from .action import ActionLog, ActionSource, ActionType, Actor, Intent, Strategy
 from .alloc_config import AllocConfig
 from .asset_class import AssetClass
+from .bill import (
+    TRADE_TYPE_MAP,
+    AmountPhase,
+    BillErrorCode,
+    BillFacts,
+    BillItem,
+    BillParseError,
+    BillSummary,
+    BillTradeType,
+)
+from .bill import (
+    Anomaly as BillAnomaly,
+)
 from .dca_backfill import (
     Anomaly,
     BackfillResult,
@@ -13,13 +26,7 @@ from .dca_backfill import (
 )
 from .dca_plan import DcaPlan, Frequency, Status
 from .fund import Fund, FundFees, RedemptionTier
-from .importer import (
-    ImportBatch,
-    ImportErrorCode,
-    ImportItem,
-    ImportResult,
-    ImportSource,
-)
+from .import_batch import ImportBatch, ImportSource
 from .nav import NavQuality
 from .policy import SettlementPolicy
 from .trade import MarketType, Trade, TradeStatus, TradeType
@@ -57,12 +64,19 @@ __all__ = [
     "DcaFacts",
     "Segment",
     "Skipped",
-    # 历史导入
+    # 账单导入
+    "BillItem",
+    "BillFacts",
+    "BillSummary",
+    "BillParseError",
+    "BillErrorCode",
+    "BillTradeType",
+    "BillAnomaly",
+    "AmountPhase",
+    "TRADE_TYPE_MAP",
+    # 导入批次
     "ImportBatch",
-    "ImportItem",
-    "ImportResult",
     "ImportSource",
-    "ImportErrorCode",
     # NAV 与结算策略
     "NavQuality",
     "SettlementPolicy",

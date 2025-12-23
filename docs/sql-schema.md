@@ -7,8 +7,8 @@
 
 ## 当前版本
 
-- Schema Version: **15** (SCHEMA_VERSION = 15)
-- 最后更新: 2025-12-07
+- Schema Version: **16** (SCHEMA_VERSION = 16)
+- 最后更新: 2025-12-13
 
 ## 核心表结构
 
@@ -43,6 +43,9 @@
 | `external_id` | TEXT | 外部唯一标识（支付宝订单号等），用于历史导入去重 | v0.4.2 |
 | `import_batch_id` | INTEGER | 导入批次 ID（FK to import_batches），手动/自动交易为 NULL | v0.4.3 |
 | `dca_plan_key` | TEXT | 定投计划标识，用于 DCA 回填（当前格式=fund_code） | v0.4.3 |
+| `fee` | TEXT | 手续费（账单导入时填写） | v0.4.5 |
+| `apply_amount` | TEXT | 申请金额（账单导入时填写，与 amount 可能不同） | v0.4.5 |
+| `apply_shares` | TEXT | 申请份额（预留，当前未使用） | v0.4.5 |
 
 **业务规则**：见 `docs/settlement-rules.md`
 
@@ -349,6 +352,7 @@ SEED_RESET=1 PYTHONPATH=. python -m scripts.dev_seed_db
 - **v0.4.2+** (2025-12-01): 移除 `trades` 表的 `nav` 字段（数据规范化，nav 归一化存储于 navs 表）
 - **v0.4.3** (2025-12-02): `funds` 表增加费率字段（management_fee, custody_fee, service_fee, purchase_fee, purchase_fee_discount）
 - **v0.4.4** (2025-12-02): 费率模型重构，新增 `fund_fee_items` 表，支持赎回费阶梯；`funds` 表移除费率字段
+- **v0.4.5** (2025-12-13): `trades` 表新增 `fee`/`apply_amount`/`apply_shares` 字段，支持账单导入保留原始数据
 
 ## 何时需要迁移文档？
 
