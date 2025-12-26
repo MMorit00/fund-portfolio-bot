@@ -1,4 +1,43 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(uv:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(pip:*)",
+      "Bash(pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(pyright:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(rm:*)",
+      "Bash(cp:*)",
+      "Bash(cat:*)",
+      "Bash(tree:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(wc:*)",
+      "Bash(chmod:*)",
+      "Bash(test:*)",
+      "Bash(du:*)",
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "Task",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "mcp__*"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(**/secrets/**)",
+      "Bash(rm -rf /)"
+    ]
+  },
   "extraKnownMarketplaces": {
     "anthropic-plugins": {
       "source": {

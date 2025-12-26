@@ -5,6 +5,63 @@
 
 ---
 
+## 2025-12-23 AI 基础架构实现（v0.5.0）
+
+**背景**：基于技术调研报告 `docs/PRD/v0.5.0-ai-architecture.md` 实现 AI 基础架构。
+
+**核心实现**：
+
+1. **OpenAI 兼容协议客户端**
+   - `src/ai/client.py` - AIClient 类，支持 GLM-4-Flash/Qwen/DeepSeek/Ollama
+   - 通过环境变量切换模型供应商（LLM_BASE_URL/LLM_API_KEY/LLM_MODEL）
+   - 包含指数退避重试机制
+
+2. **Pydantic 类型驱动的工具系统**
+   - `src/ai/registry.py` - @tool 装饰器，自动生成 OpenAI Function Calling Schema
+   - `src/ai/schemas/arguments.py` - 工具入参模型（FundQueryArgs 等）
+   - `src/ai/schemas/responses.py` - AI 输出模型（FinancialAnalysis）
+
+3. **3 个核心 Tools**
+   - `query_fund_nav` - 查询基金净值
+   - `query_dca_execution` - 查询定投执行统计
+   - `query_restriction_context` - 查询限额上下文
+   - 所有工具包含数据截断保护（MAX_ROWS=50）
+
+4. **CLI 入口**
+   - `src/cli/ai.py` - 自然语言查询入口 + Rich 渲染
+   - 用法：`uv run python -m src.cli.ai "查询天弘余额宝的定投情况"`
+
+**新增目录结构**：
+```
+src/ai/
+├─ __init__.py
+├─ client.py              # AIClient 实现
+├─ registry.py            # @tool 装饰器
+├─ schemas/
+│   ├─ arguments.py       # 工具入参模型
+│   └─ responses.py       # AI 输出模型
+├─ tools/
+│   ├─ facts.py           # 事实类工具
+│   └─ calcs.py           # 计算类工具
+└─ prompts/
+    └─ system.py          # 系统提示词
+```
+
+**新增依赖**：
+- `openai>=1.50.0` - OpenAI 兼容客户端
+- `pydantic>=2.9.0` - 数据校验与 Schema 生成
+- `rich>=13.9.0` - 终端美化输出
+
+**环境变量**（新增）：
+- `LLM_BASE_URL` - API 端点（默认智谱）
+- `LLM_API_KEY` - API 密钥（必需）
+- `LLM_MODEL` - 模型名称（默认 glm-4-flash）
+- `LLM_MAX_RETRIES` - 最大重试次数（默认 3）
+- `LLM_TIMEOUT` - 请求超时秒数（默认 30）
+- `LLM_DEBUG` - 调试日志开关
+
+---
+
 ## 2025-12-23 AI 架构设计决策（v0.5.0 规划）
 
 **背景**：规划 AI 分析能力，需要确定架构方向和技术选型。

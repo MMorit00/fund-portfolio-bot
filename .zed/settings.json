@@ -1,0 +1,78 @@
+{
+  // Fund Portfolio Bot - Zed 项目配置
+  // 与 pyproject.toml 保持一致
+
+  // 全局编辑器设置
+  "tab_size": 4,
+  "hard_tabs": false,
+  "preferred_line_length": 120,
+  "remove_trailing_whitespace_on_save": true,
+  "ensure_final_newline_on_save": true,
+  "format_on_save": "on",
+
+  // Python 语言配置
+  "languages": {
+    "Python": {
+      "tab_size": 4,
+      "formatter": {
+        "external": {
+          "command": "uv",
+          "arguments": ["run", "ruff", "format", "-"]
+        }
+      },
+      "format_on_save": "on",
+      "language_servers": ["pyright"]
+    },
+    "Markdown": {
+      "tab_size": 2,
+      "soft_wrap": "preferred_line_length"
+    },
+    "JSON": {
+      "tab_size": 2
+    }
+  },
+
+  // LSP 配置
+  "lsp": {
+    "pyright": {
+      "settings": {
+        "python": {
+          "pythonPath": ".venv/bin/python"
+        },
+        "python.analysis": {
+          "typeCheckingMode": "basic",
+          "diagnosticSeverityOverrides": {
+            "reportMissingTypeStubs": "none",
+            "reportUnknownMemberType": "none",
+            "reportUnknownVariableType": "none",
+            "reportOptionalMemberAccess": "none",
+            "reportCallIssue": "none",
+            "reportArgumentType": "none",
+            "reportOperatorIssue": "none"
+          }
+        }
+      }
+    },
+    "ruff": {
+      "initialization_options": {
+        "settings": {
+          "lineLength": 120
+        }
+      }
+    }
+  },
+
+  // 文件关联
+  "file_types": {
+    "Python": ["*.py"],
+    "TOML": ["pyproject.toml", "*.toml"],
+    "Markdown": ["*.md", "CLAUDE.md"]
+  },
+
+  // Git 相关
+  "git": {
+    "inline_blame": {
+      "enabled": true
+    }
+  }
+}

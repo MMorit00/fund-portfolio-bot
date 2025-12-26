@@ -192,6 +192,7 @@ logs/
 .env.production
 .env.staging
 config/local.*
+.claude/settings.local.json
 /data
 
 /.specstory
